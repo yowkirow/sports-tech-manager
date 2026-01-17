@@ -1,0 +1,277 @@
+@import url('https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700&display=swap');
+
+:root {
+  --primary-hue: 250;
+  /* Deep Purple/Indigo */
+  --secondary-hue: 320;
+  /* Pink/Magenta */
+
+  --bg-color: #0f0c29;
+  --bg-gradient: linear-gradient(135deg, #0f0c29, #302b63, #24243e);
+
+  --glass-bg: rgba(255, 255, 255, 0.05);
+  --glass-border: rgba(255, 255, 255, 0.1);
+  --glass-shadow: 0 8px 32px 0 rgba(0, 0, 0, 0.37);
+
+  --text-main: rgba(255, 255, 255, 0.95);
+  --text-muted: rgba(255, 255, 255, 0.7);
+
+  --primary: hsl(var(--primary-hue), 70%, 60%);
+  --secondary: hsl(var(--secondary-hue), 70%, 60%);
+  --accent: #00d2ff;
+
+  --danger: #ff4d4d;
+  --success: #00b894;
+}
+
+body {
+  margin: 0;
+  font-family: 'Inter', sans-serif;
+  background: var(--bg-gradient);
+  background-attachment: fixed;
+  /* Full height */
+  color: var(--text-main);
+  min-height: 100vh;
+  -webkit-font-smoothing: antialiased;
+}
+
+/* Glassmorphism Utilities */
+.glass-panel {
+  background: var(--glass-bg);
+  backdrop-filter: blur(12px);
+  -webkit-backdrop-filter: blur(12px);
+  border: 1px solid var(--glass-border);
+  box-shadow: var(--glass-shadow);
+  border-radius: 16px;
+}
+
+.glass-input {
+  background: rgba(255, 255, 255, 0.03);
+  border: 1px solid rgba(255, 255, 255, 0.1);
+  color: white;
+  padding: 0.75rem 1rem;
+  border-radius: 8px;
+  outline: none;
+  transition: all 0.3s ease;
+  width: 100%;
+  box-sizing: border-box;
+  /* Important for padding */
+}
+
+.glass-input:focus {
+  background: rgba(255, 255, 255, 0.07);
+  border-color: var(--primary);
+  box-shadow: 0 0 0 2px rgba(100, 100, 255, 0.2);
+}
+
+.glass-btn {
+  background: linear-gradient(135deg, var(--primary), #6a11cb);
+  border: none;
+  color: white;
+  padding: 0.75rem 1.5rem;
+  border-radius: 8px;
+  font-weight: 600;
+  cursor: pointer;
+  transition: transform 0.2s, box-shadow 0.2s;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 0.5rem;
+}
+
+.glass-btn:hover {
+  transform: translateY(-2px);
+  box-shadow: 0 5px 15px rgba(100, 100, 255, 0.4);
+}
+
+.glass-btn.secondary {
+  background: rgba(255, 255, 255, 0.1);
+}
+
+.glass-btn.secondary:hover {
+  background: rgba(255, 255, 255, 0.2);
+}
+
+h1,
+h2,
+h3 {
+  margin: 0 0 1rem 0;
+  font-weight: 700;
+  letter-spacing: -0.02em;
+}
+
+/* Layout Utilities */
+.container {
+  max-width: 1200px;
+  margin: 0 auto;
+  padding: 2rem;
+}
+
+.grid-cols-3 {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(300px, 1fr));
+  gap: 1.5rem;
+}
+
+.flex-between {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+}
+
+.text-success {
+  color: var(--success);
+}
+
+.text-danger {
+  color: var(--danger);
+}
+
+.text-muted {
+  color: var(--text-muted);
+}
+
+/* --- Responsive Layout --- */
+
+.app-container {
+  display: flex;
+  min-height: 100vh;
+}
+
+.form-header {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  margin-bottom: 1.5rem;
+}
+
+/* Sidebar (Desktop) */
+.app-sidebar {
+  width: 260px;
+  padding: 2rem;
+  border-right: 1px solid rgba(255, 255, 255, 0.1);
+  background: rgba(0, 0, 0, 0.2);
+  position: fixed;
+  height: 100vh;
+  top: 0;
+  left: 0;
+  z-index: 50;
+  display: flex;
+  flex-direction: column;
+}
+
+.sidebar-brand {
+  display: flex;
+  align-items: center;
+  gap: 0.75rem;
+  margin-bottom: 3rem;
+}
+
+.sidebar-nav {
+  display: flex;
+  flex-direction: column;
+  gap: 0.5rem;
+}
+
+.nav-item {
+  display: flex;
+  align-items: center;
+  gap: 0.75rem;
+  width: 100%;
+  padding: 1rem;
+  background: transparent;
+  border: none;
+  border-radius: 12px;
+  color: var(--text-muted);
+  text-align: left;
+  cursor: pointer;
+  font-size: 1rem;
+  transition: all 0.2s;
+  /* Disable highlight on mobile tap */
+  -webkit-tap-highlight-color: transparent;
+}
+
+.nav-item.active {
+  background: var(--primary);
+  color: white;
+  font-weight: 600;
+}
+
+.main-content {
+  margin-left: 260px;
+  flex: 1;
+  padding: 2rem;
+  width: 100%;
+  /* Fix for grid overflow */
+}
+
+/* --- Mobile/Tablet Breakpoint --- */
+@media (max-width: 1024px) {
+  .app-container {
+    flex-direction: column;
+  }
+
+  .form-header {
+    flex-direction: column;
+    align-items: flex-start;
+    gap: 1rem;
+  }
+
+  .form-header>div {
+    width: 100%;
+    display: flex;
+  }
+
+  .form-header button {
+    flex: 1;
+  }
+
+  .app-sidebar {
+    width: 100%;
+    height: auto;
+    bottom: 0;
+    top: auto;
+    border-right: none;
+    border-top: 1px solid rgba(255, 255, 255, 0.1);
+    background: rgba(15, 12, 41, 0.95);
+    /* Opaque background for contrast */
+    padding: 0.5rem 1rem;
+    flex-direction: row;
+    position: fixed;
+    /* Hide Brand on Mobile Nav if wanted, or re-arrange */
+  }
+
+  .sidebar-brand {
+    display: none;
+    /* Hide logo in bottom bar */
+  }
+
+  .sidebar-nav {
+    flex-direction: row;
+    justify-content: space-around;
+    width: 100%;
+    gap: 0;
+  }
+
+  .nav-item {
+    flex-direction: column;
+    padding: 0.5rem;
+    gap: 0.25rem;
+    font-size: 0.75rem;
+    border-radius: 8px;
+    justify-content: center;
+    text-align: center;
+  }
+
+  .main-content {
+    margin-left: 0;
+    padding: 1rem;
+    padding-bottom: 90px;
+    /* Space for bottom nav */
+  }
+
+  .grid-cols-3 {
+    grid-template-columns: 1fr;
+    /* Stack cards */
+  }
+}
