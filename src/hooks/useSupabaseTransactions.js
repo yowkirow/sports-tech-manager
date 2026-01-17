@@ -65,6 +65,25 @@ const useSupabaseTransactions = () => {
         }
     };
 
+    // Delete all transactions
+    const deleteAllTransactions = async () => {
+        try {
+            const { error } = await supabase
+                .from('transactions')
+                .delete()
+                .neq('id', '00000000-0000-0000-0000-000000000000'); // Delete all rows
+
+            if (error) throw error;
+
+            // Clear local state
+            setTransactions([]);
+        } catch (err) {
+            console.error('Error deleting all transactions:', err);
+            setError(err.message);
+            throw err;
+        }
+    };
+
     // Migrate data from LocalStorage to Supabase
     const migrateFromLocalStorage = async () => {
         try {
@@ -119,6 +138,7 @@ const useSupabaseTransactions = () => {
         error,
         addTransaction,
         deleteTransaction,
+        deleteAllTransactions,
         refetch: fetchTransactions
     };
 };

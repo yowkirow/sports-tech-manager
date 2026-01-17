@@ -9,7 +9,7 @@ import { LayoutDashboard, Package, PlusSquare } from 'lucide-react';
 import { useToast } from './components/ui/Toast';
 
 function App() {
-    const { transactions, loading, error, addTransaction: addToSupabase, deleteTransaction: deleteFromSupabase } = useSupabaseTransactions();
+    const { transactions, loading, error, addTransaction: addToSupabase, deleteTransaction: deleteFromSupabase, deleteAllTransactions } = useSupabaseTransactions();
     const [activeTab, setActiveTab] = useState('inventory');
     const { showToast } = useToast();
 
@@ -27,6 +27,21 @@ function App() {
             await deleteFromSupabase(id);
         } catch (err) {
             showToast('Failed to delete transaction', 'error');
+        }
+    };
+
+    const handleDeleteAll = async () => {
+        const confirmed = window.confirm(
+            '⚠️ WARNING: This will permanently delete ALL transactions and inventory data!\n\nThis action cannot be undone.\n\nAre you absolutely sure?'
+        );
+
+        if (!confirmed) return;
+
+        try {
+            await deleteAllTransactions();
+            showToast('All data deleted successfully', 'success');
+        } catch (err) {
+            showToast('Failed to delete data', 'error');
         }
     };
 
@@ -81,7 +96,7 @@ function App() {
                         {activeTab === 'dashboard' && (
                             <div className="animate-fade-in">
                                 <h1 style={{ marginBottom: '1.5rem' }}>Dashboard</h1>
-                                <DashboardStats transactions={transactions} />
+                                <DashboardStats transactions={transactions} onDeleteAll={handleDeleteAll} />
                                 <div style={{ marginTop: '2rem' }}>
                                     <TransactionList transactions={transactions} onDelete={deleteTransaction} />
                                 </div>

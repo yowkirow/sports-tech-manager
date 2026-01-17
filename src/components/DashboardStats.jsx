@@ -1,6 +1,6 @@
 import React, { useState } from 'react';
 import Card from './ui/Card';
-import { TrendingUp, TrendingDown, DollarSign, Calendar } from 'lucide-react';
+import { TrendingUp, TrendingDown, DollarSign, Calendar, Trash2 } from 'lucide-react';
 
 const StatCard = ({ title, amount, icon: Icon, colorClass }) => (
     <Card className="flex flex-col justify-between h-full">
@@ -35,7 +35,7 @@ const FilterButton = ({ active, onClick, children }) => (
     </button>
 );
 
-const DashboardStats = ({ transactions }) => {
+const DashboardStats = ({ transactions, onDeleteAll }) => {
     const [filter, setFilter] = useState('all'); // all, daily, monthly, yearly
 
     const getFilteredTransactions = () => {
@@ -72,11 +72,32 @@ const DashboardStats = ({ transactions }) => {
         <div style={{ marginBottom: '2rem' }}>
             <div className="flex-between" style={{ marginBottom: '1rem' }}>
                 <h2 style={{ margin: 0, fontSize: '1.25rem' }}>Dashboard</h2>
-                <div style={{ display: 'flex', gap: '0.5rem', background: 'rgba(0,0,0,0.2)', padding: '4px', borderRadius: '10px' }}>
-                    <FilterButton active={filter === 'all'} onClick={() => setFilter('all')}>All Time</FilterButton>
-                    <FilterButton active={filter === 'yearly'} onClick={() => setFilter('yearly')}>This Year</FilterButton>
-                    <FilterButton active={filter === 'monthly'} onClick={() => setFilter('monthly')}>This Month</FilterButton>
-                    <FilterButton active={filter === 'daily'} onClick={() => setFilter('daily')}>Today</FilterButton>
+                <div style={{ display: 'flex', gap: '0.75rem', alignItems: 'center' }}>
+                    <div style={{ display: 'flex', gap: '0.5rem', background: 'rgba(0,0,0,0.2)', padding: '4px', borderRadius: '10px' }}>
+                        <FilterButton active={filter === 'all'} onClick={() => setFilter('all')}>All Time</FilterButton>
+                        <FilterButton active={filter === 'yearly'} onClick={() => setFilter('yearly')}>This Year</FilterButton>
+                        <FilterButton active={filter === 'monthly'} onClick={() => setFilter('monthly')}>This Month</FilterButton>
+                        <FilterButton active={filter === 'daily'} onClick={() => setFilter('daily')}>Today</FilterButton>
+                    </div>
+                    {onDeleteAll && (
+                        <button
+                            onClick={onDeleteAll}
+                            className="btn btn-secondary"
+                            style={{
+                                padding: '0.5rem 1rem',
+                                display: 'flex',
+                                alignItems: 'center',
+                                gap: '0.5rem',
+                                background: 'rgba(239, 68, 68, 0.1)',
+                                border: '1px solid rgba(239, 68, 68, 0.3)',
+                                color: '#ef4444'
+                            }}
+                            title="Delete all transactions"
+                        >
+                            <Trash2 size={16} />
+                            Delete All
+                        </button>
+                    )}
                 </div>
             </div>
 
