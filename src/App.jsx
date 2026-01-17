@@ -1,5 +1,5 @@
 import React, { useState } from 'react';
-import useLocalStorage from './hooks/useLocalStorage';
+import useSupabaseTransactions from './hooks/useSupabaseTransactions';
 import DashboardStats from './components/DashboardStats';
 import TransactionForm from './components/TransactionForm';
 import TransactionList from './components/TransactionList';
@@ -9,29 +9,25 @@ import { LayoutDashboard, Package, PlusSquare } from 'lucide-react';
 import { useToast } from './components/ui/Toast';
 
 function App() {
-    // Data Migration (One-time check)
-    React.useEffect(() => {
-        const oldData = window.localStorage.getItem('shirt-biz-transactions');
-        const newData = window.localStorage.getItem('sports-tech-transactions');
-
-        if (oldData && !newData) {
-            console.log('Migrating data from shirt-biz to sports-tech...');
-            window.localStorage.setItem('sports-tech-transactions', oldData);
-            window.location.reload(); // Reload to pick up the migrated data
-        }
-    }, []);
-
-    const [transactions, setTransactions] = useLocalStorage('sports-tech-transactions', []);
+    const { transactions, loading, error, addTransaction: addToSupabase, deleteTransaction: deleteFromSupabase } = useSupabaseTransactions();
     const [activeTab, setActiveTab] = useState('inventory');
     const { showToast } = useToast();
 
-    const addTransaction = (transaction) => {
-        setTransactions([transaction, ...transactions]);
-        showToast('Stock added successfully!', 'success');
+    const addTransaction = async (transaction) => {
+        try {
+            await addToSupabase(transaction);
+            showToast('Stock added successfully!', 'success');
+        } catch (err) {
+            showToast('Failed to add stock', 'error');
+        }
     };
 
-    const deleteTransaction = (id) => {
-        setTransactions(transactions.filter(t => t.id !== id));
+    const deleteTransaction = async (id) => {
+        try {
+            await deleteFromSupabase(id);
+        } catch (err) {
+            showToast('Failed to delete transaction', 'error');
+        }
     };
 
     const NavItem = ({ id, label, icon: Icon }) => (
@@ -71,33 +67,42 @@ function App() {
 
             {/* Main Content Area */}
             <main className="main-content">
-                <div style={{ maxWidth: '1200px', margin: '0 auto' }}>
-                    {/* Mobile Header (Visible only on mobile could be added, but relying on content for now) */}
+                {loading ? (
+                    <div style={{ display: 'flex', justifyContent: 'center', alignItems: 'center', height: '100vh' }}>
+                        <div style={{ textAlign: 'center' }}>
+                            <div style={{ fontSize: '2rem', marginBottom: '1rem' }}>⏳</div>
+                            <p>Loading your data...</p>
+                        </div>
+                    </div>
+                ) : (
+                    <div style={{ maxWidth: '1200px', margin: '0 auto' }}>
+                        {/* Mobile Header (Visible only on mobile could be added, but relying on content for now) */}
 
-                    {activeTab === 'dashboard' && (
-                        <div className="animate-fade-in">
-                            <h1 style={{ marginBottom: '1.5rem' }}>Dashboard</h1>
-                            <DashboardStats transactions={transactions} />
-                            <div style={{ marginTop: '2rem' }}>
-                                <TransactionList transactions={transactions} onDelete={deleteTransaction} />
+                        {activeTab === 'dashboard' && (
+                            <div className="animate-fade-in">
+                                <h1 style={{ marginBottom: '1.5rem' }}>Dashboard</h1>
+                                <DashboardStats transactions={transactions} />
+                                <div style={{ marginTop: '2rem' }}>
+                                    <TransactionList transactions={transactions} onDelete={deleteTransaction} />
+                                </div>
                             </div>
-                        </div>
-                    )}
+                        )}
 
-                    {activeTab === 'inventory' && (
-                        <div className="animate-fade-in">
-                            <h1 style={{ marginBottom: '1.5rem' }}>Inventory</h1>
-                            <InventoryList transactions={transactions} />
-                        </div>
-                    )}
+                        {activeTab === 'inventory' && (
+                            <div className="animate-fade-in">
+                                <h1 style={{ marginBottom: '1.5rem' }}>Inventory</h1>
+                                <InventoryList transactions={transactions} />
+                            </div>
+                        )}
 
-                    {activeTab === 'add' && (
-                        <div className="animate-fade-in" style={{ maxWidth: '600px', margin: '0 auto' }}>
-                            <h1 style={{ marginBottom: '1.5rem', textAlign: 'center' }}>Add Product</h1>
-                            <TransactionForm onAddTransaction={addTransaction} />
-                        </div>
-                    )}
-                </div>
+                        {activeTab === 'add' && (
+                            <div className="animate-fade-in" style={{ maxWidth: '600px', margin: '0 auto' }}>
+                                <h1 style={{ marginBottom: '1.5rem', textAlign: 'center' }}>Add Product</h1>
+                                <TransactionForm onAddTransaction={addTransaction} />
+                            </div>
+                        )}
+                    </div>
+                )}
             </main>
         </div>
     );
