@@ -1,370 +1,321 @@
-import React, { useState, useMemo, useRef, useEffect } from 'react';
+import React, { useState, useMemo, useRef } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
-import { Search, ShoppingCart, Trash2, CheckCircle, Package, Plus, Loader2, Edit, X, Upload } from 'lucide-react';
+import { Search, ShoppingCart, Trash2, CheckCircle, Package, Plus, Loader2, Edit, X, Upload, Ruler } from 'lucide-react';
 import { useToast } from '../ui/Toast';
 import { supabase } from '../../lib/supabaseClient';
 
-// Helper to group inventory
-const useInventory = (transactions) => {
+const SIZES = ['XS', 'S', 'M', 'L', 'XL', '2XL', '3XL'];
+const COLORS = ['Black', 'White', 'Navy', 'Heather Grey', 'Red', 'Blue', 'Green', 'Yellow', 'Pink', 'Aqua', 'Peach'];
+
+// 1. Hook to track "Raw Material" Stock (The actual physical shirts)
+const useRawInventory = (transactions) => {
     return useMemo(() => {
-        const inventory = {};
+        const inventory = {}; // key: "shirt-{color}-{size}" or "acc-{name}"
 
         transactions.forEach(t => {
             if (!t.details) return;
-            const { quantity, size, color, subCategory, imageUrl, price } = t.details;
+            const { quantity, size, color, subCategory, category } = t.details;
 
-            // SAFETY CHECK: If critical data is missing (from bad previous saves), skip or use fallback
-            let key = null;
-            let name = 'Unknown Item';
-            let variant = 'Unknown';
-            let type = t.category || 'misc';
+            // Only care about Stock movements (Expense = In, Sale = Out)
+            // AND 'update_stock' which is a manual adjustment
+            const type = t.type;
+            if (!['expense', 'sale', 'update_stock'].includes(type) && t.category !== 'return') return;
 
-            try {
-                if (t.category === 'blanks') {
-                    if (!color || !size) return; // Skip malformed blanks
-                    key = `shirt-${color}-${size}`;
-                    name = `${color} Shirt`;
-                    variant = size;
-                } else {
-                    // Fallback for accessories or unknown types
-                    const safeSubCat = subCategory || t.details.itemName || 'Unknown Item';
-                    key = `acc-${safeSubCat.replace(/\s+/g, '-').toLowerCase()}`;
-                    name = safeSubCat;
-                    variant = 'General';
-                }
-            } catch (err) {
-                console.warn("Skipping malformed transaction:", t);
-                return;
+            let key;
+            if (t.category === 'blanks' || (category === 'blanks')) {
+                // Sypik Logic: A "Sale" of a product linked to "White" counts as a sale of "White Blank"
+                const validColor = color || (t.details.linkedColor); // linkedColor comes from Product Sale
+                if (!validColor || !size) return;
+                key = `shirt-${validColor}-${size}`;
+            } else {
+                const name = subCategory || t.details.itemName || t.description;
+                if (!name) return;
+                key = `acc-${name.replace(/\s+/g, '-').toLowerCase()}`;
             }
 
-            if (!inventory[key]) {
-                inventory[key] = {
-                    id: key,
-                    name,
-                    variant,
-                    type,
-                    stock: 0,
-                    imageUrl: imageUrl || null,
-                    price: price || 70, // Default or fetched from latest transaction
-                    description: t.description || ''
-                };
-            }
+            if (!inventory[key]) inventory[key] = 0;
 
-            // Update with latest metadata if available (simulating "Edit" persistence via latest record)
-            if (t.type === 'update_product') {
-                if (imageUrl) inventory[key].imageUrl = imageUrl;
-                if (price) inventory[key].price = price;
-                if (t.description) inventory[key].description = t.description;
-            }
-
-            if (t.type === 'expense' || t.type === 'update_stock') {
-                inventory[key].stock += (quantity || 0);
-            } else if (t.type === 'sale') {
-                inventory[key].stock -= (quantity || 0);
+            if (type === 'expense' || type === 'update_stock' || type === 'return') {
+                inventory[key] += (quantity || 0);
+            } else if (type === 'sale') {
+                inventory[key] -= (quantity || 0);
             }
         });
-
-        return Object.values(inventory).filter(item => item.stock > -100); // Show everything, even negative stock for tracking errors
+        return inventory;
     }, [transactions]);
 };
 
-// Start of Main Component
+// 2. Hook to list "Defined Products" (The Menu Items)
+const useProducts = (transactions) => {
+    return useMemo(() => {
+        const products = new Map(); // Name -> Product Details
+
+        transactions.forEach(t => {
+            if (t.type === 'define_product') {
+                const { name, price, imageUrl, linkedColor, category } = t.details;
+                if (!name) return;
+                products.set(name, {
+                    id: t.id, // Use latest ID
+                    name,
+                    price,
+                    imageUrl,
+                    linkedColor,
+                    category: category || 'shirts'
+                });
+            }
+        });
+
+        return Array.from(products.values());
+    }, [transactions]);
+};
+
+
 export default function POSInterface({ transactions, onAddTransaction }) {
     const { showToast } = useToast();
 
-    // POS State
+    // State
     const [cart, setCart] = useState([]);
     const [searchTerm, setSearchTerm] = useState('');
     const [checkoutLoading, setCheckoutLoading] = useState(false);
 
-    // Checkout Meta
+    // UI State
+    const [showProductModal, setShowProductModal] = useState(false);
+    const [activeProduct, setActiveProduct] = useState(null); // The product clicked, waiting for size override
+    const [editingProduct, setEditingProduct] = useState(null); // For the Edit Modal
+
+    // Derived Data
+    const rawInventory = useRawInventory(transactions);
+    const products = useProducts(transactions);
+
+    // Filtering
+    const filteredProducts = products.filter(p =>
+        p.name.toLowerCase().includes(searchTerm.toLowerCase())
+    );
+
+    // --- Checkout Meta ---
     const [customerName, setCustomerName] = useState('');
-    const [orderStatus, setOrderStatus] = useState('paid'); // paid, shipped, ready
+    const [orderStatus, setOrderStatus] = useState('paid');
     const [showSuggestions, setShowSuggestions] = useState(false);
 
-    // Product Modal State
-    const [showModal, setShowModal] = useState(false);
-    const [editingItem, setEditingItem] = useState(null); // If null, adding new
-
-    const inventoryItems = useInventory(transactions);
-
-    // Filter Items
-    const filteredItems = inventoryItems.filter(item =>
-        item.name.toLowerCase().includes(searchTerm.toLowerCase()) ||
-        item.variant.toLowerCase().includes(searchTerm.toLowerCase())
-    );
-
-    // Unique Customers for Autocomplete
+    // Unique Customers
     const uniqueCustomers = useMemo(() => {
         const names = new Set();
-        transactions.forEach(t => {
-            if (t.details?.customerName) names.add(t.details.customerName);
-        });
+        transactions.forEach(t => { if (t.details?.customerName) names.add(t.details.customerName) });
         return Array.from(names);
     }, [transactions]);
+    const filteredCustomers = uniqueCustomers.filter(c => c.toLowerCase().includes(customerName.toLowerCase()));
 
-    const filteredCustomers = uniqueCustomers.filter(c =>
-        c.toLowerCase().includes(customerName.toLowerCase())
-    );
 
-    // --- Cart Logic ---
-    const addToCart = (item) => {
+    // --- Logic ---
+
+    const getStockForProduct = (product, size) => {
+        if (!product.linkedColor) return 999; // Unlimited if no link
+        const key = `shirt-${product.linkedColor}-${size}`;
+        return rawInventory[key] || 0;
+    };
+
+    const addToCart = (product, size) => {
+        const cartId = `${product.name}-${size}`;
         setCart(prev => {
-            const existing = prev.find(i => i.id === item.id);
+            const existing = prev.find(i => i.cartId === cartId);
             if (existing) {
-                return prev.map(i => i.id === item.id ? { ...i, quantity: i.quantity + 1 } : i);
+                return prev.map(i => i.cartId === cartId ? { ...i, quantity: i.quantity + 1 } : i);
             }
-            return [...prev, { ...item, quantity: 1 }];
+            return [...prev, {
+                ...product,
+                size,
+                cartId,
+                quantity: 1,
+                // Snapshot current link for history
+                linkedColor: product.linkedColor
+            }];
         });
+        setActiveProduct(null); // Close size selector
     };
 
-    const removeFromCart = (itemId) => {
-        setCart(prev => prev.filter(i => i.id !== itemId));
-    };
-
-    const updateQuantity = (itemId, delta) => {
-        setCart(prev => prev.map(item => {
-            if (item.id === itemId) {
-                return { ...item, quantity: Math.max(1, item.quantity + delta) };
-            }
-            return item;
-        }));
-    };
-
-    const cartTotal = cart.reduce((sum, item) => sum + (item.price * item.quantity), 0);
-
-    // --- Checkout Logic ---
     const handleCheckout = async () => {
-        if (cart.length === 0) return;
-        if (!customerName.trim()) {
-            showToast('Please enter customer name', 'error');
+        if (cart.length === 0 || !customerName.trim()) {
+            showToast(!customerName.trim() ? 'Enter customer name' : 'Cart is empty', 'error');
             return;
         }
 
         setCheckoutLoading(true);
-
         try {
             for (const item of cart) {
-                // Determine correctly formatted details to prevent inventory key crash
-                const itemDetails = {
-                    customerName,
-                    quantity: item.quantity,
-                    itemId: item.id,
-                    itemName: item.name,
-                    itemVariant: item.variant,
-                    imageUrl: item.imageUrl,
-                    status: orderStatus,
-                    price: item.price,
-                    // Vital: Reconstruction of key-generating fields
-                    ...(item.type === 'blanks'
-                        ? {
-                            size: item.variant,
-                            color: item.name.replace(' Shirt', '')
-                        }
-                        : {
-                            subCategory: item.name
-                        }
-                    )
-                };
+                // Determine Raw Material to deduct
+                // If it's a shirt with a linked color, we deduct that blank
+                const isShirt = !!item.linkedColor;
 
                 const transaction = {
                     id: crypto.randomUUID(),
-                    // IMPORTANT: Maintain original category (blanks/accessories) so useInventory keys generation works
-                    // The 'type' field is 'sale' to indicate direction, but 'category' helps grouping.
-                    type: 'sale',
+                    type: 'sale', // Adds to Sales, Deducts from Inventory
                     amount: item.price * item.quantity,
-                    description: `Sold ${item.quantity}x ${item.name} (${item.variant})`,
-                    category: item.type, // 'blanks' or 'accessories' (or whatever usage in useInventory)
+                    category: isShirt ? 'blanks' : 'accessories', // Important for useRawInventory hook to see it
                     date: new Date().toISOString(),
-                    details: itemDetails
+                    description: `Sold ${item.name} (${item.size})`,
+                    details: {
+                        customerName,
+                        status: orderStatus,
+                        quantity: item.quantity,
+                        itemName: item.name,
+                        price: item.price,
+                        imageUrl: item.imageUrl,
+                        // Context for Inventory deduction
+                        ...(isShirt && {
+                            size: item.size,
+                            color: item.linkedColor, // Deducts 'Black Shirt'
+                            linkedColor: item.linkedColor
+                        }),
+                        ...(!isShirt && {
+                            subCategory: item.name
+                        })
+                    }
                 };
                 await onAddTransaction(transaction);
             }
-
-            showToast('Order saved successfully!', 'success');
+            showToast('Order Processed!', 'success');
             setCart([]);
             setCustomerName('');
             setOrderStatus('paid');
-        } catch (error) {
-            console.error(error);
-            showToast('Checkout failed', 'error');
+        } catch (err) {
+            console.error(err);
+            showToast('Checkout Failed', 'error');
         } finally {
             setCheckoutLoading(false);
         }
     };
 
-    // --- Product Modal Components ---
-    const ProductModal = ({ onClose }) => {
-        const [formData, setFormData] = useState({
-            name: editingItem?.name || '',
-            variant: editingItem?.variant || '',
-            price: editingItem?.price || 70,
-            stockToAdd: 0,
-            imageUrl: editingItem?.imageUrl || null
+    // --- Sub-Components ---
+
+    const ProductDefinitionModal = () => {
+        const [form, setForm] = useState({
+            name: editingProduct?.name || '',
+            price: editingProduct?.price || 250,
+            linkedColor: editingProduct?.linkedColor || 'Black',
+            imageUrl: editingProduct?.imageUrl || null
         });
         const [uploading, setUploading] = useState(false);
-        const fileInputRef = useRef(null);
+        const fileRef = useRef(null);
 
-        const handleImageUpload = async (e) => {
+        const handleUpload = async (e) => {
             const file = e.target.files[0];
             if (!file) return;
-
+            setUploading(true);
             try {
-                setUploading(true);
-                const fileExt = file.name.split('.').pop();
-                const fileName = `${Math.random().toString(36).substring(2)}_${Date.now()}.${fileExt}`;
-                const filePath = `product-images/${fileName}`;
-
-                const { error } = await supabase.storage.from('product-images').upload(filePath, file);
-                if (error) throw error;
-
-                const { data } = supabase.storage.from('product-images').getPublicUrl(filePath);
-                setFormData(prev => ({ ...prev, imageUrl: data.publicUrl }));
-            } catch (err) {
-                showToast('Image upload failed', 'error');
-            } finally {
-                setUploading(false);
-            }
+                const ext = file.name.split('.').pop();
+                const path = `product-images/${Date.now()}.${ext}`;
+                await supabase.storage.from('product-images').upload(path, file);
+                const { data } = supabase.storage.from('product-images').getPublicUrl(path);
+                setForm(p => ({ ...p, imageUrl: data.publicUrl }));
+            } catch (err) { showToast('Upload Error', 'error'); }
+            finally { setUploading(false); }
         };
 
-        const handleSave = async () => {
-            if (!formData.name) return;
-
+        const saveProduct = async () => {
+            if (!form.name) return;
             setCheckoutLoading(true);
             try {
-                // 1. If stock added -> 'update_stock' (or 'expense' if new)
-                if (formData.stockToAdd !== 0) {
-                    const stockTx = {
-                        id: crypto.randomUUID(),
-                        type: editingItem ? 'update_stock' : 'expense',
-                        amount: 0, // Assume 0 cost for stock adjustment/init unless specified (simplified)
-                        description: `Stock Adjustment: ${formData.stockToAdd}x ${formData.name}`,
-                        category: 'blanks', // Defaulting to blanks for now
-                        date: new Date().toISOString(),
-                        details: {
-                            quantity: parseInt(formData.stockToAdd),
-                            subCategory: formData.name, // Using subCategory as generic name
-                            size: formData.variant,
-                            color: formData.name.split(' ')[0], // Hacky inference, but works for "Black Shirt"
-                            imageUrl: formData.imageUrl,
-                            price: parseFloat(formData.price)
-                        }
-                    };
-                    await onAddTransaction(stockTx);
-                }
-
-                // 2. If details changed (Price/Image) -> 'update_product' (meta transaction)
-                if (editingItem && (formData.price !== editingItem.price || formData.imageUrl !== editingItem.imageUrl)) {
-                    const updateTx = {
-                        id: crypto.randomUUID(),
-                        type: 'update_product',
-                        amount: 0,
-                        description: `Updated Product: ${formData.name}`,
-                        category: 'system',
-                        date: new Date().toISOString(),
-                        details: {
-                            subCategory: formData.name,
-                            size: formData.variant,
-                            color: formData.name.split(' ')[0],
-                            imageUrl: formData.imageUrl,
-                            price: parseFloat(formData.price),
-                            quantity: 0
-                        }
-                    };
-                    await onAddTransaction(updateTx);
-                }
-
-                showToast('Product saved!', 'success');
-                onClose();
-            } catch (err) {
-                showToast('Failed to save product', 'error');
-            } finally {
-                setCheckoutLoading(false);
-            }
+                await onAddTransaction({
+                    id: crypto.randomUUID(),
+                    type: 'define_product',
+                    category: 'system',
+                    amount: 0,
+                    description: `Defined Product: ${form.name}`,
+                    date: new Date().toISOString(),
+                    details: { ...form, category: 'shirts' }
+                });
+                showToast('Product Saved', 'success');
+                setShowProductModal(false);
+            } catch (err) { showToast('Save Failed', 'error'); }
+            finally { setCheckoutLoading(false); }
         };
 
         return (
             <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/80 backdrop-blur-sm p-4">
+                <div className="glass-panel w-full max-w-md p-6 relative">
+                    <button onClick={() => setShowProductModal(false)} className="absolute top-4 right-4 text-slate-400 hover:text-white"><X size={24} /></button>
+                    <h3 className="text-xl font-bold mb-6 text-white">{editingProduct ? 'Edit Product' : 'New Product'}</h3>
+
+                    <div className="space-y-4">
+                        <div onClick={() => fileRef.current?.click()} className="h-32 rounded-xl border-2 border-dashed border-white/20 flex items-center justify-center cursor-pointer hover:bg-white/5 relative overflow-hidden">
+                            {form.imageUrl ? <img src={form.imageUrl} className="w-full h-full object-cover" /> : (
+                                <div className="text-center text-slate-500">
+                                    {uploading ? <Loader2 className="animate-spin" /> : <Upload />}
+                                    <span className="text-xs block">Upload Image</span>
+                                </div>
+                            )}
+                        </div>
+                        <input type="file" ref={fileRef} className="hidden" onChange={handleUpload} />
+
+                        <div className="grid grid-cols-2 gap-4">
+                            <div>
+                                <label className="text-xs text-slate-400">Name</label>
+                                <input className="glass-input mt-1" value={form.name} onChange={e => setForm({ ...form, name: e.target.value })} placeholder="Sypik Classic" />
+                            </div>
+                            <div>
+                                <label className="text-xs text-slate-400">Price</label>
+                                <input type="number" className="glass-input mt-1" value={form.price} onChange={e => setForm({ ...form, price: e.target.value })} />
+                            </div>
+                        </div>
+
+                        <div>
+                            <label className="text-xs text-slate-400">Raw Material (Inventory Link)</label>
+                            <select className="glass-input mt-1" value={form.linkedColor} onChange={e => setForm({ ...form, linkedColor: e.target.value })}>
+                                {COLORS.map(c => <option key={c} value={c} className="bg-slate-900">{c} Shirt</option>)}
+                            </select>
+                            <p className="text-[10px] text-slate-500 mt-1">Deducts from "{form.linkedColor} Shirt" inventory when sold.</p>
+                        </div>
+
+                        <button onClick={saveProduct} className="btn-primary w-full py-3 mt-4">Save Definition</button>
+                    </div>
+                </div>
+            </div>
+        );
+    };
+
+    const SizeSelectorModal = () => {
+        if (!activeProduct) return null;
+        return (
+            <div className="fixed inset-0 z-40 flex items-center justify-center bg-black/60 backdrop-blur-[2px] p-4" onClick={() => setActiveProduct(null)}>
                 <motion.div
                     initial={{ scale: 0.9, opacity: 0 }}
                     animate={{ scale: 1, opacity: 1 }}
-                    className="glass-panel w-full max-w-lg p-6 rounded-2xl relative"
+                    className="glass-panel p-6 max-w-sm w-full relative"
+                    onClick={e => e.stopPropagation()}
                 >
-                    <button onClick={onClose} className="absolute top-4 right-4 text-slate-400 hover:text-white">
-                        <X size={24} />
-                    </button>
-
-                    <h2 className="text-xl font-bold text-white mb-6">
-                        {editingItem ? 'Edit Product' : 'Add New Product'}
-                    </h2>
-
-                    <div className="space-y-4">
-                        {/* Image Upload */}
-                        <div className="flex justify-center">
-                            <div
-                                onClick={() => fileInputRef.current?.click()}
-                                className="w-32 h-32 rounded-xl border-2 border-dashed border-white/20 flex flex-col items-center justify-center cursor-pointer hover:border-primary hover:bg-white/5 transition-all relative overflow-hidden"
-                            >
-                                {formData.imageUrl ? (
-                                    <img src={formData.imageUrl} className="w-full h-full object-cover" />
-                                ) : (
-                                    <div className="text-center text-slate-500">
-                                        {uploading ? <Loader2 className="animate-spin" /> : <Upload size={24} />}
-                                        <span className="text-xs block mt-1">Upload</span>
-                                    </div>
-                                )}
-                            </div>
-                            <input ref={fileInputRef} type="file" className="hidden" onChange={handleImageUpload} accept="image/*" />
+                    <div className="flex gap-4 mb-4">
+                        <div className="w-16 h-16 rounded-lg bg-white/5 overflow-hidden">
+                            {activeProduct.imageUrl && <img src={activeProduct.imageUrl} className="w-full h-full object-cover" />}
                         </div>
-
-                        <div className="grid grid-cols-2 gap-4">
-                            <div>
-                                <label className="text-xs text-slate-400">Product Name</label>
-                                <input
-                                    className="glass-input mt-1"
-                                    value={formData.name}
-                                    onChange={e => setFormData({ ...formData, name: e.target.value })}
-                                    placeholder="e.g. Black Shirt"
-                                />
-                            </div>
-                            <div>
-                                <label className="text-xs text-slate-400">Variant / Size</label>
-                                <input
-                                    className="glass-input mt-1"
-                                    value={formData.variant}
-                                    onChange={e => setFormData({ ...formData, variant: e.target.value })}
-                                    placeholder="e.g. M"
-                                />
-                            </div>
+                        <div>
+                            <h3 className="font-bold text-lg text-white">{activeProduct.name}</h3>
+                            <p className="text-primary">₱{activeProduct.price}</p>
                         </div>
+                    </div>
 
-                        <div className="grid grid-cols-2 gap-4">
-                            <div>
-                                <label className="text-xs text-slate-400">Price (₱)</label>
-                                <input
-                                    type="number"
-                                    className="glass-input mt-1"
-                                    value={formData.price}
-                                    onChange={e => setFormData({ ...formData, price: e.target.value })}
-                                />
-                            </div>
-                            <div>
-                                <label className="text-xs text-slate-400">
-                                    {editingItem ? 'Add Stock (+/-)' : 'Initial Stock'}
-                                </label>
-                                <input
-                                    type="number"
-                                    className="glass-input mt-1"
-                                    value={formData.stockToAdd}
-                                    onChange={e => setFormData({ ...formData, stockToAdd: e.target.value })}
-                                />
-                            </div>
-                        </div>
+                    <h4 className="text-xs font-bold text-slate-400 uppercase mb-3 flex items-center gap-2">
+                        <Ruler size={14} /> Select Size
+                    </h4>
 
-                        <button onClick={handleSave} className="btn-primary w-full py-3 mt-4">
-                            <CheckCircle size={20} />
-                            Save Product
-                        </button>
+                    <div className="grid grid-cols-4 gap-2">
+                        {SIZES.map(size => {
+                            const stock = getStockForProduct(activeProduct, size);
+                            const hasStock = stock > 0;
+                            return (
+                                <button
+                                    key={size}
+                                    disabled={!hasStock}
+                                    onClick={() => addToCart(activeProduct, size)}
+                                    className={`p-2 rounded-lg border text-center transition-all ${hasStock
+                                            ? 'border-white/20 hover:border-primary hover:bg-primary/20 text-white'
+                                            : 'border-white/5 text-slate-600 bg-black/20 cursor-not-allowed'
+                                        }`}
+                                >
+                                    <div className="font-bold">{size}</div>
+                                    <div className="text-[10px] mt-1">{stock} left</div>
+                                </button>
+                            );
+                        })}
                     </div>
                 </motion.div>
             </div>
@@ -373,9 +324,10 @@ export default function POSInterface({ transactions, onAddTransaction }) {
 
     return (
         <div className="flex flex-col lg:flex-row gap-6 h-[calc(100vh-120px)] relative">
-            {showModal && <ProductModal onClose={() => setShowModal(false)} />}
+            {showProductModal && <ProductDefinitionModal />}
+            {activeProduct && <SizeSelectorModal />}
 
-            {/* Product Grid Area */}
+            {/* Product Grid */}
             <div className="flex-1 flex flex-col min-h-0">
                 <div className="mb-6 flex gap-4">
                     <div className="relative flex-1">
@@ -389,51 +341,55 @@ export default function POSInterface({ transactions, onAddTransaction }) {
                         />
                     </div>
                     <button
-                        onClick={() => { setEditingItem(null); setShowModal(true); }}
+                        onClick={() => { setEditingProduct(null); setShowProductModal(true); }}
                         className="btn-secondary whitespace-nowrap"
                     >
-                        <Plus size={20} /> Add Product
+                        <Plus size={20} /> Define Product
                     </button>
                 </div>
 
                 <div className="flex-1 overflow-y-auto pr-2 grid grid-cols-2 md:grid-cols-3 xl:grid-cols-4 gap-4 content-start">
+                    <div onClick={() => { setEditingProduct(null); setShowProductModal(true); }} className="glass-card flex flex-col items-center justify-center gap-4 border-dashed border-white/20 hover:border-primary/50 cursor-pointer min-h-[250px] group opacity-60 hover:opacity-100">
+                        <div className="w-12 h-12 rounded-full bg-white/5 flex items-center justify-center group-hover:scale-110 transition-transform">
+                            <Plus size={24} className="text-slate-400 group-hover:text-primary" />
+                        </div>
+                        <span className="font-medium text-slate-400">New Product</span>
+                    </div>
+
                     <AnimatePresence>
-                        {filteredItems.map(item => (
+                        {filteredProducts.map(product => (
                             <motion.div
-                                key={item.id}
+                                key={product.id}
                                 layout
                                 initial={{ opacity: 0, scale: 0.9 }}
                                 animate={{ opacity: 1, scale: 1 }}
                                 className="glass-card p-0 overflow-hidden cursor-pointer group flex flex-col h-full relative"
-                                onClick={() => addToCart(item)}
+                                onClick={() => setActiveProduct(product)}
                             >
                                 <button
-                                    onClick={(e) => { e.stopPropagation(); setEditingItem(item); setShowModal(true); }}
+                                    onClick={(e) => { e.stopPropagation(); setEditingProduct(product); setShowProductModal(true); }}
                                     className="absolute top-2 right-2 z-10 p-2 bg-black/60 hover:bg-primary rounded-lg text-white opacity-0 group-hover:opacity-100 transition-all"
                                 >
                                     <Edit size={14} />
                                 </button>
 
                                 <div className="aspect-square bg-black/20 relative">
-                                    {item.imageUrl ? (
-                                        <img src={item.imageUrl} alt={item.name} className="w-full h-full object-cover" />
+                                    {product.imageUrl ? (
+                                        <img src={product.imageUrl} alt={product.name} className="w-full h-full object-cover" />
                                     ) : (
                                         <div className="w-full h-full flex items-center justify-center text-slate-600">
                                             <Package size={32} />
                                         </div>
                                     )}
-                                    <div className="absolute bottom-2 right-2 bg-black/60 px-2 py-1 rounded text-xs text-white font-mono">
-                                        Qty: {item.stock}
+                                    <div className="absolute bottom-2 left-2 bg-black/60 px-2 py-1 rounded text-[10px] text-white backdrop-blur-md">
+                                        Uses: {product.linkedColor}
                                     </div>
                                 </div>
                                 <div className="p-4 flex flex-col flex-1">
-                                    <h3 className="font-semibold text-white leading-tight mb-1">{item.name}</h3>
-                                    <p className="text-sm text-slate-400 mb-2">{item.variant}</p>
+                                    <h3 className="font-semibold text-white leading-tight mb-1">{product.name}</h3>
                                     <div className="mt-auto flex justify-between items-center">
-                                        <span className="text-primary font-bold">₱{item.price}</span>
-                                        <div className="w-8 h-8 rounded-full bg-white/5 flex items-center justify-center group-hover:bg-primary group-hover:text-white transition-colors">
-                                            <Plus size={16} />
-                                        </div>
+                                        <span className="text-primary font-bold">₱{product.price}</span>
+                                        <ArrowRightIcon className="text-white/20 group-hover:text-white transition-colors" />
                                     </div>
                                 </div>
                             </motion.div>
@@ -442,99 +398,82 @@ export default function POSInterface({ transactions, onAddTransaction }) {
                 </div>
             </div>
 
-            {/* Cart Sidebar */}
+            {/* Cart Section (Reused/Simplified) */}
             <div className="w-full lg:w-[400px] glass-panel rounded-2xl flex flex-col h-[500px] lg:h-full">
                 <div className="p-6 border-b border-white/10">
                     <h2 className="text-xl font-bold text-white flex items-center gap-2">
-                        <ShoppingCart className="text-primary" />
-                        Current Order
+                        <ShoppingCart className="text-primary" /> Current Order
                     </h2>
                 </div>
 
                 <div className="flex-1 overflow-y-auto p-4 space-y-3">
                     {cart.map(item => (
-                        <div key={item.id} className="bg-white/5 rounded-xl p-3 flex items-center gap-3">
+                        <div key={item.cartId} className="bg-white/5 rounded-xl p-3 flex items-center gap-3">
                             <div className="w-12 h-12 rounded-lg bg-black/20 overflow-hidden shrink-0">
                                 {item.imageUrl && <img src={item.imageUrl} className="w-full h-full object-cover" />}
                             </div>
                             <div className="flex-1 min-w-0">
                                 <h4 className="font-medium text-slate-200 truncate">{item.name}</h4>
-                                <p className="text-xs text-primary">₱{item.price} x {item.quantity}</p>
+                                <div className="flex items-center gap-2 text-xs text-slate-400">
+                                    <span className="bg-white/10 px-1.5 py-0.5 rounded text-white">{item.size}</span>
+                                    <span>₱{item.price}</span>
+                                </div>
                             </div>
                             <div className="flex items-center gap-2">
-                                <button onClick={() => updateQuantity(item.id, -1)} className="p-1 hover:bg-white/10 rounded text-slate-400">-</button>
+                                <button onClick={() => updateCartQuantity(item.cartId, -1)} className="p-1 hover:bg-white/10 rounded text-slate-400">-</button>
                                 <span className="text-sm font-bold w-4 text-center">{item.quantity}</span>
-                                <button onClick={() => updateQuantity(item.id, 1)} className="p-1 hover:bg-white/10 rounded text-slate-400">+</button>
+                                <button onClick={() => updateCartQuantity(item.cartId, 1)} className="p-1 hover:bg-white/10 rounded text-slate-400">+</button>
                             </div>
-                            <button onClick={() => removeFromCart(item.id)} className="text-red-400 hover:text-red-300 ml-2">
-                                <Trash2 size={16} />
-                            </button>
+                            <button onClick={() => setCart(c => c.filter(x => x.cartId !== item.cartId))} className="text-red-400 ml-2"><Trash2 size={16} /></button>
                         </div>
                     ))}
-                    {cart.length === 0 && (
-                        <div className="text-center text-slate-500 mt-10">Empty Cart</div>
-                    )}
+                    {cart.length === 0 && <div className="text-center text-slate-500 mt-10">Cart is empty</div>}
                 </div>
 
                 <div className="p-6 border-t border-white/10 bg-black/20 space-y-4">
-                    <div className="flex justify-between text-lg font-bold text-white">
-                        <span>Total</span>
-                        <span>₱{cartTotal.toLocaleString()}</span>
-                    </div>
+                    <div className="flex justify-between text-lg font-bold text-white"><span>Total</span><span>₱{cart.reduce((a, b) => a + (b.price * b.quantity), 0).toLocaleString()}</span></div>
 
                     <div className="relative">
                         <label className="text-xs text-slate-500 mb-1 block">Customer</label>
                         <input
-                            type="text"
-                            value={customerName}
-                            onChange={(e) => { setCustomerName(e.target.value); setShowSuggestions(true); }}
-                            onBlur={() => setTimeout(() => setShowSuggestions(false), 200)}
                             className="glass-input py-2 text-sm"
                             placeholder="Customer Name"
+                            value={customerName}
+                            onChange={e => { setCustomerName(e.target.value); setShowSuggestions(true); }}
+                            onBlur={() => setTimeout(() => setShowSuggestions(false), 200)}
                         />
                         {showSuggestions && filteredCustomers.length > 0 && (
                             <div className="absolute bottom-full left-0 w-full mb-1 bg-slate-800 border border-white/10 rounded-lg shadow-xl max-h-40 overflow-y-auto z-20">
                                 {filteredCustomers.map(c => (
-                                    <button
-                                        key={c}
-                                        onClick={() => { setCustomerName(c); setShowSuggestions(false); }}
-                                        className="w-full text-left px-4 py-2 hover:bg-white/5 text-sm"
-                                    >
-                                        {c}
-                                    </button>
+                                    <button key={c} onClick={() => { setCustomerName(c); setShowSuggestions(false); }} className="w-full text-left px-4 py-2 hover:bg-white/5 text-sm">{c}</button>
                                 ))}
                             </div>
                         )}
                     </div>
 
-                    <div>
-                        <label className="text-xs text-slate-500 mb-1 block">Order Status</label>
-                        <div className="grid grid-cols-3 gap-2">
-                            {['paid', 'shipped', 'ready'].map(status => (
-                                <button
-                                    key={status}
-                                    onClick={() => setOrderStatus(status)}
-                                    className={`py-2 rounded-lg text-xs font-semibold capitalize transition-all ${orderStatus === status
-                                        ? 'bg-primary text-white shadow-lg'
-                                        : 'bg-white/5 text-slate-400 hover:bg-white/10'
-                                        }`}
-                                >
-                                    {status}
-                                </button>
-                            ))}
-                        </div>
+                    <div className="grid grid-cols-3 gap-2">
+                        {['paid', 'shipped', 'ready'].map(s => (
+                            <button key={s} onClick={() => setOrderStatus(s)} className={`py-2 rounded-lg text-xs font-semibold capitalize ${orderStatus === s ? 'bg-primary text-white' : 'bg-white/5 text-slate-400'}`}>{s}</button>
+                        ))}
                     </div>
 
-                    <button
-                        onClick={handleCheckout}
-                        disabled={cart.length === 0 || checkoutLoading}
-                        className="btn-primary w-full py-4 text-lg"
-                    >
-                        {checkoutLoading ? <Loader2 className="animate-spin" /> : <CheckCircle size={20} />}
-                        Checkout
+                    <button onClick={handleCheckout} disabled={checkoutLoading || cart.length === 0} className="btn-primary w-full py-4 text-lg">
+                        {checkoutLoading ? <Loader2 className="animate-spin" /> : <CheckCircle size={20} />} Checkout
                     </button>
                 </div>
             </div>
         </div>
     );
+
+    function updateCartQuantity(id, delta) {
+        setCart(prev => prev.map(item => {
+            if (item.cartId === id) return { ...item, quantity: Math.max(1, item.quantity + delta) };
+            return item;
+        }));
+    }
 }
+
+// Simple Helper Icon
+const ArrowRightIcon = ({ className }) => (
+    <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" className={className}><path d="M5 12h14" /><path d="m12 5 7 7-7 7" /></svg>
+);

@@ -3,7 +3,6 @@ import useSupabaseTransactions from './hooks/useSupabaseTransactions';
 import DashboardStats from './components/DashboardStats';
 import TransactionList from './components/TransactionList';
 import InventoryList from './components/InventoryList';
-import AddStockForm from './components/Inventory/AddStockForm';
 import POSInterface from './components/POS/POSInterface';
 import OrderManagement from './components/Orders/OrderManagement';
 import { LayoutDashboard, Store, ShoppingBag, Receipt, Package, LogOut } from 'lucide-react';
@@ -89,7 +88,6 @@ function App() {
                     <NavItem id="orders" label="Orders" icon={Package} />
                     <NavItem id="dashboard" label="Dashboard" icon={LayoutDashboard} />
                     <NavItem id="inventory" label="Inventory List" icon={ShoppingBag} />
-                    <NavItem id="add-stock" label="Add Stock" icon={Receipt} />
                 </nav>
 
                 <div className="p-4 border-t border-white/5">
@@ -157,13 +155,7 @@ function App() {
 
                             {activeTab === 'inventory' && (
                                 <div className="animate-fade-in">
-                                    <InventoryList transactions={transactions} />
-                                </div>
-                            )}
-
-                            {activeTab === 'add-stock' && (
-                                <div className="animate-fade-in py-8">
-                                    <AddStockForm onAddTransaction={addTransaction} />
+                                    <InventoryList transactions={transactions} onAddTransaction={addTransaction} />
                                 </div>
                             )}
                         </div>
