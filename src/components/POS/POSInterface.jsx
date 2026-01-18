@@ -125,22 +125,38 @@ export default function POSInterface({ transactions, onAddTransaction }) {
 
         try {
             for (const item of cart) {
+                // Determine correctly formatted details to prevent inventory key crash
+                const itemDetails = {
+                    customerName,
+                    quantity: item.quantity,
+                    itemId: item.id,
+                    itemName: item.name,
+                    itemVariant: item.variant,
+                    imageUrl: item.imageUrl,
+                    status: orderStatus,
+                    price: item.price,
+                    // Vital: Reconstruction of key-generating fields
+                    ...(item.type === 'blanks'
+                        ? {
+                            size: item.variant,
+                            color: item.name.replace(' Shirt', '')
+                        }
+                        : {
+                            subCategory: item.name
+                        }
+                    )
+                };
+
                 const transaction = {
                     id: crypto.randomUUID(),
+                    // IMPORTANT: Maintain original category (blanks/accessories) so useInventory keys generation works
+                    // The 'type' field is 'sale' to indicate direction, but 'category' helps grouping.
                     type: 'sale',
                     amount: item.price * item.quantity,
                     description: `Sold ${item.quantity}x ${item.name} (${item.variant})`,
-                    category: 'sale',
+                    category: item.type, // 'blanks' or 'accessories' (or whatever usage in useInventory)
                     date: new Date().toISOString(),
-                    details: {
-                        customerName,
-                        quantity: item.quantity,
-                        itemId: item.id,
-                        itemName: item.name,
-                        itemVariant: item.variant,
-                        imageUrl: item.imageUrl,
-                        status: orderStatus // paid, shipped, ready
-                    }
+                    details: itemDetails
                 };
                 await onAddTransaction(transaction);
             }
@@ -479,8 +495,8 @@ export default function POSInterface({ transactions, onAddTransaction }) {
                                     key={status}
                                     onClick={() => setOrderStatus(status)}
                                     className={`py-2 rounded-lg text-xs font-semibold capitalize transition-all ${orderStatus === status
-                                            ? 'bg-primary text-white shadow-lg'
-                                            : 'bg-white/5 text-slate-400 hover:bg-white/10'
+                                        ? 'bg-primary text-white shadow-lg'
+                                        : 'bg-white/5 text-slate-400 hover:bg-white/10'
                                         }`}
                                 >
                                     {status}
