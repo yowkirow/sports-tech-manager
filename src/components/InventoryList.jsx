@@ -5,7 +5,7 @@ import clsx from 'clsx';
 import { motion, AnimatePresence } from 'framer-motion';
 import AddStockForm from './Inventory/AddStockForm';
 
-const InventoryList = ({ transactions, onAddTransaction }) => {
+const InventoryList = ({ transactions, onAddTransaction, onDeleteTransaction }) => {
     const [searchTerm, setSearchTerm] = useState('');
     const [showAddModal, setShowAddModal] = useState(false);
 
@@ -19,8 +19,12 @@ const InventoryList = ({ transactions, onAddTransaction }) => {
         let key, name, variant;
         if (t.category === 'blanks') {
             const { size, color } = t.details;
-            key = `shirt-${size}-${color}`;
-            name = `${color} Shirt`;
+            // Normalize color casing to merge "White" and "white"
+            const safeColor = (color || 'Unknown').trim();
+            key = `shirt-${size}-${safeColor.toLowerCase()}`;
+
+            // Present nicely formatted color (Title Case) if needed, or just use the first one found
+            name = `${safeColor} Shirt`;
             variant = size;
         } else {
             // Accessories or others
@@ -142,31 +146,79 @@ const InventoryList = ({ transactions, onAddTransaction }) => {
             ) : (
                 <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 xl:grid-cols-4 gap-4">
                     {inventoryList.map((item) => (
-                        <div
-                            key={item.id}
-                            className={clsx(
-                                "flex items-center justify-between p-4 rounded-xl border transition-all",
-                                item.count > 0
-                                    ? "bg-white/5 border-white/5 hover:border-white/10"
-                                    : "bg-red-500/10 border-red-500/20"
-                            )}
-                        >
-                            <div className="min-w-0">
-                                <div className="font-semibold text-slate-200 truncate">{item.name}</div>
-                                <div className="text-sm text-slate-500">Var: {item.variant}</div>
+                        <div key={item.id} className="relative group">
+                            <div
+                                className={clsx(
+                                    "flex items-center justify-between p-4 rounded-xl border transition-all",
+                                    item.count > 0
+                                        ? "bg-white/5 border-white/5 hover:border-white/10"
+                                        : "bg-red-500/10 border-red-500/20"
+                                )}
+                            >
+                                <div className="min-w-0 pr-6">
+                                    <div className="font-semibold text-slate-200 truncate">{item.name}</div>
+                                    <div className="text-sm text-slate-500">Var: {item.variant}</div>
+                                </div>
+                                <div className={clsx(
+                                    "text-2xl font-bold",
+                                    item.count > 0 ? "text-white" : "text-red-400"
+                                )}>
+                                    {item.count}
+                                </div>
                             </div>
-                            <div className={clsx(
-                                "text-2xl font-bold",
-                                item.count > 0 ? "text-white" : "text-red-400"
-                            )}>
-                                {item.count}
-                            </div>
+                            <button
+                                onClick={() => handleDeleteItem(item, transactions)}
+                                className="absolute top-2 right-2 p-1.5 bg-black/50 hover:bg-red-500/80 rounded-lg text-slate-400 hover:text-white opacity-0 group-hover:opacity-100 transition-all backdrop-blur-sm"
+                                title="Delete all history for this item"
+                            >
+                                <X size={14} />
+                            </button>
                         </div>
                     ))}
                 </div>
             )}
         </div>
     );
+
+    function handleDeleteItem(item, allTransactions) {
+        if (!confirm(`Are you sure you want to delete "${item.name}" (${item.variant})?\n\nThis will permanently delete ALL ${item.count} history records for this item type.`)) {
+            return;
+        }
+
+        // Identify transactions to delete
+        const toDeleteIds = [];
+        allTransactions.forEach(t => {
+            if (!t.details) return;
+
+            // Reconstruct key to match item.id
+            let key;
+            if (t.category === 'blanks') {
+                const { size, color } = t.details;
+                const safeColor = (color || 'Unknown').trim();
+                key = `shirt-${size}-${safeColor.toLowerCase()}`;
+            } else {
+                const sub = t.details.subCategory || t.category;
+                key = `misc-${sub}`;
+            }
+
+            if (key === item.id) {
+                toDeleteIds.push(t.id);
+            }
+        });
+
+        if (toDeleteIds.length === 0) return;
+
+        // Execute deletions
+        // Ensure onAddTransaction handles '_delete' or properly pass a delete function.
+        // Since we only have onAddTransaction prop in this file's signature currently,
+        // we'll assume the parent will pass a specific delete handler or we signal it.
+        // Actually, best to pass `onDeleteTransaction` prop.
+        if (onDeleteTransaction) {
+            toDeleteIds.forEach(id => onDeleteTransaction(id));
+        } else {
+            console.error("Delete function not provided to InventoryList");
+        }
+    }
 };
 
 export default InventoryList;

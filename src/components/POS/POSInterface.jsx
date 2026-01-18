@@ -5,7 +5,7 @@ import { useToast } from '../ui/Toast';
 import { supabase } from '../../lib/supabaseClient';
 
 const SIZES = ['XS', 'S', 'M', 'L', 'XL', '2XL', '3XL'];
-const COLORS = ['Black', 'White', 'Navy', 'Heather Grey', 'Red', 'Blue', 'Green', 'Yellow', 'Pink', 'Aqua', 'Peach'];
+const COLORS = ['White', 'Black', 'Kiwi', 'Cream', 'Baby Blue'];
 
 // 1. Hook to track "Raw Material" Stock (The actual physical shirts)
 const useRawInventory = (transactions) => {
@@ -307,8 +307,8 @@ export default function POSInterface({ transactions, onAddTransaction }) {
                                     disabled={!hasStock}
                                     onClick={() => addToCart(activeProduct, size)}
                                     className={`p-2 rounded-lg border text-center transition-all ${hasStock
-                                            ? 'border-white/20 hover:border-primary hover:bg-primary/20 text-white'
-                                            : 'border-white/5 text-slate-600 bg-black/20 cursor-not-allowed'
+                                        ? 'border-white/20 hover:border-primary hover:bg-primary/20 text-white'
+                                        : 'border-white/5 text-slate-600 bg-black/20 cursor-not-allowed'
                                         }`}
                                 >
                                     <div className="font-bold">{size}</div>

@@ -1,13 +1,13 @@
 import React, { useState, useMemo } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
-import { Package, Clock, CheckCircle, Truck, User, Search, Edit2, Save, X } from 'lucide-react';
+import { Package, Clock, CheckCircle, Truck, User, Search, Edit2, Save, X, Trash2 } from 'lucide-react';
 import { useToast } from '../ui/Toast';
 
 import { supabase } from '../../lib/supabaseClient';
 
 const STATUSES = ['paid', 'ready', 'shipped'];
 
-export default function OrderManagement({ transactions, onAddTransaction }) {
+export default function OrderManagement({ transactions, onAddTransaction, onDeleteTransaction }) {
     const { showToast } = useToast();
     const [filterStatus, setFilterStatus] = useState('all');
     const [searchTerm, setSearchTerm] = useState('');
@@ -101,8 +101,8 @@ export default function OrderManagement({ transactions, onAddTransaction }) {
                             key={status}
                             onClick={() => setFilterStatus(status)}
                             className={`px-4 py-2 rounded-lg text-sm font-semibold capitalize transition-all ${filterStatus === status
-                                    ? 'bg-primary text-white shadow-lg'
-                                    : 'text-slate-400 hover:text-white hover:bg-white/5'
+                                ? 'bg-primary text-white shadow-lg'
+                                : 'text-slate-400 hover:text-white hover:bg-white/5'
                                 }`}
                         >
                             {status}
@@ -193,11 +193,22 @@ export default function OrderManagement({ transactions, onAddTransaction }) {
                                 ) : (
                                     <div className="flex items-center gap-2">
                                         <span className={`px-3 py-1 rounded-full text-xs font-bold capitalize border ${order.details?.status === 'shipped' ? 'bg-blue-500/10 border-blue-500/20 text-blue-400' :
-                                                order.details?.status === 'ready' ? 'bg-green-500/10 border-green-500/20 text-green-400' :
-                                                    'bg-orange-500/10 border-orange-500/20 text-orange-400'
+                                            order.details?.status === 'ready' ? 'bg-green-500/10 border-green-500/20 text-green-400' :
+                                                'bg-orange-500/10 border-orange-500/20 text-orange-400'
                                             }`}>
                                             {order.details?.status || 'paid'}
                                         </span>
+                                        <button
+                                            onClick={() => {
+                                                if (confirm('Are you sure you want to delete this order?')) {
+                                                    onDeleteTransaction(order.id);
+                                                }
+                                            }}
+                                            className="p-2 text-slate-500 hover:text-red-400 hover:bg-red-500/10 rounded-lg transition-colors opacity-0 group-hover:opacity-100"
+                                            title="Delete Order"
+                                        >
+                                            <Trash2 size={16} />
+                                        </button>
                                         <button
                                             onClick={() => startEditing(order)}
                                             className="p-2 text-slate-500 hover:text-white hover:bg-white/10 rounded-lg transition-colors opacity-0 group-hover:opacity-100"

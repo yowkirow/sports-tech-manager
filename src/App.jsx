@@ -143,6 +143,7 @@ function App() {
                                 <OrderManagement
                                     transactions={transactions}
                                     onAddTransaction={addTransaction}
+                                    onDeleteTransaction={deleteTransaction}
                                 />
                             )}
 
@@ -155,7 +156,11 @@ function App() {
 
                             {activeTab === 'inventory' && (
                                 <div className="animate-fade-in">
-                                    <InventoryList transactions={transactions} onAddTransaction={addTransaction} />
+                                    <InventoryList
+                                        transactions={transactions}
+                                        onAddTransaction={addTransaction}
+                                        onDeleteTransaction={deleteTransaction}
+                                    />
                                 </div>
                             )}
                         </div>

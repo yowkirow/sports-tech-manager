@@ -4,7 +4,7 @@ import { Plus, Loader2 } from 'lucide-react';
 import { motion, AnimatePresence } from 'framer-motion';
 
 const SIZES = ['XS', 'S', 'M', 'L', 'XL', '2XL', '3XL'];
-const COLORS = ['Black', 'White', 'Navy', 'Heather Grey', 'Red', 'Blue', 'Green', 'Yellow', 'Pink', 'Aqua', 'Peach'];
+const COLORS = ['White', 'Black', 'Kiwi', 'Cream', 'Baby Blue'];
 
 export default function AddStockForm({ onAddTransaction }) {
     const { showToast } = useToast();
@@ -73,7 +73,7 @@ export default function AddStockForm({ onAddTransaction }) {
         <motion.div
             initial={{ opacity: 0, y: 20 }}
             animate={{ opacity: 1, y: 0 }}
-            className="glass-panel p-6 rounded-2xl max-w-2xl mx-auto"
+            className="bg-slate-900 border border-white/10 p-6 rounded-2xl max-w-2xl mx-auto shadow-2xl"
         >
             <h2 className="text-2xl font-bold mb-6 text-white">Add New Stock</h2>
 
