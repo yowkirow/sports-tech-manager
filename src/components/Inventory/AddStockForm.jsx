@@ -24,6 +24,14 @@ export default function AddStockForm({ onAddTransaction, onClose }) {
     // Accessory Details
     const [subCategory, setSubCategory] = useState('');
 
+    // Auto-calculate cost for blanks
+    React.useEffect(() => {
+        if (category === 'blanks') {
+            const qty = parseInt(quantity) || 0;
+            setCost((qty * 70).toFixed(2));
+        }
+    }, [category, quantity]);
+
     const handleSubmit = async (e) => {
         e.preventDefault();
         setLoading(true);
@@ -59,7 +67,7 @@ export default function AddStockForm({ onAddTransaction, onClose }) {
             // If we want to keep adding, we reset. But closing is also fine. 
             // Let's reset for bulk entry ease.
             setQuantity('1');
-            setCost('');
+            if (category !== 'blanks') setCost(''); // Reset cost only if not fixed
             setDescription('');
             setSubCategory('');
             showToast('Stock Added', 'success');
@@ -98,6 +106,7 @@ export default function AddStockForm({ onAddTransaction, onClose }) {
                                 }`}
                         >
                             <span className="block font-semibold">Blank Shirt</span>
+                            <span className="text-xs text-primary/80 mt-1">Fixed Cost: ₱70</span>
                         </button>
                         <button
                             type="button"
@@ -179,15 +188,23 @@ export default function AddStockForm({ onAddTransaction, onClose }) {
                         </div>
                         <div className="space-y-2">
                             <label className="text-sm text-slate-400">Total Cost (₱)</label>
-                            <input
-                                type="number"
-                                value={cost}
-                                onChange={(e) => setCost(e.target.value)}
-                                placeholder="0.00"
-                                min="0"
-                                step="0.01"
-                                className="glass-input"
-                            />
+                            <div className="relative">
+                                <input
+                                    type="number"
+                                    value={cost}
+                                    onChange={(e) => setCost(e.target.value)}
+                                    placeholder="0.00"
+                                    min="0"
+                                    step="0.01"
+                                    readOnly={category === 'blanks'}
+                                    className={`glass-input ${category === 'blanks' ? 'opacity-70 cursor-not-allowed bg-black/20' : ''}`}
+                                />
+                                {category === 'blanks' && (
+                                    <span className="absolute right-3 top-1/2 -translate-y-1/2 text-[10px] text-slate-500 bg-black/40 px-1 rounded">
+                                        AUTO (70/unit)
+                                    </span>
+                                )}
+                            </div>
                         </div>
                     </div>
 
