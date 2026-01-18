@@ -94,7 +94,10 @@ const InventoryList = ({ transactions, onAddTransaction, onDeleteTransaction, on
                     </div>
 
                     <button
-                        onClick={onOpenAddStock}
+                        onClick={() => {
+                            console.log('Add Stock Clicked');
+                            onOpenAddStock();
+                        }}
                         className="btn-primary py-2 px-4 text-sm whitespace-nowrap flex items-center gap-2"
                     >
                         <Plus size={16} /> Add Stock

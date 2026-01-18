@@ -175,27 +175,21 @@ function App() {
 
             {/* Global Add Stock Modal */}
             {/* Global Add Stock Modal - Portaled to Body to escape all stacking contexts */}
-            <AnimatePresence>
-                {showAddStockModal && createPortal(
-                    <div className="fixed inset-0 z-[9999] flex items-center justify-center bg-black/80 backdrop-blur-sm p-4">
-                        <motion.div
-                            initial={{ scale: 0.9, opacity: 0 }}
-                            animate={{ scale: 1, opacity: 1 }}
-                            exit={{ scale: 0.9, opacity: 0 }}
-                            className="w-full max-w-2xl relative"
-                        >
-                            <AddStockForm
-                                onAddTransaction={(t) => {
-                                    addTransaction(t);
-                                    setShowAddStockModal(false);
-                                }}
-                                onClose={() => setShowAddStockModal(false)}
-                            />
-                        </motion.div>
-                    </div>,
-                    document.body
-                )}
-            </AnimatePresence>
+            {/* Global Add Stock Modal */}
+            {showAddStockModal && createPortal(
+                <div className="fixed inset-0 z-[9999] flex items-center justify-center bg-black/80 backdrop-blur-sm p-4">
+                    <div className="w-full max-w-2xl relative">
+                        <AddStockForm
+                            onAddTransaction={(t) => {
+                                addTransaction(t);
+                                setShowAddStockModal(false);
+                            }}
+                            onClose={() => setShowAddStockModal(false)}
+                        />
+                    </div>
+                </div>,
+                document.body
+            )}
         </div>
     );
 }
