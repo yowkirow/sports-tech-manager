@@ -1,11 +1,13 @@
 import React, { useState, useMemo } from 'react';
 import { Search, Trash2, Calendar, DollarSign, Filter, Plus } from 'lucide-react';
 import clsx from 'clsx';
-import * as XLSX from 'xlsx';
+import { createPortal } from 'react-dom';
+import AddExpenseForm from './Expenses/AddExpenseForm';
 
-const Expenses = ({ transactions, onDeleteTransaction, onOpenAddExpense }) => {
+const Expenses = ({ transactions, onDeleteTransaction, onAddTransaction }) => {
     const [searchTerm, setSearchTerm] = useState('');
     const [filterCategory, setFilterCategory] = useState('all');
+    const [showAddModal, setShowAddModal] = useState(false);
 
     // Filter only expense transactions
     const expenses = useMemo(() => {
@@ -71,7 +73,7 @@ const Expenses = ({ transactions, onDeleteTransaction, onOpenAddExpense }) => {
                             <option value="general" className="bg-slate-900">General</option>
                         </select>
                         <button
-                            onClick={onOpenAddExpense}
+                            onClick={() => setShowAddModal(true)}
                             className="btn-primary py-2 px-4 text-sm whitespace-nowrap flex items-center gap-2"
                         >
                             <Plus size={16} /> Add Expense
@@ -107,7 +109,8 @@ const Expenses = ({ transactions, onDeleteTransaction, onOpenAddExpense }) => {
                                         <td className="p-4">
                                             <span className={clsx(
                                                 "px-2 py-1 rounded-md text-xs capitalize",
-                                                t.category === 'blanks' ? "bg-indigo-500/20 text-indigo-300" : "bg-orange-500/20 text-orange-300"
+                                                t.category === 'blanks' ? "bg-indigo-500/20 text-indigo-300" :
+                                                    t.category === 'general' ? "bg-rose-500/20 text-rose-300" : "bg-orange-500/20 text-orange-300"
                                             )}>
                                                 {t.category}
                                             </span>
@@ -132,6 +135,17 @@ const Expenses = ({ transactions, onDeleteTransaction, onOpenAddExpense }) => {
                     </table>
                 </div>
             </div>
+
+            {/* Add Expense Modal */}
+            {showAddModal && createPortal(
+                <div className="fixed inset-0 z-[9999] flex items-center justify-center bg-black/80 backdrop-blur-sm p-4">
+                    <AddExpenseForm
+                        onAddTransaction={onAddTransaction}
+                        onClose={() => setShowAddModal(false)}
+                    />
+                </div>,
+                document.body
+            )}
         </div>
     );
 };
