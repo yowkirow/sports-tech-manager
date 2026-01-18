@@ -12,17 +12,37 @@ const useInventory = (transactions) => {
         transactions.forEach(t => {
             if (!t.details) return;
             const { quantity, size, color, subCategory, imageUrl, price } = t.details;
-            // Improved Key Generation
-            const key = t.category === 'blanks'
-                ? `shirt-${color}-${size}`
-                : `acc-${subCategory.replace(/\s+/g, '-').toLowerCase()}`;
+
+            // SAFETY CHECK: If critical data is missing (from bad previous saves), skip or use fallback
+            let key = null;
+            let name = 'Unknown Item';
+            let variant = 'Unknown';
+            let type = t.category || 'misc';
+
+            try {
+                if (t.category === 'blanks') {
+                    if (!color || !size) return; // Skip malformed blanks
+                    key = `shirt-${color}-${size}`;
+                    name = `${color} Shirt`;
+                    variant = size;
+                } else {
+                    // Fallback for accessories or unknown types
+                    const safeSubCat = subCategory || t.details.itemName || 'Unknown Item';
+                    key = `acc-${safeSubCat.replace(/\s+/g, '-').toLowerCase()}`;
+                    name = safeSubCat;
+                    variant = 'General';
+                }
+            } catch (err) {
+                console.warn("Skipping malformed transaction:", t);
+                return;
+            }
 
             if (!inventory[key]) {
                 inventory[key] = {
                     id: key,
-                    name: t.category === 'blanks' ? `${color} Shirt` : subCategory,
-                    variant: t.category === 'blanks' ? size : 'General',
-                    type: t.category,
+                    name,
+                    variant,
+                    type,
                     stock: 0,
                     imageUrl: imageUrl || null,
                     price: price || 70, // Default or fetched from latest transaction
