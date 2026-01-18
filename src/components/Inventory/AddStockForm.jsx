@@ -46,6 +46,8 @@ export default function AddStockForm({ onAddTransaction, onClose }) {
 
             if (category === 'blanks') {
                 details = { ...details, size, color };
+            } else if (category === 'general') {
+                details = { ...details, subCategory, isGeneral: true };
             } else {
                 details = { ...details, subCategory };
             }
@@ -55,7 +57,7 @@ export default function AddStockForm({ onAddTransaction, onClose }) {
                 id: crypto.randomUUID(),
                 type: 'expense',
                 amount: finalCost,
-                description: description || (category === 'blanks' ? `Bought ${quantity}x ${color} ${size}` : `Bought ${subCategory}`),
+                description: description || (category === 'blanks' ? `Bought ${quantity}x ${color} ${size}` : category === 'general' ? `Expense: ${subCategory}` : `Bought ${subCategory}`),
                 category,
                 date: new Date().toISOString(),
                 details
@@ -118,6 +120,16 @@ export default function AddStockForm({ onAddTransaction, onClose }) {
                         >
                             <span className="block font-semibold">Accessory / Other</span>
                         </button>
+                        <button
+                            type="button"
+                            onClick={() => setCategory('general')}
+                            className={`col-span-2 p-3 rounded-xl border transition-all ${category === 'general'
+                                ? 'bg-rose-500/20 border-rose-500 text-white'
+                                : 'bg-white/5 border-white/10 text-slate-400 hover:bg-white/10'
+                                }`}
+                        >
+                            <span className="block font-semibold">General Expense (Rent, Bills, Ads)</span>
+                        </button>
                     </div>
 
                     {/* Specific Fields */}
@@ -151,7 +163,7 @@ export default function AddStockForm({ onAddTransaction, onClose }) {
                                     </select>
                                 </div>
                             </motion.div>
-                        ) : (
+                        ) : category === 'accessories' ? (
                             <motion.div
                                 key="acc-fields"
                                 initial={{ opacity: 0, height: 0 }}
@@ -170,23 +182,44 @@ export default function AddStockForm({ onAddTransaction, onClose }) {
                                     />
                                 </div>
                             </motion.div>
+                        ) : (
+                            <motion.div
+                                key="gen-fields"
+                                initial={{ opacity: 0, height: 0 }}
+                                animate={{ opacity: 1, height: 'auto' }}
+                                exit={{ opacity: 0, height: 0 }}
+                            >
+                                <div className="space-y-2">
+                                    <label className="text-sm text-slate-400">Expense Type</label>
+                                    <input
+                                        type="text"
+                                        value={subCategory}
+                                        onChange={(e) => setSubCategory(e.target.value)}
+                                        placeholder="e.g. Shop Rent, Facebook Ads"
+                                        className="glass-input"
+                                        required
+                                    />
+                                </div>
+                            </motion.div>
                         )}
                     </AnimatePresence>
 
                     {/* Common Fields */}
                     <div className="grid grid-cols-2 gap-4">
-                        <div className="space-y-2">
-                            <label className="text-sm text-slate-400">Quantity</label>
-                            <input
-                                type="number"
-                                value={quantity}
-                                onChange={(e) => setQuantity(e.target.value)}
-                                min="1"
-                                className="glass-input"
-                                required
-                            />
-                        </div>
-                        <div className="space-y-2">
+                        {category !== 'general' && (
+                            <div className="space-y-2">
+                                <label className="text-sm text-slate-400">Quantity</label>
+                                <input
+                                    type="number"
+                                    value={quantity}
+                                    onChange={(e) => setQuantity(e.target.value)}
+                                    min="1"
+                                    className="glass-input"
+                                    required
+                                />
+                            </div>
+                        )}
+                        <div className={category === 'general' ? "col-span-2 space-y-2" : "space-y-2"}>
                             <label className="text-sm text-slate-400">Total Cost (₱)</label>
                             <div className="relative">
                                 <input
@@ -230,6 +263,5 @@ export default function AddStockForm({ onAddTransaction, onClose }) {
 
                 </form>
             </div>
-        </div>
-    );
+            );
 }

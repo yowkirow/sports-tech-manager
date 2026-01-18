@@ -1,9 +1,9 @@
 import React, { useState, useMemo } from 'react';
-import { Search, Trash2, Calendar, DollarSign, Filter } from 'lucide-react';
+import { Search, Trash2, Calendar, DollarSign, Filter, Plus } from 'lucide-react';
 import clsx from 'clsx';
 import * as XLSX from 'xlsx';
 
-const Expenses = ({ transactions, onDeleteTransaction }) => {
+const Expenses = ({ transactions, onDeleteTransaction, onOpenAddExpense }) => {
     const [searchTerm, setSearchTerm] = useState('');
     const [filterCategory, setFilterCategory] = useState('all');
 
@@ -68,7 +68,14 @@ const Expenses = ({ transactions, onDeleteTransaction }) => {
                             <option value="all" className="bg-slate-900">All Types</option>
                             <option value="blanks" className="bg-slate-900">Blanks</option>
                             <option value="accessories" className="bg-slate-900">Accessories</option>
+                            <option value="general" className="bg-slate-900">General</option>
                         </select>
+                        <button
+                            onClick={onOpenAddExpense}
+                            className="btn-primary py-2 px-4 text-sm whitespace-nowrap flex items-center gap-2"
+                        >
+                            <Plus size={16} /> Add Expense
+                        </button>
                     </div>
                 </div>
 

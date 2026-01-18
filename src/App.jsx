@@ -166,6 +166,7 @@ function App() {
                                     <Expenses
                                         transactions={transactions}
                                         onDeleteTransaction={deleteTransaction}
+                                        onOpenAddExpense={() => setShowAddStockModal(true)}
                                     />
                                 </div>
                             )}

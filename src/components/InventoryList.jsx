@@ -11,7 +11,7 @@ const InventoryList = ({ transactions, onAddTransaction, onDeleteTransaction, on
     const inventory = {};
 
     transactions.forEach(t => {
-        if (!t.details || (!t.details.size && !t.details.subCategory)) return;
+        if (!t.details || (!t.details.size && !t.details.subCategory) || t.category === 'general') return;
 
         // Key based on what it is
         let key, name, variant;
