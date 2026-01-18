@@ -1,12 +1,12 @@
 import React, { useState } from 'react';
 import { useToast } from '../ui/Toast';
-import { Plus, Loader2 } from 'lucide-react';
+import { Plus, Loader2, X } from 'lucide-react';
 import { motion, AnimatePresence } from 'framer-motion';
 
 const SIZES = ['XS', 'S', 'M', 'L', 'XL', '2XL', '3XL'];
 const COLORS = ['White', 'Black', 'Kiwi', 'Cream', 'Baby Blue'];
 
-export default function AddStockForm({ onAddTransaction }) {
+export default function AddStockForm({ onAddTransaction, onClose }) {
     const { showToast } = useToast();
 
     const [loading, setLoading] = useState(false);
@@ -19,7 +19,7 @@ export default function AddStockForm({ onAddTransaction }) {
 
     // Shirt Details
     const [size, setSize] = useState('M');
-    const [color, setColor] = useState('Black');
+    const [color, setColor] = useState('White');
 
     // Accessory Details
     const [subCategory, setSubCategory] = useState('');
@@ -55,11 +55,14 @@ export default function AddStockForm({ onAddTransaction }) {
 
             await onAddTransaction(newTransaction);
 
-            // Reset Form
+            // Reset Form or Close
+            // If we want to keep adding, we reset. But closing is also fine. 
+            // Let's reset for bulk entry ease.
             setQuantity('1');
             setCost('');
             setDescription('');
             setSubCategory('');
+            showToast('Stock Added', 'success');
 
         } catch (error) {
             console.error(error);
@@ -70,140 +73,146 @@ export default function AddStockForm({ onAddTransaction }) {
     };
 
     return (
-        <motion.div
-            initial={{ opacity: 0, y: 20 }}
-            animate={{ opacity: 1, y: 0 }}
-            className="bg-slate-900 border border-white/10 p-6 rounded-2xl max-w-2xl mx-auto shadow-2xl"
-        >
-            <h2 className="text-2xl font-bold mb-6 text-white">Add New Stock</h2>
-
-            <form onSubmit={handleSubmit} className="space-y-6">
-
-                {/* Category Selection */}
-                <div className="grid grid-cols-2 gap-4">
-                    <button
-                        type="button"
-                        onClick={() => setCategory('blanks')}
-                        className={`p-4 rounded-xl border transition-all ${category === 'blanks'
-                            ? 'bg-primary/20 border-primary text-white'
-                            : 'bg-white/5 border-white/10 text-slate-400 hover:bg-white/10'
-                            }`}
-                    >
-                        <span className="block font-semibold">Blank Shirt</span>
-                    </button>
-                    <button
-                        type="button"
-                        onClick={() => setCategory('accessories')}
-                        className={`p-4 rounded-xl border transition-all ${category === 'accessories'
-                            ? 'bg-primary/20 border-primary text-white'
-                            : 'bg-white/5 border-white/10 text-slate-400 hover:bg-white/10'
-                            }`}
-                    >
-                        <span className="block font-semibold">Accessory / Other</span>
-                    </button>
-                </div>
-
-                {/* Specific Fields */}
-                <AnimatePresence mode="wait">
-                    {category === 'blanks' ? (
-                        <motion.div
-                            key="blanks-fields"
-                            initial={{ opacity: 0, height: 0 }}
-                            animate={{ opacity: 1, height: 'auto' }}
-                            exit={{ opacity: 0, height: 0 }}
-                            className="grid grid-cols-2 gap-4"
-                        >
-                            <div className="space-y-2">
-                                <label className="text-sm text-slate-400">Size</label>
-                                <select
-                                    value={size}
-                                    onChange={(e) => setSize(e.target.value)}
-                                    className="glass-input appearance-none"
-                                >
-                                    {SIZES.map(s => <option key={s} value={s} className="bg-slate-900">{s}</option>)}
-                                </select>
-                            </div>
-                            <div className="space-y-2">
-                                <label className="text-sm text-slate-400">Color</label>
-                                <select
-                                    value={color}
-                                    onChange={(e) => setColor(e.target.value)}
-                                    className="glass-input appearance-none"
-                                >
-                                    {COLORS.map(c => <option key={c} value={c} className="bg-slate-900">{c}</option>)}
-                                </select>
-                            </div>
-                        </motion.div>
-                    ) : (
-                        <motion.div
-                            key="acc-fields"
-                            initial={{ opacity: 0, height: 0 }}
-                            animate={{ opacity: 1, height: 'auto' }}
-                            exit={{ opacity: 0, height: 0 }}
-                        >
-                            <div className="space-y-2">
-                                <label className="text-sm text-slate-400">Item Name</label>
-                                <input
-                                    type="text"
-                                    value={subCategory}
-                                    onChange={(e) => setSubCategory(e.target.value)}
-                                    placeholder="e.g. Stickers, Packaging"
-                                    className="glass-input"
-                                    required
-                                />
-                            </div>
-                        </motion.div>
-                    )}
-                </AnimatePresence>
-
-                {/* Common Fields */}
-                <div className="grid grid-cols-2 gap-4">
-                    <div className="space-y-2">
-                        <label className="text-sm text-slate-400">Quantity</label>
-                        <input
-                            type="number"
-                            value={quantity}
-                            onChange={(e) => setQuantity(e.target.value)}
-                            min="1"
-                            className="glass-input"
-                            required
-                        />
-                    </div>
-                    <div className="space-y-2">
-                        <label className="text-sm text-slate-400">Total Cost (₱)</label>
-                        <input
-                            type="number"
-                            value={cost}
-                            onChange={(e) => setCost(e.target.value)}
-                            placeholder="0.00"
-                            min="0"
-                            step="0.01"
-                            className="glass-input"
-                        />
-                    </div>
-                </div>
-
-                <div className="space-y-2">
-                    <label className="text-sm text-slate-400">Description / Note</label>
-                    <input
-                        type="text"
-                        value={description}
-                        onChange={(e) => setDescription(e.target.value)}
-                        placeholder="Optional note..."
-                        className="glass-input"
-                    />
-                </div>
-
+        <div className="bg-slate-900 border border-white/10 rounded-2xl max-w-2xl mx-auto shadow-2xl relative flex flex-col max-h-[85vh]">
+            <div className="p-6 border-b border-white/10 flex justify-between items-center shrink-0">
+                <h2 className="text-2xl font-bold text-white">Add New Stock</h2>
                 <button
-                    type="submit"
-                    disabled={loading}
-                    className="btn-primary w-full py-4 text-lg shadow-lg shadow-indigo-500/20"
+                    onClick={onClose}
+                    className="text-slate-400 hover:text-white transition-colors bg-white/5 p-2 rounded-lg hover:bg-white/10"
                 >
-                    {loading ? <Loader2 className="animate-spin" /> : <Plus size={20} />}
-                    {loading ? 'Saving...' : 'Add to Inventory'}
+                    <X size={24} />
                 </button>
+            </div>
 
-            </form>
-        </motion.div>
+            <div className="p-6 overflow-y-auto custom-scrollbar">
+                <form onSubmit={handleSubmit} className="space-y-6">
+
+                    {/* Category Selection */}
+                    <div className="grid grid-cols-2 gap-4">
+                        <button
+                            type="button"
+                            onClick={() => setCategory('blanks')}
+                            className={`p-4 rounded-xl border transition-all ${category === 'blanks'
+                                ? 'bg-primary/20 border-primary text-white'
+                                : 'bg-white/5 border-white/10 text-slate-400 hover:bg-white/10'
+                                }`}
+                        >
+                            <span className="block font-semibold">Blank Shirt</span>
+                        </button>
+                        <button
+                            type="button"
+                            onClick={() => setCategory('accessories')}
+                            className={`p-4 rounded-xl border transition-all ${category === 'accessories'
+                                ? 'bg-primary/20 border-primary text-white'
+                                : 'bg-white/5 border-white/10 text-slate-400 hover:bg-white/10'
+                                }`}
+                        >
+                            <span className="block font-semibold">Accessory / Other</span>
+                        </button>
+                    </div>
+
+                    {/* Specific Fields */}
+                    <AnimatePresence mode="wait">
+                        {category === 'blanks' ? (
+                            <motion.div
+                                key="blanks-fields"
+                                initial={{ opacity: 0, height: 0 }}
+                                animate={{ opacity: 1, height: 'auto' }}
+                                exit={{ opacity: 0, height: 0 }}
+                                className="grid grid-cols-2 gap-4"
+                            >
+                                <div className="space-y-2">
+                                    <label className="text-sm text-slate-400">Size</label>
+                                    <select
+                                        value={size}
+                                        onChange={(e) => setSize(e.target.value)}
+                                        className="glass-input appearance-none"
+                                    >
+                                        {SIZES.map(s => <option key={s} value={s} className="bg-slate-900">{s}</option>)}
+                                    </select>
+                                </div>
+                                <div className="space-y-2">
+                                    <label className="text-sm text-slate-400">Color</label>
+                                    <select
+                                        value={color}
+                                        onChange={(e) => setColor(e.target.value)}
+                                        className="glass-input appearance-none"
+                                    >
+                                        {COLORS.map(c => <option key={c} value={c} className="bg-slate-900">{c}</option>)}
+                                    </select>
+                                </div>
+                            </motion.div>
+                        ) : (
+                            <motion.div
+                                key="acc-fields"
+                                initial={{ opacity: 0, height: 0 }}
+                                animate={{ opacity: 1, height: 'auto' }}
+                                exit={{ opacity: 0, height: 0 }}
+                            >
+                                <div className="space-y-2">
+                                    <label className="text-sm text-slate-400">Item Name</label>
+                                    <input
+                                        type="text"
+                                        value={subCategory}
+                                        onChange={(e) => setSubCategory(e.target.value)}
+                                        placeholder="e.g. Stickers, Packaging"
+                                        className="glass-input"
+                                        required
+                                    />
+                                </div>
+                            </motion.div>
+                        )}
+                    </AnimatePresence>
+
+                    {/* Common Fields */}
+                    <div className="grid grid-cols-2 gap-4">
+                        <div className="space-y-2">
+                            <label className="text-sm text-slate-400">Quantity</label>
+                            <input
+                                type="number"
+                                value={quantity}
+                                onChange={(e) => setQuantity(e.target.value)}
+                                min="1"
+                                className="glass-input"
+                                required
+                            />
+                        </div>
+                        <div className="space-y-2">
+                            <label className="text-sm text-slate-400">Total Cost (₱)</label>
+                            <input
+                                type="number"
+                                value={cost}
+                                onChange={(e) => setCost(e.target.value)}
+                                placeholder="0.00"
+                                min="0"
+                                step="0.01"
+                                className="glass-input"
+                            />
+                        </div>
+                    </div>
+
+                    <div className="space-y-2">
+                        <label className="text-sm text-slate-400">Description / Note</label>
+                        <input
+                            type="text"
+                            value={description}
+                            onChange={(e) => setDescription(e.target.value)}
+                            placeholder="Optional note..."
+                            className="glass-input"
+                        />
+                    </div>
+
+                    <button
+                        type="submit"
+                        disabled={loading}
+                        className="btn-primary w-full py-4 text-lg shadow-lg shadow-indigo-500/20"
+                    >
+                        {loading ? <Loader2 className="animate-spin" /> : <Plus size={20} />}
+                        {loading ? 'Saving...' : 'Add to Inventory'}
+                    </button>
+
+                </form>
+            </div>
+        </div>
     );
 }

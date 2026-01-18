@@ -1,13 +1,16 @@
 import React, { useState } from 'react';
 import useSupabaseTransactions from './hooks/useSupabaseTransactions';
+import { createPortal } from 'react-dom';
 import DashboardStats from './components/DashboardStats';
 import TransactionList from './components/TransactionList';
 import InventoryList from './components/InventoryList';
+import AddStockForm from './components/Inventory/AddStockForm';
 import POSInterface from './components/POS/POSInterface';
 import OrderManagement from './components/Orders/OrderManagement';
-import { LayoutDashboard, Store, ShoppingBag, Receipt, Package, LogOut } from 'lucide-react';
+import { LayoutDashboard, Store, ShoppingBag, Receipt, Package, LogOut, X } from 'lucide-react';
 import clsx from 'clsx';
 import { useToast } from './components/ui/Toast';
+import { motion, AnimatePresence } from 'framer-motion';
 
 function App() {
     const {
@@ -19,6 +22,7 @@ function App() {
     } = useSupabaseTransactions();
 
     const [activeTab, setActiveTab] = useState('pos'); // Default to POS for speed
+    const [showAddStockModal, setShowAddStockModal] = useState(false);
     const { showToast } = useToast();
 
     const addTransaction = async (transaction) => {
@@ -160,6 +164,7 @@ function App() {
                                         transactions={transactions}
                                         onAddTransaction={addTransaction}
                                         onDeleteTransaction={deleteTransaction}
+                                        onOpenAddStock={() => setShowAddStockModal(true)}
                                     />
                                 </div>
                             )}
@@ -167,6 +172,30 @@ function App() {
                     )}
                 </div>
             </main>
+
+            {/* Global Add Stock Modal */}
+            {/* Global Add Stock Modal - Portaled to Body to escape all stacking contexts */}
+            <AnimatePresence>
+                {showAddStockModal && createPortal(
+                    <div className="fixed inset-0 z-[9999] flex items-center justify-center bg-black/80 backdrop-blur-sm p-4">
+                        <motion.div
+                            initial={{ scale: 0.9, opacity: 0 }}
+                            animate={{ scale: 1, opacity: 1 }}
+                            exit={{ scale: 0.9, opacity: 0 }}
+                            className="w-full max-w-2xl relative"
+                        >
+                            <AddStockForm
+                                onAddTransaction={(t) => {
+                                    addTransaction(t);
+                                    setShowAddStockModal(false);
+                                }}
+                                onClose={() => setShowAddStockModal(false)}
+                            />
+                        </motion.div>
+                    </div>,
+                    document.body
+                )}
+            </AnimatePresence>
         </div>
     );
 }

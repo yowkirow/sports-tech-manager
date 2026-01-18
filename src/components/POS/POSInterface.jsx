@@ -190,7 +190,7 @@ export default function POSInterface({ transactions, onAddTransaction }) {
     const ProductDefinitionModal = () => {
         const [form, setForm] = useState({
             name: editingProduct?.name || '',
-            price: editingProduct?.price || 250,
+            price: editingProduct?.price || 70,
             linkedColor: editingProduct?.linkedColor || 'Black',
             imageUrl: editingProduct?.imageUrl || null
         });

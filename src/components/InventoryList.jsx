@@ -3,11 +3,9 @@ import { Package, Download, Search, Plus, X } from 'lucide-react';
 import { useState } from 'react';
 import clsx from 'clsx';
 import { motion, AnimatePresence } from 'framer-motion';
-import AddStockForm from './Inventory/AddStockForm';
 
-const InventoryList = ({ transactions, onAddTransaction, onDeleteTransaction }) => {
+const InventoryList = ({ transactions, onAddTransaction, onDeleteTransaction, onOpenAddStock }) => {
     const [searchTerm, setSearchTerm] = useState('');
-    const [showAddModal, setShowAddModal] = useState(false);
 
     // Calculate inventory
     const inventory = {};
@@ -75,33 +73,6 @@ const InventoryList = ({ transactions, onAddTransaction, onDeleteTransaction }) 
 
     return (
         <div className="glass-panel rounded-2xl p-6 relative">
-            {/* Add Stock Modal */}
-            <AnimatePresence>
-                {showAddModal && (
-                    <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/80 backdrop-blur-sm p-4">
-                        <motion.div
-                            initial={{ scale: 0.9, opacity: 0 }}
-                            animate={{ scale: 1, opacity: 1 }}
-                            exit={{ scale: 0.9, opacity: 0 }}
-                            className="w-full max-w-2xl relative"
-                        >
-                            <button
-                                onClick={() => setShowAddModal(false)}
-                                className="absolute top-4 right-4 z-10 text-slate-400 hover:text-white"
-                            >
-                                <X size={24} />
-                            </button>
-                            {/* We reuse the form but might need to tweak its container if it has one. 
-                                Since AddStockForm has its own glass-panel, we just render it. */}
-                            <AddStockForm onAddTransaction={(t) => {
-                                onAddTransaction(t);
-                                setShowAddModal(false);
-                            }} />
-                        </motion.div>
-                    </div>
-                )}
-            </AnimatePresence>
-
             <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4 mb-6">
                 <div className="flex items-center gap-3">
                     <div className="p-2 bg-primary/20 rounded-lg text-primary">
@@ -123,7 +94,7 @@ const InventoryList = ({ transactions, onAddTransaction, onDeleteTransaction }) 
                     </div>
 
                     <button
-                        onClick={() => setShowAddModal(true)}
+                        onClick={onOpenAddStock}
                         className="btn-primary py-2 px-4 text-sm whitespace-nowrap flex items-center gap-2"
                     >
                         <Plus size={16} /> Add Stock
