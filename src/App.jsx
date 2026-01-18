@@ -7,7 +7,8 @@ import InventoryList from './components/InventoryList';
 import AddStockForm from './components/Inventory/AddStockForm';
 import POSInterface from './components/POS/POSInterface';
 import OrderManagement from './components/Orders/OrderManagement';
-import { LayoutDashboard, Store, ShoppingBag, Receipt, Package, LogOut, X } from 'lucide-react';
+import Expenses from './components/Expenses';
+import { LayoutDashboard, Store, ShoppingBag, Receipt, Package, LogOut, X, Wallet } from 'lucide-react';
 import clsx from 'clsx';
 import { useToast } from './components/ui/Toast';
 import { motion, AnimatePresence } from 'framer-motion';
@@ -90,8 +91,9 @@ function App() {
                 <nav className="flex-1 px-4 space-y-2 mt-4">
                     <NavItem id="pos" label="Point of Sale" icon={Store} />
                     <NavItem id="orders" label="Orders" icon={Package} />
+                    <NavItem id="expenses" label="Expenses" icon={Wallet} />
+                    <NavItem id="inventory" label="Inventory" icon={ShoppingBag} />
                     <NavItem id="dashboard" label="Dashboard" icon={LayoutDashboard} />
-                    <NavItem id="inventory" label="Inventory List" icon={ShoppingBag} />
                 </nav>
 
                 <div className="p-4 border-t border-white/5">
@@ -111,6 +113,7 @@ function App() {
                     <h2 className="text-xl font-bold text-white">
                         {activeTab === 'pos' && 'Point of Sale'}
                         {activeTab === 'orders' && 'Order Management'}
+                        {activeTab === 'expenses' && 'Expenses & Costs'}
                         {activeTab === 'dashboard' && 'Analytics Dashboard'}
                         {activeTab === 'inventory' && 'Inventory Management'}
                         {activeTab === 'add-stock' && 'Receive Stock'}
@@ -155,6 +158,15 @@ function App() {
                                 <div className="space-y-8 animate-fade-in">
                                     <DashboardStats transactions={transactions} onDeleteAll={handleDeleteAll} />
                                     <TransactionList transactions={transactions} onDelete={deleteTransaction} />
+                                </div>
+                            )}
+
+                            {activeTab === 'expenses' && (
+                                <div className="animate-fade-in">
+                                    <Expenses
+                                        transactions={transactions}
+                                        onDeleteTransaction={deleteTransaction}
+                                    />
                                 </div>
                             )}
 
