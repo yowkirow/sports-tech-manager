@@ -113,7 +113,7 @@ function App() {
                         {activeTab === 'add' && (
                             <div className="animate-fade-in" style={{ maxWidth: '600px', margin: '0 auto' }}>
                                 <h1 style={{ marginBottom: '1.5rem', textAlign: 'center' }}>Add Product</h1>
-                                <TransactionForm onAddTransaction={addTransaction} />
+                                <TransactionForm onAddTransaction={addTransaction} transactions={transactions} />
                             </div>
                         )}
                     </div>

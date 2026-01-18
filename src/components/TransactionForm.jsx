@@ -5,7 +5,7 @@ import Input from './ui/Input';
 import Select from './ui/Select';
 import { PlusCircle, MinusCircle, Calculator } from 'lucide-react';
 
-const TransactionForm = ({ onAddTransaction }) => {
+const TransactionForm = ({ onAddTransaction, transactions = [] }) => {
     const [type, setType] = useState('expense'); // 'expense' or 'sale'
     const [category, setCategory] = useState('blanks'); // blanks, dtf, accessories
 
@@ -13,11 +13,35 @@ const TransactionForm = ({ onAddTransaction }) => {
     const [amount, setAmount] = useState('');
     const [description, setDescription] = useState('');
     const [quantity, setQuantity] = useState('1');
+    const [customerName, setCustomerName] = useState('');
+    const [showSuggestions, setShowSuggestions] = useState(false);
 
     // Details
     const [size, setSize] = useState('M');
     const [color, setColor] = useState('Black');
     const [subCategory, setSubCategory] = useState('');
+
+    // Get unique customer names from previous sales for autocomplete
+    const getCustomerSuggestions = () => {
+        if (!transactions || !Array.isArray(transactions)) return [];
+
+        const salesWithCustomers = transactions.filter(t =>
+            t.type === 'sale' && t.details?.customerName
+        );
+
+        const uniqueNames = [...new Set(salesWithCustomers.map(t => t.details.customerName))];
+
+        // Filter based on current input
+        if (customerName.trim()) {
+            return uniqueNames.filter(name =>
+                name.toLowerCase().includes(customerName.toLowerCase())
+            );
+        }
+
+        return uniqueNames;
+    };
+
+    const customerSuggestions = getCustomerSuggestions();
 
     // Fixed Pricing Logic
     const FIXED_SHIRT_PRICE = 70;
@@ -40,6 +64,10 @@ const TransactionForm = ({ onAddTransaction }) => {
 
         if (!finalAmount && finalAmount !== 0) return;
         if (!description && !isFixedPrice) return; // Description optional for fixed price since auto-generated
+        if (type === 'sale' && !customerName.trim()) {
+            alert('Please enter customer name for sales');
+            return;
+        }
 
         let details = { quantity: parseInt(quantity) };
 
@@ -49,11 +77,17 @@ const TransactionForm = ({ onAddTransaction }) => {
             details = { ...details, subCategory };
         }
 
+        // Add customer name for sales
+        if (type === 'sale' && customerName.trim()) {
+            details = { ...details, customerName: customerName.trim() };
+        }
+
         const newTransaction = {
             id: crypto.randomUUID(),
             type,
             amount: finalAmount,
-            description: isFixedPrice ? `Bought ${quantity}x ${color} ${size} Blanks` : description,
+            description: isFixedPrice ? `Bought ${quantity}x ${color} ${size} Blanks` :
+                (type === 'sale' ? `Sold ${quantity}x ${color} ${size} to ${customerName}` : description),
             category: type === 'sale' ? 'sale' : category,
             date: new Date().toISOString(),
             details
@@ -64,6 +98,8 @@ const TransactionForm = ({ onAddTransaction }) => {
         setDescription('');
         setQuantity('1');
         setSubCategory('');
+        setCustomerName('');
+        setShowSuggestions(false);
     };
 
     const showShirtDetails = type === 'sale' || category === 'blanks';
@@ -167,6 +203,75 @@ const TransactionForm = ({ onAddTransaction }) => {
                             onChange={(e) => setColor(e.target.value)}
                             options={['Black', 'White', 'Navy', 'Heather Grey', 'Red', 'Blue', 'Green', 'Yellow', 'Pink', 'Aqua', 'Peach'].map(c => ({ value: c, label: c }))}
                         />
+                    </div>
+                )}
+
+                {/* Customer Name Field (Only for Sales) */}
+                {type === 'sale' && (
+                    <div style={{ background: 'rgba(255,255,255,0.03)', padding: '1rem', borderRadius: '8px', marginBottom: '1rem', position: 'relative' }}>
+                        <label style={{ display: 'block', marginBottom: '0.5rem', color: 'var(--text-muted)', fontSize: '0.9rem' }}>
+                            Customer Name *
+                        </label>
+                        <input
+                            type="text"
+                            className="glass-input"
+                            placeholder="Enter customer name"
+                            value={customerName}
+                            onChange={(e) => {
+                                setCustomerName(e.target.value);
+                                setShowSuggestions(true);
+                            }}
+                            onFocus={() => setShowSuggestions(true)}
+                            onBlur={() => setTimeout(() => setShowSuggestions(false), 200)}
+                            required
+                            style={{
+                                width: '100%',
+                                padding: '0.75rem 1rem',
+                                background: 'rgba(255,255,255,0.05)',
+                                border: '1px solid rgba(255,255,255,0.1)',
+                                borderRadius: '8px',
+                                color: 'var(--text-main)',
+                                fontSize: '1rem'
+                            }}
+                        />
+
+                        {/* Autocomplete Suggestions */}
+                        {showSuggestions && customerSuggestions.length > 0 && (
+                            <div style={{
+                                position: 'absolute',
+                                top: '100%',
+                                left: '1rem',
+                                right: '1rem',
+                                background: 'rgba(23, 23, 23, 0.98)',
+                                border: '1px solid rgba(255,255,255,0.1)',
+                                borderRadius: '8px',
+                                marginTop: '0.25rem',
+                                maxHeight: '150px',
+                                overflowY: 'auto',
+                                zIndex: 1000,
+                                boxShadow: '0 4px 12px rgba(0,0,0,0.5)'
+                            }}>
+                                {customerSuggestions.map((name, index) => (
+                                    <div
+                                        key={index}
+                                        onClick={() => {
+                                            setCustomerName(name);
+                                            setShowSuggestions(false);
+                                        }}
+                                        style={{
+                                            padding: '0.75rem 1rem',
+                                            cursor: 'pointer',
+                                            borderBottom: index < customerSuggestions.length - 1 ? '1px solid rgba(255,255,255,0.05)' : 'none',
+                                            transition: 'background 0.2s'
+                                        }}
+                                        onMouseEnter={(e) => e.target.style.background = 'rgba(255,255,255,0.1)'}
+                                        onMouseLeave={(e) => e.target.style.background = 'transparent'}
+                                    >
+                                        {name}
+                                    </div>
+                                ))}
+                            </div>
+                        )}
                     </div>
                 )}
 
