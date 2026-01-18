@@ -1,123 +1,164 @@
 import React, { useState } from 'react';
 import useSupabaseTransactions from './hooks/useSupabaseTransactions';
 import DashboardStats from './components/DashboardStats';
-import TransactionForm from './components/TransactionForm';
 import TransactionList from './components/TransactionList';
 import InventoryList from './components/InventoryList';
-import { LayoutDashboard, Package, PlusSquare } from 'lucide-react';
-
+import AddStockForm from './components/Inventory/AddStockForm';
+import POSInterface from './components/POS/POSInterface';
+import { LayoutDashboard, Store, ShoppingBag, Receipt, LogOut } from 'lucide-react';
+import clsx from 'clsx';
 import { useToast } from './components/ui/Toast';
 
 function App() {
-    const { transactions, loading, error, addTransaction: addToSupabase, deleteTransaction: deleteFromSupabase, deleteAllTransactions } = useSupabaseTransactions();
-    const [activeTab, setActiveTab] = useState('inventory');
+    const {
+        transactions,
+        loading,
+        addTransaction: addToSupabase,
+        deleteTransaction: deleteFromSupabase,
+        deleteAllTransactions
+    } = useSupabaseTransactions();
+
+    const [activeTab, setActiveTab] = useState('pos'); // Default to POS for speed
     const { showToast } = useToast();
 
     const addTransaction = async (transaction) => {
         try {
             await addToSupabase(transaction);
-            showToast('Stock added successfully!', 'success');
+            if (transaction.type === 'expense') {
+                showToast('Inventory updated!', 'success');
+            }
         } catch (err) {
-            showToast('Failed to add stock', 'error');
+            showToast('Failed to save transaction', 'error');
         }
     };
 
     const deleteTransaction = async (id) => {
+        if (!window.confirm('Delete this record? Inventory counts will be affected.')) return;
         try {
             await deleteFromSupabase(id);
+            showToast('Record deleted', 'info');
         } catch (err) {
-            showToast('Failed to delete transaction', 'error');
+            showToast('Failed to delete', 'error');
         }
     };
 
     const handleDeleteAll = async () => {
-        const confirmed = window.confirm(
-            '⚠️ WARNING: This will permanently delete ALL transactions and inventory data!\n\nThis action cannot be undone.\n\nAre you absolutely sure?'
-        );
-
-        if (!confirmed) return;
-
+        if (!window.confirm('WARNING: This will wipe ALL data. Are you sure?')) return;
         try {
             await deleteAllTransactions();
-            showToast('All data deleted successfully', 'success');
+            showToast('System reset complete', 'success');
         } catch (err) {
-            showToast('Failed to delete data', 'error');
+            showToast('Reset failed', 'error');
         }
     };
 
     const NavItem = ({ id, label, icon: Icon }) => (
         <button
             onClick={() => setActiveTab(id)}
-            className={`nav-item ${activeTab === id ? 'active' : ''}`}
+            className={clsx(
+                "w-full flex items-center gap-3 px-4 py-3 rounded-xl transition-all duration-200",
+                activeTab === id
+                    ? "bg-primary text-white shadow-lg shadow-primary/25"
+                    : "text-slate-400 hover:bg-white/5 hover:text-slate-200"
+            )}
         >
-            <Icon size={24} /> {/* Increased icon size slightly for mobile touch */}
-            <span>{label}</span>
+            <Icon size={20} />
+            <span className="font-medium">{label}</span>
         </button>
     );
 
     return (
-        <div className="app-container">
-            {/* Sidebar / Bottom Nav */}
-            <aside className="app-sidebar">
-                <div className="sidebar-brand">
-                    <div style={{
-                        background: 'linear-gradient(135deg, var(--primary), var(--accent))',
-                        padding: '4px',
-                        borderRadius: '10px',
-                        display: 'flex', alignItems: 'center', justifyContent: 'center'
-                    }}>
-                        <img src="/logo.jpg" alt="Logo" style={{ width: '36px', height: 'auto', borderRadius: '6px' }} />
-                    </div>
-                    <div>
-                        <h1 style={{ margin: 0, fontSize: '1.2rem', fontFamily: 'sans-serif', fontStyle: 'italic' }}>SportsTech</h1>
+        <div className="flex h-screen bg-slate-900 text-slate-100 overflow-hidden font-sans selection:bg-primary/30">
+            {/* Sidebar */}
+            <aside className="w-64 bg-slate-900/50 backdrop-blur-xl border-r border-white/5 flex flex-col shrink-0">
+                <div className="p-6">
+                    <div className="flex items-center gap-3">
+                        <div className="w-10 h-10 rounded-xl bg-gradient-to-br from-primary to-accent flex items-center justify-center text-white shadow-lg shadow-indigo-500/20">
+                            <span className="font-bold text-xl italic">S</span>
+                        </div>
+                        <div>
+                            <h1 className="font-bold text-lg leading-tight">SportsTech</h1>
+                            <p className="text-xs text-slate-500">Manager Pro</p>
+                        </div>
                     </div>
                 </div>
 
-                <nav className="sidebar-nav">
+                <nav className="flex-1 px-4 space-y-2 mt-4">
+                    <NavItem id="pos" label="Point of Sale" icon={Store} />
                     <NavItem id="dashboard" label="Dashboard" icon={LayoutDashboard} />
-                    <NavItem id="inventory" label="Inventory" icon={Package} />
-                    <NavItem id="add" label="Add" icon={PlusSquare} /> {/* Shortened label for mobile */}
+                    <NavItem id="inventory" label="Inventory List" icon={ShoppingBag} />
+                    <NavItem id="add-stock" label="Add Stock" icon={Receipt} />
                 </nav>
-            </aside>
 
-            {/* Main Content Area */}
-            <main className="main-content">
-                {loading ? (
-                    <div style={{ display: 'flex', justifyContent: 'center', alignItems: 'center', height: '100vh' }}>
-                        <div style={{ textAlign: 'center' }}>
-                            <div style={{ fontSize: '2rem', marginBottom: '1rem' }}>⏳</div>
-                            <p>Loading your data...</p>
+                <div className="p-4 border-t border-white/5">
+                    <div className="px-4 py-3 rounded-xl bg-white/5 border border-white/5">
+                        <p className="text-xs text-slate-500 mb-1">System Status</p>
+                        <div className="flex items-center gap-2">
+                            <div className="w-2 h-2 rounded-full bg-emerald-500 animate-pulse"></div>
+                            <span className="text-sm text-emerald-400 font-medium">Online</span>
                         </div>
                     </div>
-                ) : (
-                    <div style={{ maxWidth: '1200px', margin: '0 auto' }}>
-                        {/* Mobile Header (Visible only on mobile could be added, but relying on content for now) */}
+                </div>
+            </aside>
 
-                        {activeTab === 'dashboard' && (
-                            <div className="animate-fade-in">
-                                <h1 style={{ marginBottom: '1.5rem' }}>Dashboard</h1>
-                                <DashboardStats transactions={transactions} onDeleteAll={handleDeleteAll} />
-                                <div style={{ marginTop: '2rem' }}>
+            {/* Main Content */}
+            <main className="flex-1 overflow-hidden relative flex flex-col">
+                <header className="h-16 border-b border-white/5 flex items-center justify-between px-8 bg-slate-900/50 backdrop-blur-sm shrink-0">
+                    <h2 className="text-xl font-bold text-white">
+                        {activeTab === 'pos' && 'Point of Sale'}
+                        {activeTab === 'dashboard' && 'Analytics Dashboard'}
+                        {activeTab === 'inventory' && 'Inventory Management'}
+                        {activeTab === 'add-stock' && 'Receive Stock'}
+                    </h2>
+                    <div className="flex items-center gap-4">
+                        {loading && (
+                            <span className="text-sm text-slate-400 flex items-center gap-2">
+                                <span className="w-4 h-4 border-2 border-slate-600 border-t-primary rounded-full animate-spin"></span>
+                                Syncing...
+                            </span>
+                        )}
+                        <div className="w-8 h-8 rounded-full bg-gradient-to-tr from-slate-700 to-slate-600 border border-white/10"></div>
+                    </div>
+                </header>
+
+                <div className="flex-1 overflow-y-auto p-8 relative">
+                    {loading && transactions.length === 0 ? (
+                        <div className="absolute inset-0 flex items-center justify-center">
+                            <div className="flex flex-col items-center gap-4">
+                                <div className="w-12 h-12 border-4 border-primary/30 border-t-primary rounded-full animate-spin"></div>
+                                <p className="text-slate-400 animate-pulse">Loading System Data...</p>
+                            </div>
+                        </div>
+                    ) : (
+                        <div className="max-w-7xl mx-auto h-full">
+                            {activeTab === 'pos' && (
+                                <POSInterface
+                                    transactions={transactions}
+                                    onAddTransaction={addTransaction}
+                                />
+                            )}
+
+                            {activeTab === 'dashboard' && (
+                                <div className="space-y-8 animate-fade-in">
+                                    <DashboardStats transactions={transactions} onDeleteAll={handleDeleteAll} />
                                     <TransactionList transactions={transactions} onDelete={deleteTransaction} />
                                 </div>
-                            </div>
-                        )}
+                            )}
 
-                        {activeTab === 'inventory' && (
-                            <div className="animate-fade-in">
-                                <h1 style={{ marginBottom: '1.5rem' }}>Inventory</h1>
-                                <InventoryList transactions={transactions} />
-                            </div>
-                        )}
+                            {activeTab === 'inventory' && (
+                                <div className="animate-fade-in">
+                                    <InventoryList transactions={transactions} />
+                                </div>
+                            )}
 
-                        {activeTab === 'add' && (
-                            <div className="animate-fade-in" style={{ maxWidth: '600px', margin: '0 auto' }}>
-                                <h1 style={{ marginBottom: '1.5rem', textAlign: 'center' }}>Add Product</h1>
-                                <TransactionForm onAddTransaction={addTransaction} transactions={transactions} />
-                            </div>
-                        )}
-                    </div>
-                )}
+                            {activeTab === 'add-stock' && (
+                                <div className="animate-fade-in py-8">
+                                    <AddStockForm onAddTransaction={addTransaction} />
+                                </div>
+                            )}
+                        </div>
+                    )}
+                </div>
             </main>
         </div>
     );

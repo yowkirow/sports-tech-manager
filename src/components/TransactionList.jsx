@@ -1,6 +1,6 @@
 import React from 'react';
-import Card from './ui/Card';
-import { ArrowUpRight, ArrowDownLeft, Trash2 } from 'lucide-react';
+import { ArrowUpRight, ArrowDownLeft, Trash2, Calendar, ShoppingBag } from 'lucide-react';
+import clsx from 'clsx';
 
 const TransactionList = ({ transactions, onDelete }) => {
     // Sort by date desc
@@ -23,73 +23,72 @@ const TransactionList = ({ transactions, onDelete }) => {
     };
 
     return (
-        <Card>
-            <h2 style={{ marginBottom: '1.5rem' }}>Recent Activity</h2>
+        <div className="glass-panel rounded-2xl p-6">
+            <h2 className="text-xl font-bold text-white mb-6 flex items-center gap-2">
+                <Calendar className="text-primary" size={24} />
+                Recent Activity
+            </h2>
+
             {sorted.length === 0 ? (
-                <p className="text-muted" style={{ textAlign: 'center', padding: '2rem' }}>No transactions yet.</p>
+                <div className="flex flex-col items-center justify-center py-16 text-slate-500">
+                    <ShoppingBag size={48} className="mb-4 opacity-50" />
+                    <p>No transactions yet.</p>
+                </div>
             ) : (
-                <div style={{ display: 'flex', flexDirection: 'column', gap: '1rem' }}>
+                <div className="space-y-4">
                     {sorted.map((t) => (
                         <div
                             key={t.id}
-                            style={{
-                                display: 'flex',
-                                alignItems: 'center',
-                                justifyContent: 'space-between',
-                                padding: '1rem',
-                                background: 'rgba(255,255,255,0.03)',
-                                borderRadius: '12px',
-                                borderLeft: `4px solid ${t.type === 'sale' ? 'var(--success)' : 'var(--danger)'}`
-                            }} // Removed incorrect comment
+                            className="group flex flex-col sm:flex-row sm:items-center justify-between gap-4 p-4 rounded-xl bg-white/5 hover:bg-white/10 transition-colors border border-white/5 hover:border-white/10"
                         >
-                            <div style={{ display: 'flex', gap: '1rem', alignItems: 'center' }}>
-                                <div style={{
-                                    background: t.type === 'sale' ? 'rgba(0, 184, 148, 0.2)' : 'rgba(255, 77, 77, 0.2)',
-                                    padding: '0.5rem',
-                                    borderRadius: '50%',
-                                    color: t.type === 'sale' ? 'var(--success)' : 'var(--danger)'
-                                }}>
+                            <div className="flex gap-4 items-start sm:items-center">
+                                <div className={clsx(
+                                    "p-3 rounded-xl flex items-center justify-center shrink-0",
+                                    t.type === 'sale' ? "bg-emerald-500/10 text-emerald-400" : "bg-rose-500/10 text-rose-400"
+                                )}>
                                     {t.type === 'sale' ? <ArrowUpRight size={20} /> : <ArrowDownLeft size={20} />}
                                 </div>
                                 <div>
-                                    <div style={{ fontWeight: '600' }}>{t.description}</div>
-                                    <div style={{ fontSize: '0.85rem', color: 'var(--text-muted)' }}>
-                                        {formatDate(t.date)} • {getCategoryLabel(t.category)}
+                                    <div className="font-semibold text-slate-200 line-clamp-1">{t.description}</div>
+                                    <div className="flex flex-wrap items-center gap-2 text-sm text-slate-500 mt-1">
+                                        <span>{formatDate(t.date)}</span>
+                                        <span className="w-1 h-1 rounded-full bg-slate-600"></span>
+                                        <span>{getCategoryLabel(t.category)}</span>
+
                                         {t.details && t.details.size && (
-                                            <span style={{ marginLeft: '0.5rem', background: 'rgba(255,255,255,0.1)', padding: '2px 6px', borderRadius: '4px', fontSize: '0.75rem' }}>
+                                            <span className="px-2 py-0.5 rounded bg-white/10 text-slate-300 text-xs">
                                                 {t.details.quantity || 1}x {t.details.size} / {t.details.color}
                                             </span>
                                         )}
                                         {t.details && t.details.subCategory && (
-                                            <span style={{ marginLeft: '0.5rem', background: 'rgba(255,255,255,0.1)', padding: '2px 6px', borderRadius: '4px', fontSize: '0.75rem' }}>
-                                                {t.details.quantity || 1}x {t.details.subCategory}
+                                            <span className="px-2 py-0.5 rounded bg-white/10 text-slate-300 text-xs">
+                                                {t.details.subCategory}
                                             </span>
                                         )}
                                     </div>
                                 </div>
                             </div>
 
-                            <div style={{ display: 'flex', alignItems: 'center', gap: '1rem' }}>
-                                <div style={{
-                                    fontWeight: '700',
-                                    color: t.type === 'sale' ? 'var(--success)' : 'var(--danger)',
-                                    fontSize: '1.1rem'
-                                }}>
+                            <div className="flex items-center justify-between sm:justify-end gap-6 ml-14 sm:ml-0">
+                                <div className={clsx(
+                                    "font-bold text-lg",
+                                    t.type === 'sale' ? "text-emerald-400" : "text-rose-400"
+                                )}>
                                     {t.type === 'sale' ? '+' : '-'} ₱{t.amount.toLocaleString()}
                                 </div>
                                 <button
                                     onClick={() => onDelete(t.id)}
-                                    style={{ background: 'none', border: 'none', color: 'var(--text-muted)', cursor: 'pointer', opacity: 0.5 }}
+                                    className="p-2 text-slate-500 hover:text-rose-400 hover:bg-rose-500/10 rounded-lg transition-colors opacity-0 group-hover:opacity-100 focus:opacity-100"
                                     title="Delete"
                                 >
-                                    <Trash2 size={16} />
+                                    <Trash2 size={18} />
                                 </button>
                             </div>
                         </div>
                     ))}
                 </div>
             )}
-        </Card>
+        </div>
     );
 };
 
