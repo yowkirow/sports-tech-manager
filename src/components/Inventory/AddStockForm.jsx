@@ -1,7 +1,6 @@
-import React, { useState, useRef } from 'react';
-import { supabase } from '../../lib/supabaseClient';
+import React, { useState } from 'react';
 import { useToast } from '../ui/Toast';
-import { Upload, X, Plus, Loader2 } from 'lucide-react';
+import { Plus, Loader2 } from 'lucide-react';
 import { motion, AnimatePresence } from 'framer-motion';
 
 const SIZES = ['XS', 'S', 'M', 'L', 'XL', '2XL', '3XL'];
@@ -9,10 +8,8 @@ const COLORS = ['Black', 'White', 'Navy', 'Heather Grey', 'Red', 'Blue', 'Green'
 
 export default function AddStockForm({ onAddTransaction }) {
     const { showToast } = useToast();
-    const fileInputRef = useRef(null);
 
     const [loading, setLoading] = useState(false);
-    const [uploading, setUploading] = useState(false);
 
     // Form State
     const [category, setCategory] = useState('blanks'); // blanks, accessories
@@ -27,59 +24,6 @@ export default function AddStockForm({ onAddTransaction }) {
     // Accessory Details
     const [subCategory, setSubCategory] = useState('');
 
-    // Image
-    const [imageFile, setImageFile] = useState(null);
-    const [imagePreview, setImagePreview] = useState(null);
-
-    const handleImageChange = (e) => {
-        const file = e.target.files[0];
-        if (!file) return;
-
-        if (file.size > 5 * 1024 * 1024) {
-            showToast('File size too large (max 5MB)', 'error');
-            return;
-        }
-
-        setImageFile(file);
-        setImagePreview(URL.createObjectURL(file));
-    };
-
-    const removeImage = () => {
-        setImageFile(null);
-        if (imagePreview) URL.revokeObjectURL(imagePreview);
-        setImagePreview(null);
-        if (fileInputRef.current) fileInputRef.current.value = '';
-    };
-
-    const uploadImage = async () => {
-        if (!imageFile) return null;
-
-        try {
-            setUploading(true);
-            const fileExt = imageFile.name.split('.').pop();
-            const fileName = `${Math.random().toString(36).substring(2)}_${Date.now()}.${fileExt}`;
-            const filePath = `product-images/${fileName}`;
-
-            const { error: uploadError } = await supabase.storage
-                .from('product-images')
-                .upload(filePath, imageFile);
-
-            if (uploadError) throw uploadError;
-
-            const { data } = supabase.storage
-                .from('product-images')
-                .getPublicUrl(filePath);
-
-            return data.publicUrl;
-        } catch (error) {
-            console.error('Upload Error:', error);
-            showToast('Failed to upload image', 'error');
-            return null;
-        } finally {
-            setUploading(false);
-        }
-    };
-
     const handleSubmit = async (e) => {
         e.preventDefault();
         setLoading(true);
@@ -87,20 +31,9 @@ export default function AddStockForm({ onAddTransaction }) {
         try {
             const finalCost = parseFloat(cost) || 0; // Allow 0 cost
 
-            // 1. Upload Image if exists
-            let imageUrl = null;
-            if (imageFile) {
-                imageUrl = await uploadImage();
-                if (!imageUrl && imageFile) {
-                    setLoading(false);
-                    return; // Stop if upload failed but file existed
-                }
-            }
-
-            // 2. Construct Details
+            // 1. Construct Details
             let details = {
-                quantity: parseInt(quantity),
-                imageUrl
+                quantity: parseInt(quantity)
             };
 
             if (category === 'blanks') {
@@ -109,7 +42,7 @@ export default function AddStockForm({ onAddTransaction }) {
                 details = { ...details, subCategory };
             }
 
-            // 3. Create Transaction
+            // 2. Create Transaction
             const newTransaction = {
                 id: crypto.randomUUID(),
                 type: 'expense',
@@ -127,7 +60,6 @@ export default function AddStockForm({ onAddTransaction }) {
             setCost('');
             setDescription('');
             setSubCategory('');
-            removeImage();
 
         } catch (error) {
             console.error(error);
@@ -153,8 +85,8 @@ export default function AddStockForm({ onAddTransaction }) {
                         type="button"
                         onClick={() => setCategory('blanks')}
                         className={`p-4 rounded-xl border transition-all ${category === 'blanks'
-                                ? 'bg-primary/20 border-primary text-white'
-                                : 'bg-white/5 border-white/10 text-slate-400 hover:bg-white/10'
+                            ? 'bg-primary/20 border-primary text-white'
+                            : 'bg-white/5 border-white/10 text-slate-400 hover:bg-white/10'
                             }`}
                     >
                         <span className="block font-semibold">Blank Shirt</span>
@@ -163,47 +95,12 @@ export default function AddStockForm({ onAddTransaction }) {
                         type="button"
                         onClick={() => setCategory('accessories')}
                         className={`p-4 rounded-xl border transition-all ${category === 'accessories'
-                                ? 'bg-primary/20 border-primary text-white'
-                                : 'bg-white/5 border-white/10 text-slate-400 hover:bg-white/10'
+                            ? 'bg-primary/20 border-primary text-white'
+                            : 'bg-white/5 border-white/10 text-slate-400 hover:bg-white/10'
                             }`}
                     >
                         <span className="block font-semibold">Accessory / Other</span>
                     </button>
-                </div>
-
-                {/* Image Upload Area */}
-                <div className="space-y-2">
-                    <label className="text-sm text-slate-400 block">Product Image</label>
-
-                    <div className="relative group">
-                        {imagePreview ? (
-                            <div className="relative h-48 w-full rounded-xl overflow-hidden border border-white/10 bg-black/20">
-                                <img src={imagePreview} alt="Preview" className="w-full h-full object-contain" />
-                                <button
-                                    type="button"
-                                    onClick={removeImage}
-                                    className="absolute top-2 right-2 p-2 bg-black/50 hover:bg-red-500/80 rounded-full text-white transition-colors"
-                                >
-                                    <X size={16} />
-                                </button>
-                            </div>
-                        ) : (
-                            <div
-                                onClick={() => fileInputRef.current?.click()}
-                                className="h-32 w-full border-2 border-dashed border-white/10 rounded-xl flex flex-col items-center justify-center cursor-pointer hover:border-primary/50 hover:bg-white/5 transition-all group"
-                            >
-                                <Upload className="text-slate-500 group-hover:text-primary mb-2 transition-colors" size={24} />
-                                <span className="text-slate-500 text-sm group-hover:text-slate-300">Click to upload image</span>
-                            </div>
-                        )}
-                        <input
-                            ref={fileInputRef}
-                            type="file"
-                            accept="image/*"
-                            onChange={handleImageChange}
-                            className="hidden"
-                        />
-                    </div>
                 </div>
 
                 {/* Specific Fields */}
@@ -299,7 +196,7 @@ export default function AddStockForm({ onAddTransaction }) {
 
                 <button
                     type="submit"
-                    disabled={loading || uploading}
+                    disabled={loading}
                     className="btn-primary w-full py-4 text-lg shadow-lg shadow-indigo-500/20"
                 >
                     {loading ? <Loader2 className="animate-spin" /> : <Plus size={20} />}

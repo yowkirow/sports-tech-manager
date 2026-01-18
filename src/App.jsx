@@ -5,7 +5,8 @@ import TransactionList from './components/TransactionList';
 import InventoryList from './components/InventoryList';
 import AddStockForm from './components/Inventory/AddStockForm';
 import POSInterface from './components/POS/POSInterface';
-import { LayoutDashboard, Store, ShoppingBag, Receipt, LogOut } from 'lucide-react';
+import OrderManagement from './components/Orders/OrderManagement';
+import { LayoutDashboard, Store, ShoppingBag, Receipt, Package, LogOut } from 'lucide-react';
 import clsx from 'clsx';
 import { useToast } from './components/ui/Toast';
 
@@ -85,6 +86,7 @@ function App() {
 
                 <nav className="flex-1 px-4 space-y-2 mt-4">
                     <NavItem id="pos" label="Point of Sale" icon={Store} />
+                    <NavItem id="orders" label="Orders" icon={Package} />
                     <NavItem id="dashboard" label="Dashboard" icon={LayoutDashboard} />
                     <NavItem id="inventory" label="Inventory List" icon={ShoppingBag} />
                     <NavItem id="add-stock" label="Add Stock" icon={Receipt} />
@@ -106,6 +108,7 @@ function App() {
                 <header className="h-16 border-b border-white/5 flex items-center justify-between px-8 bg-slate-900/50 backdrop-blur-sm shrink-0">
                     <h2 className="text-xl font-bold text-white">
                         {activeTab === 'pos' && 'Point of Sale'}
+                        {activeTab === 'orders' && 'Order Management'}
                         {activeTab === 'dashboard' && 'Analytics Dashboard'}
                         {activeTab === 'inventory' && 'Inventory Management'}
                         {activeTab === 'add-stock' && 'Receive Stock'}
@@ -133,6 +136,13 @@ function App() {
                         <div className="max-w-7xl mx-auto h-full">
                             {activeTab === 'pos' && (
                                 <POSInterface
+                                    transactions={transactions}
+                                    onAddTransaction={addTransaction}
+                                />
+                            )}
+
+                            {activeTab === 'orders' && (
+                                <OrderManagement
                                     transactions={transactions}
                                     onAddTransaction={addTransaction}
                                 />
