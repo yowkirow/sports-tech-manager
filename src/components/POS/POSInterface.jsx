@@ -1,6 +1,7 @@
 import React, { useState, useMemo } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
-import { Search, ShoppingCart, Trash2, CheckCircle, Package } from 'lucide-react';
+import { Search, ShoppingCart, Trash2, CheckCircle, Package, Plus, Loader2 } from 'lucide-react';
+
 import { useToast } from '../ui/Toast';
 
 // Helper to group inventory
