@@ -12,7 +12,11 @@ const useRawInventory = (transactions) => {
     return useMemo(() => {
         const inventory = {}; // key: "shirt-{color}-{size}" or "acc-{name}"
 
-        transactions.forEach(t => {
+        // Process Chronologically (Oldest -> Newest)
+        // transactions are passed as Newest -> Oldest from hook
+        const chronoTransactions = [...transactions].reverse();
+
+        chronoTransactions.forEach(t => {
             if (!t.details) return;
             const { quantity, size, color, subCategory, category } = t.details;
 
@@ -50,7 +54,12 @@ const useProducts = (transactions) => {
     return useMemo(() => {
         const products = new Map(); // Name -> Product Details
 
-        transactions.forEach(t => {
+        // CRITICAL: Process transactions Chronologically (Oldest First)
+        // Because "Delete" must happen AFTER "Define"
+        // The App passes transactions in Descending order (Newest First)
+        const chronoTransactions = [...transactions].reverse();
+
+        chronoTransactions.forEach(t => {
             if (t.type === 'define_product') {
                 const { name, price, imageUrl, linkedColor, category } = t.details;
                 if (!name) return;
