@@ -646,7 +646,21 @@ export default function POSInterface({ transactions, onAddTransaction }) {
 
             {/* Desktop Cart Section (Hidden on Mobile) */}
             <div className="hidden lg:flex w-full lg:w-[400px] glass-panel rounded-2xl flex-col h-full">
-                <CartContent />
+                <CartContent
+                    cart={cart}
+                    cartOpenMobile={false}
+                    setCartOpenMobile={setCartOpenMobile}
+                    updateCartQuantity={updateCartQuantity}
+                    handleCheckout={handleCheckout}
+                    checkoutLoading={checkoutLoading}
+                    customerName={customerName}
+                    setCustomerName={setCustomerName}
+                    showSuggestions={showSuggestions}
+                    setShowSuggestions={setShowSuggestions}
+                    filteredCustomers={filteredCustomers}
+                    orderStatus={orderStatus}
+                    setOrderStatus={setOrderStatus}
+                />
             </div>
 
             {/* Mobile Cart Modal */}
@@ -660,23 +674,41 @@ export default function POSInterface({ transactions, onAddTransaction }) {
                             <button onClick={() => setCartOpenMobile(false)} className="text-slate-400 p-2"><X /></button>
                         </div>
                         <div className="flex-1 overflow-hidden flex flex-col">
-                            <CartContent />
+                            <CartContent
+                                cart={cart}
+                                cartOpenMobile={true}
+                                setCartOpenMobile={setCartOpenMobile}
+                                updateCartQuantity={updateCartQuantity}
+                                handleCheckout={handleCheckout}
+                                checkoutLoading={checkoutLoading}
+                                customerName={customerName}
+                                setCustomerName={setCustomerName}
+                                showSuggestions={showSuggestions}
+                                setShowSuggestions={setShowSuggestions}
+                                filteredCustomers={filteredCustomers}
+                                orderStatus={orderStatus}
+                                setOrderStatus={setOrderStatus}
+                            />
                         </div>
                     </div>
                 )}
             </AnimatePresence>
         </div>
     );
-
-    function updateCartQuantity(id, delta) {
-        setCart(prev => prev.map(item => {
-            if (item.cartId === id) return { ...item, quantity: Math.max(1, item.quantity + delta) };
-            return item;
-        }));
-    }
 }
 
-// Simple Helper Icon
+function CreditCardIcon() {
+    return (
+        <svg xmlns="http://www.w3.org/2000/svg" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><rect width="20" height="14" x="2" y="5" rx="2" /><line x1="2" x2="22" y1="10" y2="10" /></svg>
+    )
+}
+
+// Helper Simple Icon
 const ArrowRightIcon = ({ className }) => (
-    <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" className={className}><path d="M5 12h14" /><path d="m12 5 7 7-7 7" /></svg>
+    <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" className={className}>
+        <path d="M5 12h14" />
+        <path d="m12 5 7 7-7 7" />
+    </svg>
 );
+
+export default POSInterface;
