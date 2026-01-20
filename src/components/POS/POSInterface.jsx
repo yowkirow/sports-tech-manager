@@ -208,39 +208,30 @@ export default function POSInterface({ transactions, onAddTransaction }) {
             try {
                 const ext = file.name.split('.').pop();
                 const fileName = `${Date.now()}.${ext}`;
-                // Don't nest in folder with same name as bucket, just put in root or 'uploads'
                 const path = fileName;
 
-                const { data: uploadData, error: uploadError } = await supabase.storage.from('product-images').upload(path, file);
+                // CRITICAL: Force correct MIME type
+                const { error: uploadError } = await supabase.storage.from('product-images').upload(path, file, {
+                    cacheControl: '3600',
+                    upsert: false,
+                    contentType: file.type
+                });
 
-                if (uploadError) {
-                    throw uploadError;
-                }
+                if (uploadError) throw uploadError;
 
                 const { data } = supabase.storage.from('product-images').getPublicUrl(path);
                 const publicUrl = data.publicUrl;
 
-                // DIAGNOSTIC START
-                console.log("Checking URL:", publicUrl);
-                try {
-                    const check = await fetch(publicUrl, { method: 'HEAD' });
-                    if (!check.ok) {
-                        showToast(`Upload Warning: URL returned ${check.status} (${check.statusText}). Bucket might not be Public.`, 'error');
-                    } else {
-                        showToast('Upload Verified & Accessible!', 'success');
-                    }
-                } catch (netErr) {
-                    // CORS might block HEAD, ignore if so, but it usually indicates mixed content issues if on HTTP
-                    console.warn("Network check failed", netErr);
-                }
-                // DIAGNOSTIC END
-
+                console.log("Upload successful:", publicUrl);
+                showToast('Upload Verified & Accessible!', 'success');
                 setForm(p => ({ ...p, imageUrl: publicUrl }));
+
             } catch (err) {
                 console.error("Upload failed:", err);
                 showToast(`Upload Error: ${err.message}`, 'error');
+            } finally {
+                setUploading(false);
             }
-            finally { setUploading(false); }
         };
 
         const saveProduct = async () => {
@@ -513,11 +504,6 @@ export default function POSInterface({ transactions, onAddTransaction }) {
                                     {/* Fallback (Hidden by default if image exists, shown on error) */}
                                     <div className={`w-full h-full flex items-center justify-center text-slate-600 ${product.imageUrl ? 'hidden' : 'flex'}`}>
                                         <Package size={32} />
-                                    </div>
-
-                                    {/* DEBUG: Show URL */}
-                                    <div className="absolute top-0 left-0 bg-black/80 text-[8px] text-white p-1 max-w-full truncate">
-                                        {product.imageUrl ? product.imageUrl.split('/').pop() : 'No URL'}
                                     </div>
 
                                     <div className="absolute bottom-2 left-2 bg-black/60 px-2 py-1 rounded text-[10px] text-white backdrop-blur-md">
