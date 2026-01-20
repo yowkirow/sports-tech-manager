@@ -87,6 +87,10 @@ export default function POSInterface({ transactions, onAddTransaction }) {
     const [editingProduct, setEditingProduct] = useState(null); // For the Edit Modal
     const [cartOpenMobile, setCartOpenMobile] = useState(false);
 
+    // Bulk Selection State
+    const [isSelectionMode, setIsSelectionMode] = useState(false);
+    const [selectedProducts, setSelectedProducts] = useState(new Set());
+
     // Derived Data
     const rawInventory = useRawInventory(transactions);
     const products = useProducts(transactions);
@@ -95,6 +99,46 @@ export default function POSInterface({ transactions, onAddTransaction }) {
     const filteredProducts = products.filter(p =>
         p.name.toLowerCase().includes(searchTerm.toLowerCase())
     );
+
+    // --- Bulk Actions ---
+    const toggleSelection = (productName) => {
+        const newSet = new Set(selectedProducts);
+        if (newSet.has(productName)) newSet.delete(productName);
+        else newSet.add(productName);
+        setSelectedProducts(newSet);
+    };
+
+    const handleBulkDelete = async () => {
+        if (!window.confirm(`Delete ${selectedProducts.size} products? This cannot be undone.`)) return;
+        setCheckoutLoading(true);
+        try {
+            for (const name of selectedProducts) {
+                await onAddTransaction({
+                    id: crypto.randomUUID(),
+                    type: 'delete_product', // Safe "Soft Delete"
+                    category: 'system',
+                    amount: 0,
+                    description: `Bulk Deleted: ${name}`,
+                    date: new Date().toISOString(),
+                    details: { name }
+                });
+            }
+            showToast(`Deleted ${selectedProducts.size} products`, 'success');
+            setIsSelectionMode(false);
+            setSelectedProducts(new Set());
+        } catch (err) {
+            console.error(err);
+            showToast('Bulk Delete Failed', 'error');
+        } finally {
+            setCheckoutLoading(false);
+        }
+    };
+
+    // ... (rest of component)
+    // Note: I will need to use a second Replace to inject the UI elements into the JSX.
+    // This replace block only handles the logic setup.
+
+    // ... [existing imports and code] ...
 
     // --- Checkout Meta ---
     const [customerName, setCustomerName] = useState('');
@@ -444,7 +488,7 @@ export default function POSInterface({ transactions, onAddTransaction }) {
 
             {/* Product Grid */}
             <div className="flex-1 flex flex-col min-h-0 pb-20 lg:pb-0"> {/* Padding bottom for mobile sticky bar */}
-                <div className="mb-6 flex gap-4">
+                <div className="mb-6 flex gap-4 items-center">
                     <div className="relative flex-1">
                         <Search className="absolute left-4 top-1/2 -translate-y-1/2 text-slate-400" size={20} />
                         <input
@@ -455,21 +499,50 @@ export default function POSInterface({ transactions, onAddTransaction }) {
                             onChange={(e) => setSearchTerm(e.target.value)}
                         />
                     </div>
-                    <button
-                        onClick={() => { setEditingProduct(null); setShowProductModal(true); }}
-                        className="btn-secondary whitespace-nowrap"
-                    >
-                        <Plus size={20} /> <span className="hidden sm:inline">Define Product</span>
-                    </button>
+
+                    {isSelectionMode ? (
+                        <div className="flex gap-2">
+                            <button
+                                onClick={handleBulkDelete}
+                                disabled={selectedProducts.size === 0}
+                                className="px-4 py-2 bg-red-500 hover:bg-red-600 text-white rounded-xl font-bold transition-colors flex items-center gap-2"
+                            >
+                                <Trash2 size={18} /> Delete ({selectedProducts.size})
+                            </button>
+                            <button
+                                onClick={() => { setIsSelectionMode(false); setSelectedProducts(new Set()); }}
+                                className="px-4 py-2 bg-white/10 hover:bg-white/20 text-white rounded-xl font-bold transition-colors"
+                            >
+                                Cancel
+                            </button>
+                        </div>
+                    ) : (
+                        <div className="flex gap-2">
+                            <button
+                                onClick={() => setIsSelectionMode(true)}
+                                className="px-4 py-2 bg-white/5 hover:bg-white/10 text-slate-300 rounded-xl font-bold border border-white/10 transition-colors"
+                            >
+                                Select
+                            </button>
+                            <button
+                                onClick={() => { setEditingProduct(null); setShowProductModal(true); }}
+                                className="btn-secondary whitespace-nowrap"
+                            >
+                                <Plus size={20} /> <span className="hidden sm:inline">Define Product</span>
+                            </button>
+                        </div>
+                    )}
                 </div>
 
                 <div className="flex-1 overflow-y-auto pr-2 grid grid-cols-2 md:grid-cols-3 xl:grid-cols-4 gap-4 content-start">
-                    <div onClick={() => { setEditingProduct(null); setShowProductModal(true); }} className="glass-card flex flex-col items-center justify-center gap-4 border-dashed border-white/20 hover:border-primary/50 cursor-pointer min-h-[200px] lg:min-h-[250px] group opacity-60 hover:opacity-100">
-                        <div className="w-12 h-12 rounded-full bg-white/5 flex items-center justify-center group-hover:scale-110 transition-transform">
-                            <Plus size={24} className="text-slate-400 group-hover:text-primary" />
+                    {!isSelectionMode && (
+                        <div onClick={() => { setEditingProduct(null); setShowProductModal(true); }} className="glass-card flex flex-col items-center justify-center gap-4 border-dashed border-white/20 hover:border-primary/50 cursor-pointer min-h-[200px] lg:min-h-[250px] group opacity-60 hover:opacity-100">
+                            <div className="w-12 h-12 rounded-full bg-white/5 flex items-center justify-center group-hover:scale-110 transition-transform">
+                                <Plus size={24} className="text-slate-400 group-hover:text-primary" />
+                            </div>
+                            <span className="font-medium text-slate-400">New Product</span>
                         </div>
-                        <span className="font-medium text-slate-400">New Product</span>
-                    </div>
+                    )}
 
                     <AnimatePresence>
                         {filteredProducts.map(product => (
@@ -478,15 +551,28 @@ export default function POSInterface({ transactions, onAddTransaction }) {
                                 layout
                                 initial={{ opacity: 0, scale: 0.9 }}
                                 animate={{ opacity: 1, scale: 1 }}
-                                className="glass-card p-0 overflow-hidden cursor-pointer group flex flex-col h-full relative"
-                                onClick={() => setActiveProduct(product)}
+                                className={`glass-card p-0 overflow-hidden cursor-pointer group flex flex-col h-full relative ${selectedProducts.has(product.name) ? 'ring-2 ring-primary bg-primary/10' : ''}`}
+                                onClick={() => {
+                                    if (isSelectionMode) toggleSelection(product.name);
+                                    else setActiveProduct(product);
+                                }}
                             >
-                                <button
-                                    onClick={(e) => { e.stopPropagation(); setEditingProduct(product); setShowProductModal(true); }}
-                                    className="absolute top-2 right-2 z-10 p-2 bg-black/60 hover:bg-primary rounded-lg text-white opacity-0 group-hover:opacity-100 transition-all focus:opacity-100 lg:opacity-0"
-                                >
-                                    <Edit size={14} />
-                                </button>
+                                {isSelectionMode && (
+                                    <div className="absolute top-2 left-2 z-20 pointer-events-none">
+                                        <div className={`w-6 h-6 rounded-full border-2 flex items-center justify-center transition-colors ${selectedProducts.has(product.name) ? 'bg-primary border-primary' : 'border-white/40 bg-black/40'}`}>
+                                            {selectedProducts.has(product.name) && <CheckCircle size={14} className="text-white" />}
+                                        </div>
+                                    </div>
+                                )}
+
+                                {!isSelectionMode && (
+                                    <button
+                                        onClick={(e) => { e.stopPropagation(); setEditingProduct(product); setShowProductModal(true); }}
+                                        className="absolute top-2 right-2 z-10 p-2 bg-black/60 hover:bg-primary rounded-lg text-white opacity-0 group-hover:opacity-100 transition-all focus:opacity-100 lg:opacity-0"
+                                    >
+                                        <Edit size={14} />
+                                    </button>
+                                )}
 
                                 <div className="aspect-square bg-black/20 relative">
                                     {product.imageUrl ? (
