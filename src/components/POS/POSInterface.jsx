@@ -218,7 +218,24 @@ export default function POSInterface({ transactions, onAddTransaction }) {
                 }
 
                 const { data } = supabase.storage.from('product-images').getPublicUrl(path);
-                setForm(p => ({ ...p, imageUrl: data.publicUrl }));
+                const publicUrl = data.publicUrl;
+
+                // DIAGNOSTIC START
+                console.log("Checking URL:", publicUrl);
+                try {
+                    const check = await fetch(publicUrl, { method: 'HEAD' });
+                    if (!check.ok) {
+                        showToast(`Upload Warning: URL returned ${check.status} (${check.statusText}). Bucket might not be Public.`, 'error');
+                    } else {
+                        showToast('Upload Verified & Accessible!', 'success');
+                    }
+                } catch (netErr) {
+                    // CORS might block HEAD, ignore if so, but it usually indicates mixed content issues if on HTTP
+                    console.warn("Network check failed", netErr);
+                }
+                // DIAGNOSTIC END
+
+                setForm(p => ({ ...p, imageUrl: publicUrl }));
             } catch (err) {
                 console.error("Upload failed:", err);
                 showToast(`Upload Error: ${err.message}`, 'error');
