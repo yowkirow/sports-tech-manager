@@ -61,7 +61,9 @@ const useProducts = (transactions) => {
 
         chronoTransactions.forEach(t => {
             if (t.type === 'define_product') {
-                const { name, price, imageUrl, linkedColor, category } = t.details;
+                const details = typeof t.details === 'string' ? JSON.parse(t.details) : t.details;
+                console.log("Processing define_product:", t.id, details);
+                const { name, price, imageUrl, linkedColor, category } = details || {};
                 if (!name) return;
                 products.set(name, {
                     id: t.id, // Use latest ID
@@ -252,6 +254,8 @@ export default function POSInterface({ transactions, onAddTransaction }) {
                     onSave={async (formData) => {
                         setCheckoutLoading(true);
                         try {
+                            console.log("Saving product with formData:", formData);
+                            showToast(`Saving ${formData.name}... Image: ${formData.imageUrl ? 'Found' : 'NULL'}`, 'info');
                             await onAddTransaction({
                                 id: crypto.randomUUID(),
                                 type: 'define_product',
