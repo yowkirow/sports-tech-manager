@@ -298,12 +298,16 @@ export default function POSInterface({ transactions, onAddTransaction }) {
                     amount: 0,
                     description: `Defined Product: ${form.name}`,
                     date: new Date().toISOString(),
-                    details: { ...form, category: 'shirts' }
+                    details: form
                 });
-                showToast('Product Saved', 'success');
+                showToast('Product Saved!', 'success');
                 setShowProductModal(false);
-            } catch (err) { showToast('Save Failed', 'error'); }
-            finally { setCheckoutLoading(false); }
+            } catch (err) {
+                console.error("Save failed:", err);
+                showToast(`Save Error: ${err.message}`, 'error');
+            } finally {
+                setCheckoutLoading(false);
+            }
         };
 
         const deleteProduct = async () => {
