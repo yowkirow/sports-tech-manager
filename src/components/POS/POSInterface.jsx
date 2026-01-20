@@ -62,6 +62,9 @@ const useProducts = (transactions) => {
                     linkedColor,
                     category: category || 'shirts'
                 });
+            } else if (t.type === 'delete_product') {
+                const { name } = t.details;
+                if (name) products.delete(name);
             }
         });
 
@@ -82,6 +85,7 @@ export default function POSInterface({ transactions, onAddTransaction }) {
     const [showProductModal, setShowProductModal] = useState(false);
     const [activeProduct, setActiveProduct] = useState(null); // The product clicked, waiting for size override
     const [editingProduct, setEditingProduct] = useState(null); // For the Edit Modal
+    const [cartOpenMobile, setCartOpenMobile] = useState(false);
 
     // Derived Data
     const rawInventory = useRawInventory(transactions);
@@ -230,6 +234,25 @@ export default function POSInterface({ transactions, onAddTransaction }) {
             finally { setCheckoutLoading(false); }
         };
 
+        const deleteProduct = async () => {
+            if (!editingProduct || !window.confirm(`Delete ${editingProduct.name}? This will remove it from the menu.`)) return;
+            setCheckoutLoading(true);
+            try {
+                await onAddTransaction({
+                    id: crypto.randomUUID(),
+                    type: 'delete_product',
+                    category: 'system',
+                    amount: 0,
+                    description: `Deleted Product: ${editingProduct.name}`,
+                    date: new Date().toISOString(),
+                    details: { name: editingProduct.name }
+                });
+                showToast('Product Deleted', 'info');
+                setShowProductModal(false);
+            } catch (err) { showToast('Delete Failed', 'error'); }
+            finally { setCheckoutLoading(false); }
+        };
+
         return (
             <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/80 backdrop-blur-sm p-4">
                 <div className="glass-panel w-full max-w-md p-6 relative">
@@ -266,12 +289,85 @@ export default function POSInterface({ transactions, onAddTransaction }) {
                             <p className="text-[10px] text-slate-500 mt-1">Deducts from "{form.linkedColor} Shirt" inventory when sold.</p>
                         </div>
 
-                        <button onClick={saveProduct} className="btn-primary w-full py-3 mt-4">Save Definition</button>
+                        <div className="flex gap-2 mt-4">
+                            {editingProduct && (
+                                <button onClick={deleteProduct} className="px-4 py-3 rounded-xl bg-red-500/10 text-red-400 hover:bg-red-500/20 border border-red-500/20">
+                                    <Trash2 size={20} />
+                                </button>
+                            )}
+                            <button onClick={saveProduct} className="btn-primary flex-1 py-3">Save Definition</button>
+                        </div>
                     </div>
                 </div>
             </div>
         );
     };
+
+    const CartContent = () => (
+        <>
+            <div className="p-6 border-b border-white/10 hidden lg:block">
+                <h2 className="text-xl font-bold text-white flex items-center gap-2">
+                    <ShoppingCart className="text-primary" /> Current Order
+                </h2>
+            </div>
+
+            <div className="flex-1 overflow-y-auto p-4 space-y-3">
+                {cart.map(item => (
+                    <div key={item.cartId} className="bg-white/5 rounded-xl p-3 flex items-center gap-3">
+                        <div className="w-12 h-12 rounded-lg bg-black/20 overflow-hidden shrink-0">
+                            {item.imageUrl && <img src={item.imageUrl} className="w-full h-full object-cover" />}
+                        </div>
+                        <div className="flex-1 min-w-0">
+                            <h4 className="font-medium text-slate-200 truncate">{item.name}</h4>
+                            <div className="flex items-center gap-2 text-xs text-slate-400">
+                                <span className="bg-white/10 px-1.5 py-0.5 rounded text-white">{item.size}</span>
+                                <span>₱{item.price}</span>
+                            </div>
+                        </div>
+                        <div className="flex items-center gap-2">
+                            <button onClick={() => updateCartQuantity(item.cartId, -1)} className="p-1 hover:bg-white/10 rounded text-slate-400">-</button>
+                            <span className="text-sm font-bold w-4 text-center">{item.quantity}</span>
+                            <button onClick={() => updateCartQuantity(item.cartId, 1)} className="p-1 hover:bg-white/10 rounded text-slate-400">+</button>
+                        </div>
+                        <button onClick={() => setCart(c => c.filter(x => x.cartId !== item.cartId))} className="text-red-400 ml-2"><Trash2 size={16} /></button>
+                    </div>
+                ))}
+                {cart.length === 0 && <div className="text-center text-slate-500 mt-10">Cart is empty</div>}
+            </div>
+
+            <div className="p-6 border-t border-white/10 bg-black/20 space-y-4">
+                <div className="flex justify-between text-lg font-bold text-white"><span>Total</span><span>₱{cart.reduce((a, b) => a + (b.price * b.quantity), 0).toLocaleString()}</span></div>
+
+                <div className="relative">
+                    <label className="text-xs text-slate-500 mb-1 block">Customer</label>
+                    <input
+                        className="glass-input py-2 text-sm"
+                        placeholder="Customer Name"
+                        value={customerName}
+                        onChange={e => { setCustomerName(e.target.value); setShowSuggestions(true); }}
+                        onBlur={() => setTimeout(() => setShowSuggestions(false), 200)}
+                    />
+                    {showSuggestions && filteredCustomers.length > 0 && (
+                        <div className="absolute bottom-full left-0 w-full mb-1 bg-slate-800 border border-white/10 rounded-lg shadow-xl max-h-40 overflow-y-auto z-20">
+                            {filteredCustomers.map(c => (
+                                <button key={c} onClick={() => { setCustomerName(c); setShowSuggestions(false); }} className="w-full text-left px-4 py-2 hover:bg-white/5 text-sm">{c}</button>
+                            ))}
+                        </div>
+                    )}
+                </div>
+
+                <div className="grid grid-cols-3 gap-2">
+                    {['paid', 'shipped', 'ready'].map(s => (
+                        <button key={s} onClick={() => setOrderStatus(s)} className={`py-2 rounded-lg text-xs font-semibold capitalize ${orderStatus === s ? 'bg-primary text-white' : 'bg-white/5 text-slate-400'}`}>{s}</button>
+                    ))}
+                </div>
+
+                <button onClick={handleCheckout} disabled={checkoutLoading || cart.length === 0} className="btn-primary w-full py-4 text-lg">
+                    {checkoutLoading ? <Loader2 className="animate-spin" /> : <CheckCircle size={20} />} Checkout
+                </button>
+            </div>
+        </>
+    );
 
     const SizeSelectorModal = () => {
         if (!activeProduct) return null;
@@ -328,7 +424,7 @@ export default function POSInterface({ transactions, onAddTransaction }) {
             {activeProduct && <SizeSelectorModal />}
 
             {/* Product Grid */}
-            <div className="flex-1 flex flex-col min-h-0">
+            <div className="flex-1 flex flex-col min-h-0 pb-20 lg:pb-0"> {/* Padding bottom for mobile sticky bar */}
                 <div className="mb-6 flex gap-4">
                     <div className="relative flex-1">
                         <Search className="absolute left-4 top-1/2 -translate-y-1/2 text-slate-400" size={20} />
@@ -344,12 +440,12 @@ export default function POSInterface({ transactions, onAddTransaction }) {
                         onClick={() => { setEditingProduct(null); setShowProductModal(true); }}
                         className="btn-secondary whitespace-nowrap"
                     >
-                        <Plus size={20} /> Define Product
+                        <Plus size={20} /> <span className="hidden sm:inline">Define Product</span>
                     </button>
                 </div>
 
                 <div className="flex-1 overflow-y-auto pr-2 grid grid-cols-2 md:grid-cols-3 xl:grid-cols-4 gap-4 content-start">
-                    <div onClick={() => { setEditingProduct(null); setShowProductModal(true); }} className="glass-card flex flex-col items-center justify-center gap-4 border-dashed border-white/20 hover:border-primary/50 cursor-pointer min-h-[250px] group opacity-60 hover:opacity-100">
+                    <div onClick={() => { setEditingProduct(null); setShowProductModal(true); }} className="glass-card flex flex-col items-center justify-center gap-4 border-dashed border-white/20 hover:border-primary/50 cursor-pointer min-h-[200px] lg:min-h-[250px] group opacity-60 hover:opacity-100">
                         <div className="w-12 h-12 rounded-full bg-white/5 flex items-center justify-center group-hover:scale-110 transition-transform">
                             <Plus size={24} className="text-slate-400 group-hover:text-primary" />
                         </div>
@@ -368,7 +464,7 @@ export default function POSInterface({ transactions, onAddTransaction }) {
                             >
                                 <button
                                     onClick={(e) => { e.stopPropagation(); setEditingProduct(product); setShowProductModal(true); }}
-                                    className="absolute top-2 right-2 z-10 p-2 bg-black/60 hover:bg-primary rounded-lg text-white opacity-0 group-hover:opacity-100 transition-all"
+                                    className="absolute top-2 right-2 z-10 p-2 bg-black/60 hover:bg-primary rounded-lg text-white opacity-0 group-hover:opacity-100 transition-all focus:opacity-100 lg:opacity-0"
                                 >
                                     <Edit size={14} />
                                 </button>
@@ -398,70 +494,42 @@ export default function POSInterface({ transactions, onAddTransaction }) {
                 </div>
             </div>
 
-            {/* Cart Section (Reused/Simplified) */}
-            <div className="w-full lg:w-[400px] glass-panel rounded-2xl flex flex-col h-[500px] lg:h-full">
-                <div className="p-6 border-b border-white/10">
-                    <h2 className="text-xl font-bold text-white flex items-center gap-2">
-                        <ShoppingCart className="text-primary" /> Current Order
-                    </h2>
+            {/* Sticky Mobile Cart Bar */}
+            <div className="fixed bottom-0 left-0 right-0 p-4 bg-slate-900 border-t border-white/10 lg:hidden flex justify-between items-center z-30">
+                <div>
+                    <p className="text-xs text-slate-400 mb-0.5">{cart.reduce((a, b) => a + b.quantity, 0)} items in cart</p>
+                    <p className="font-bold text-lg text-white">₱{cart.reduce((a, b) => a + (b.price * b.quantity), 0).toLocaleString()}</p>
                 </div>
-
-                <div className="flex-1 overflow-y-auto p-4 space-y-3">
-                    {cart.map(item => (
-                        <div key={item.cartId} className="bg-white/5 rounded-xl p-3 flex items-center gap-3">
-                            <div className="w-12 h-12 rounded-lg bg-black/20 overflow-hidden shrink-0">
-                                {item.imageUrl && <img src={item.imageUrl} className="w-full h-full object-cover" />}
-                            </div>
-                            <div className="flex-1 min-w-0">
-                                <h4 className="font-medium text-slate-200 truncate">{item.name}</h4>
-                                <div className="flex items-center gap-2 text-xs text-slate-400">
-                                    <span className="bg-white/10 px-1.5 py-0.5 rounded text-white">{item.size}</span>
-                                    <span>₱{item.price}</span>
-                                </div>
-                            </div>
-                            <div className="flex items-center gap-2">
-                                <button onClick={() => updateCartQuantity(item.cartId, -1)} className="p-1 hover:bg-white/10 rounded text-slate-400">-</button>
-                                <span className="text-sm font-bold w-4 text-center">{item.quantity}</span>
-                                <button onClick={() => updateCartQuantity(item.cartId, 1)} className="p-1 hover:bg-white/10 rounded text-slate-400">+</button>
-                            </div>
-                            <button onClick={() => setCart(c => c.filter(x => x.cartId !== item.cartId))} className="text-red-400 ml-2"><Trash2 size={16} /></button>
-                        </div>
-                    ))}
-                    {cart.length === 0 && <div className="text-center text-slate-500 mt-10">Cart is empty</div>}
-                </div>
-
-                <div className="p-6 border-t border-white/10 bg-black/20 space-y-4">
-                    <div className="flex justify-between text-lg font-bold text-white"><span>Total</span><span>₱{cart.reduce((a, b) => a + (b.price * b.quantity), 0).toLocaleString()}</span></div>
-
-                    <div className="relative">
-                        <label className="text-xs text-slate-500 mb-1 block">Customer</label>
-                        <input
-                            className="glass-input py-2 text-sm"
-                            placeholder="Customer Name"
-                            value={customerName}
-                            onChange={e => { setCustomerName(e.target.value); setShowSuggestions(true); }}
-                            onBlur={() => setTimeout(() => setShowSuggestions(false), 200)}
-                        />
-                        {showSuggestions && filteredCustomers.length > 0 && (
-                            <div className="absolute bottom-full left-0 w-full mb-1 bg-slate-800 border border-white/10 rounded-lg shadow-xl max-h-40 overflow-y-auto z-20">
-                                {filteredCustomers.map(c => (
-                                    <button key={c} onClick={() => { setCustomerName(c); setShowSuggestions(false); }} className="w-full text-left px-4 py-2 hover:bg-white/5 text-sm">{c}</button>
-                                ))}
-                            </div>
-                        )}
-                    </div>
-
-                    <div className="grid grid-cols-3 gap-2">
-                        {['paid', 'shipped', 'ready'].map(s => (
-                            <button key={s} onClick={() => setOrderStatus(s)} className={`py-2 rounded-lg text-xs font-semibold capitalize ${orderStatus === s ? 'bg-primary text-white' : 'bg-white/5 text-slate-400'}`}>{s}</button>
-                        ))}
-                    </div>
-
-                    <button onClick={handleCheckout} disabled={checkoutLoading || cart.length === 0} className="btn-primary w-full py-4 text-lg">
-                        {checkoutLoading ? <Loader2 className="animate-spin" /> : <CheckCircle size={20} />} Checkout
-                    </button>
-                </div>
+                <button
+                    onClick={() => setCartOpenMobile(true)}
+                    className="btn-primary py-3 px-6 flex items-center gap-2"
+                    disabled={cart.length === 0}
+                >
+                    <ShoppingCart size={20} /> View Cart
+                </button>
             </div>
+
+            {/* Desktop Cart Section (Hidden on Mobile) */}
+            <div className="hidden lg:flex w-full lg:w-[400px] glass-panel rounded-2xl flex-col h-full">
+                <CartContent />
+            </div>
+
+            {/* Mobile Cart Modal */}
+            <AnimatePresence>
+                {cartOpenMobile && (
+                    <div className="fixed inset-0 z-50 flex flex-col bg-slate-900 lg:hidden">
+                        <div className="p-4 border-b border-white/10 flex justify-between items-center bg-slate-900">
+                            <h2 className="text-xl font-bold text-white flex items-center gap-2">
+                                <ShoppingCart className="text-primary" /> Current Order
+                            </h2>
+                            <button onClick={() => setCartOpenMobile(false)} className="text-slate-400 p-2"><X /></button>
+                        </div>
+                        <div className="flex-1 overflow-hidden flex flex-col">
+                            <CartContent />
+                        </div>
+                    </div>
+                )}
+            </AnimatePresence>
         </div>
     );
 
