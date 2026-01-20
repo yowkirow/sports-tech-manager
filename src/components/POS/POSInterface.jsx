@@ -497,13 +497,20 @@ export default function POSInterface({ transactions, onAddTransaction }) {
                                             onError={(e) => {
                                                 console.error("Image load failed for:", product.name, product.imageUrl);
                                                 e.target.style.display = 'none';
-                                                e.target.nextSibling.style.display = 'flex'; // Show fallback
+                                                e.target.nextSibling.classList.remove('hidden');
+                                                e.target.nextSibling.classList.add('flex');
                                             }}
                                         />
                                     ) : null}
-                                    {/* Fallback (Hidden by default if image exists, shown on error) */}
-                                    <div className={`w-full h-full flex items-center justify-center text-slate-600 ${product.imageUrl ? 'hidden' : 'flex'}`}>
+                                    {/* Fallback - RED if error (url exists), GRAY if no url */}
+                                    <div className={`w-full h-full flex items-center justify-center ${product.imageUrl ? 'text-red-500 bg-red-500/10' : 'text-slate-600'} ${product.imageUrl && !product.hasError ? 'hidden' : 'flex'}`}>
                                         <Package size={32} />
+                                        {product.imageUrl && <span className="text-[10px] absolute bottom-8">Failed Load</span>}
+                                    </div>
+
+                                    {/* DEBUG: Show URL */}
+                                    <div className="absolute top-0 left-0 bg-black/80 text-[8px] text-white p-1 max-w-full break-all z-20">
+                                        {product.imageUrl || 'NULL'}
                                     </div>
 
                                     <div className="absolute bottom-2 left-2 bg-black/60 px-2 py-1 rounded text-[10px] text-white backdrop-blur-md">
