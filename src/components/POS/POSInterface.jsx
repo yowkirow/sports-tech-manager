@@ -499,12 +499,22 @@ export default function POSInterface({ transactions, onAddTransaction }) {
 
                                 <div className="aspect-square bg-black/20 relative">
                                     {product.imageUrl ? (
-                                        <img src={product.imageUrl} alt={product.name} className="w-full h-full object-cover" />
-                                    ) : (
-                                        <div className="w-full h-full flex items-center justify-center text-slate-600">
-                                            <Package size={32} />
-                                        </div>
-                                    )}
+                                        <img
+                                            src={`${product.imageUrl}?v=${product.id}`}
+                                            alt={product.name}
+                                            className="w-full h-full object-cover"
+                                            onError={(e) => {
+                                                console.error("Image load failed:", product.imageUrl);
+                                                e.target.style.display = 'none';
+                                                e.target.nextSibling.style.display = 'flex'; // Show fallback
+                                            }}
+                                        />
+                                    ) : null}
+                                    {/* Fallback (Hidden by default if image exists, shown on error) */}
+                                    <div className={`w-full h-full flex items-center justify-center text-slate-600 ${product.imageUrl ? 'hidden' : 'flex'}`}>
+                                        <Package size={32} />
+                                    </div>
+
                                     <div className="absolute bottom-2 left-2 bg-black/60 px-2 py-1 rounded text-[10px] text-white backdrop-blur-md">
                                         Uses: {product.linkedColor}
                                     </div>
