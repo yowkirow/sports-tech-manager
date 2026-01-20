@@ -207,11 +207,22 @@ export default function POSInterface({ transactions, onAddTransaction }) {
             setUploading(true);
             try {
                 const ext = file.name.split('.').pop();
-                const path = `product-images/${Date.now()}.${ext}`;
-                await supabase.storage.from('product-images').upload(path, file);
+                const fileName = `${Date.now()}.${ext}`;
+                // Don't nest in folder with same name as bucket, just put in root or 'uploads'
+                const path = fileName;
+
+                const { data: uploadData, error: uploadError } = await supabase.storage.from('product-images').upload(path, file);
+
+                if (uploadError) {
+                    throw uploadError;
+                }
+
                 const { data } = supabase.storage.from('product-images').getPublicUrl(path);
                 setForm(p => ({ ...p, imageUrl: data.publicUrl }));
-            } catch (err) { showToast('Upload Error', 'error'); }
+            } catch (err) {
+                console.error("Upload failed:", err);
+                showToast(`Upload Error: ${err.message}`, 'error');
+            }
             finally { setUploading(false); }
         };
 
