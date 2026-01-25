@@ -103,7 +103,10 @@ export default function POSInterface({ transactions, onAddTransaction }) {
     // Checkout Meta State
     const [customerName, setCustomerName] = useState('');
     const [orderStatus, setOrderStatus] = useState('paid');
+    const [paymentMode, setPaymentMode] = useState('Cash');
     const [showSuggestions, setShowSuggestions] = useState(false);
+
+    const PAYMENT_MODES = ['Cash', 'Gcash', 'Bank Transfer', 'COD'];
 
     // Derived Data
     const rawInventory = useRawInventory(transactions);
@@ -219,6 +222,7 @@ export default function POSInterface({ transactions, onAddTransaction }) {
                         orderId, // Link all items to this order
                         customerName,
                         status: orderStatus,
+                        paymentMode,
                         quantity: item.quantity,
                         itemName: item.name,
                         price: item.price,
@@ -646,6 +650,8 @@ const CartContent = ({
     setCustomerName,
     orderStatus,
     setOrderStatus,
+    paymentMode,
+    setPaymentMode,
     showSuggestions,
     setShowSuggestions,
     filteredCustomers
@@ -702,10 +708,31 @@ const CartContent = ({
                 )}
             </div>
 
-            <div className="grid grid-cols-3 gap-2">
-                {['paid', 'shipped', 'ready'].map(s => (
-                    <button key={s} onClick={() => setOrderStatus(s)} className={`py-2 rounded-lg text-xs font-semibold capitalize ${orderStatus === s ? 'bg-primary text-white' : 'bg-white/5 text-slate-400'}`}>{s}</button>
-                ))}
+            <div className="grid grid-cols-2 gap-4">
+                <div>
+                    <label className="text-xs text-slate-500 mb-1 block">Payment Mode</label>
+                    <select
+                        className="glass-input py-2 text-sm w-full"
+                        value={paymentMode}
+                        onChange={e => setPaymentMode(e.target.value)}
+                    >
+                        {['Cash', 'Gcash', 'Bank Transfer', 'COD'].map(m => (
+                            <option key={m} value={m} className="bg-slate-900">{m}</option>
+                        ))}
+                    </select>
+                </div>
+                <div>
+                    <label className="text-xs text-slate-500 mb-1 block">Status</label>
+                    <select
+                        className="glass-input py-2 text-sm w-full capitalize"
+                        value={orderStatus}
+                        onChange={e => setOrderStatus(e.target.value)}
+                    >
+                        {['paid', 'in_progress', 'ready', 'shipped'].map(s => (
+                            <option key={s} value={s} className="bg-slate-900">{s.replace('_', ' ')}</option>
+                        ))}
+                    </select>
+                </div>
             </div>
 
             <button onClick={handleCheckout} disabled={checkoutLoading || cart.length === 0} className="btn-primary w-full py-4 text-lg">

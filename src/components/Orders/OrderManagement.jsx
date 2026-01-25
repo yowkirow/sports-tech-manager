@@ -5,7 +5,8 @@ import { useToast } from '../ui/Toast';
 
 import { supabase } from '../../lib/supabaseClient';
 
-const STATUSES = ['paid', 'ready', 'shipped'];
+const STATUSES = ['paid', 'in_progress', 'ready', 'shipped'];
+const PAYMENT_MODES = ['Cash', 'Gcash', 'Bank Transfer', 'COD'];
 
 export default function OrderManagement({ transactions, onAddTransaction, onDeleteTransaction, refetch }) {
     const { showToast } = useToast();
@@ -43,7 +44,9 @@ export default function OrderManagement({ transactions, onAddTransaction, onDele
                     id: key, // This is the virtual Order ID
                     date: t.date,
                     customerName: t.details?.customerName || 'Unknown',
+                    customerName: t.details?.customerName || 'Unknown',
                     status: t.details?.status || 'paid', // Use status from first item
+                    paymentMode: t.details?.paymentMode || 'Cash', // Use MOP from first item
                     items: [], // Individual transactions
                     totalAmount: 0
                 };
@@ -88,7 +91,8 @@ export default function OrderManagement({ transactions, onAddTransaction, onDele
         setEditingId(order.id);
         setEditForm({
             customerName: order.customerName,
-            status: order.status
+            status: order.status,
+            paymentMode: order.paymentMode || 'Cash'
         });
     };
 
@@ -103,7 +107,8 @@ export default function OrderManagement({ transactions, onAddTransaction, onDele
                 const updatedDetails = {
                     ...t.details,
                     customerName: editForm.customerName,
-                    status: editForm.status
+                    status: editForm.status,
+                    paymentMode: editForm.paymentMode
                 };
 
                 const { error } = await supabase
@@ -248,7 +253,7 @@ export default function OrderManagement({ transactions, onAddTransaction, onDele
                                     onClick={() => handleBulkStatusUpdate(s)}
                                     className="px-3 py-2 text-xs font-bold text-slate-300 hover:bg-primary hover:text-white transition-colors capitalize"
                                 >
-                                    {s}
+                                    {s.replace('_', ' ')}
                                 </button>
                             ))}
                         </div>
@@ -296,8 +301,8 @@ export default function OrderManagement({ transactions, onAddTransaction, onDele
                                 {/* Checkbox */}
                                 {isSelectionMode && (
                                     <div className={`w-6 h-6 rounded-md border-2 flex items-center justify-center shrink-0 transition-colors ${selectedOrderIds.has(order.id)
-                                            ? 'bg-primary border-primary'
-                                            : 'border-white/20 bg-black/20'
+                                        ? 'bg-primary border-primary'
+                                        : 'border-white/20 bg-black/20'
                                         }`}>
                                         {selectedOrderIds.has(order.id) && <CheckCircle size={14} className="text-white" />}
                                     </div>
@@ -316,6 +321,8 @@ export default function OrderManagement({ transactions, onAddTransaction, onDele
                                         <span>{new Date(order.date).toLocaleDateString()}</span>
                                         <span>•</span>
                                         <span className="font-mono custom-id-font">{order.items.length} Items</span>
+                                        <span>•</span>
+                                        <span className="text-primary">{order.paymentMode}</span>
                                     </div>
 
                                     {editingId === order.id ? (
@@ -339,11 +346,18 @@ export default function OrderManagement({ transactions, onAddTransaction, onDele
                                     {editingId === order.id ? (
                                         <div className="flex items-center gap-2" onClick={e => e.stopPropagation()}>
                                             <select
+                                                value={editForm.paymentMode}
+                                                onChange={e => setEditForm({ ...editForm, paymentMode: e.target.value })}
+                                                className="glass-input py-1 px-2 text-xs"
+                                            >
+                                                {PAYMENT_MODES.map(m => <option key={m} value={m} className="bg-slate-900">{m}</option>)}
+                                            </select>
+                                            <select
                                                 value={editForm.status}
                                                 onChange={e => setEditForm({ ...editForm, status: e.target.value })}
                                                 className="glass-input py-1 px-2 text-xs capitalize"
                                             >
-                                                {STATUSES.map(s => <option key={s} value={s} className="bg-slate-900">{s}</option>)}
+                                                {STATUSES.map(s => <option key={s} value={s} className="bg-slate-900">{s.replace('_', ' ')}</option>)}
                                             </select>
                                             <button
                                                 onClick={() => handleSave(order.id)}
@@ -365,7 +379,7 @@ export default function OrderManagement({ transactions, onAddTransaction, onDele
                                                 order.status === 'ready' ? 'bg-green-500/10 border-green-500/20 text-green-400' :
                                                     'bg-orange-500/10 border-orange-500/20 text-orange-400'
                                                 }`}>
-                                                {order.status}
+                                                {order.status.replace('_', ' ')}
                                             </span>
 
                                             {!isSelectionMode && (
