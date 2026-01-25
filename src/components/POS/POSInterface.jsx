@@ -61,9 +61,7 @@ const useProducts = (transactions) => {
 
         chronoTransactions.forEach(t => {
             if (t.type === 'define_product') {
-                const details = typeof t.details === 'string' ? JSON.parse(t.details) : t.details;
-                console.log("Processing define_product:", t.id, details);
-                const { name, price, imageUrl, linkedColor, category } = details || {};
+                const { name, price, imageUrl, linkedColor, category } = t.details;
                 if (!name) return;
                 products.set(name, {
                     id: t.id, // Use latest ID
@@ -254,8 +252,6 @@ export default function POSInterface({ transactions, onAddTransaction }) {
                     onSave={async (formData) => {
                         setCheckoutLoading(true);
                         try {
-                            console.log("Saving product with formData:", formData);
-                            showToast(`Saving ${formData.name}... Image: ${formData.imageUrl ? 'Found' : 'NULL'}`, 'info');
                             await onAddTransaction({
                                 id: crypto.randomUUID(),
                                 type: 'define_product',
@@ -411,11 +407,6 @@ export default function POSInterface({ transactions, onAddTransaction }) {
                                     <div className={`w-full h-full flex items-center justify-center ${product.imageUrl ? 'text-red-500 bg-red-500/10' : 'text-slate-600'} ${product.imageUrl ? 'hidden' : 'flex'}`}>
                                         <Package size={32} />
                                         {product.imageUrl && <span className="text-[10px] absolute bottom-8">Failed Load</span>}
-                                    </div>
-
-                                    {/* DEBUG: Show URL */}
-                                    <div className="absolute top-0 left-0 bg-black/80 text-[8px] text-white p-1 max-w-full break-all z-20">
-                                        {product.imageUrl || 'NULL'}
                                     </div>
 
                                     <div className="absolute bottom-2 left-2 bg-black/60 px-2 py-1 rounded text-[10px] text-white backdrop-blur-md">
