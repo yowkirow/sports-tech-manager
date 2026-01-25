@@ -389,7 +389,7 @@ export default function POSInterface({ transactions, onAddTransaction }) {
                                     </button>
                                 )}
 
-                                <div className="aspect-square bg-black/20 relative">
+                                <div className="aspect-[4/5] bg-black/20 relative w-full">
                                     {product.imageUrl ? (
                                         <img
                                             src={product.imageUrl}
@@ -414,7 +414,7 @@ export default function POSInterface({ transactions, onAddTransaction }) {
                                     </div>
                                 </div>
                                 <div className="p-4 flex flex-col flex-1">
-                                    <h3 className="font-semibold text-white leading-tight mb-1">{product.name}</h3>
+                                    <h3 className="font-semibold text-white leading-tight mb-1 line-clamp-2">{product.name}</h3>
                                     <div className="mt-auto flex justify-between items-center">
                                         <span className="text-primary font-bold">₱{product.price}</span>
                                         <ArrowRightIcon className="text-white/20 group-hover:text-white transition-colors" />

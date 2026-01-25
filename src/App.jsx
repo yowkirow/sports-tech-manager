@@ -19,7 +19,8 @@ function App() {
         loading,
         addTransaction: addToSupabase,
         deleteTransaction: deleteFromSupabase,
-        deleteAllTransactions
+        deleteAllTransactions,
+        refetch
     } = useSupabaseTransactions();
 
     const [activeTab, setActiveTab] = useState('pos'); // Default to POS for speed
@@ -168,6 +169,7 @@ function App() {
                                 <POSInterface
                                     transactions={transactions}
                                     onAddTransaction={addTransaction}
+                                    refetch={refetch}
                                 />
                             )}
 
@@ -176,6 +178,7 @@ function App() {
                                     transactions={transactions}
                                     onAddTransaction={addTransaction}
                                     onDeleteTransaction={deleteTransaction}
+                                    refetch={refetch}
                                 />
                             )}
 

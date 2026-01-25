@@ -1,13 +1,13 @@
 import React, { useState, useMemo } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
-import { Package, Clock, CheckCircle, Truck, User, Search, Edit2, Save, X, Trash2 } from 'lucide-react';
+import { Package, Clock, CheckCircle, Truck, User, Search, Edit2, Save, X, Trash2, Layers } from 'lucide-react';
 import { useToast } from '../ui/Toast';
 
 import { supabase } from '../../lib/supabaseClient';
 
 const STATUSES = ['paid', 'ready', 'shipped'];
 
-export default function OrderManagement({ transactions, onAddTransaction, onDeleteTransaction }) {
+export default function OrderManagement({ transactions, onAddTransaction, onDeleteTransaction, refetch }) {
     const { showToast } = useToast();
     const [filterStatus, setFilterStatus] = useState('all');
     const [searchTerm, setSearchTerm] = useState('');
@@ -16,6 +16,10 @@ export default function OrderManagement({ transactions, onAddTransaction, onDele
     const [editingId, setEditingId] = useState(null);
     const [editForm, setEditForm] = useState({});
     const [loading, setLoading] = useState(false);
+
+    // Bulk Selection State
+    const [isSelectionMode, setIsSelectionMode] = useState(false);
+    const [selectedOrderIds, setSelectedOrderIds] = useState(new Set());
 
     // Filter only Sales
     const orders = useMemo(() => {
@@ -38,17 +42,63 @@ export default function OrderManagement({ transactions, onAddTransaction, onDele
         });
     };
 
+    const toggleSelection = (id) => {
+        const newSet = new Set(selectedOrderIds);
+        if (newSet.has(id)) newSet.delete(id);
+        else newSet.add(id);
+        setSelectedOrderIds(newSet);
+    };
+
+    const handleBulkStatusUpdate = async (newStatus) => {
+        if (!window.confirm(`Update status to "${newStatus}" for ${selectedOrderIds.size} orders?`)) return;
+        setLoading(true);
+        try {
+            // Process each selected order
+            for (const id of selectedOrderIds) {
+                const original = transactions.find(t => t.id === id);
+                if (!original) continue;
+
+                const updatedDetails = { ...original.details, status: newStatus };
+                const { error } = await supabase
+                    .from('transactions')
+                    .update({ details: updatedDetails })
+                    .eq('id', id);
+                if (error) throw error;
+            }
+            showToast('Bulk update complete', 'success');
+            setIsSelectionMode(false);
+            setSelectedOrderIds(new Set());
+            if (refetch) await refetch();
+        } catch (err) {
+            console.error(err);
+            showToast('Bulk update failed', 'error');
+        } finally {
+            setLoading(false);
+        }
+    };
+
+    const handleBulkDelete = async () => {
+        if (!window.confirm(`Delete ${selectedOrderIds.size} orders? This cannot be undone.`)) return;
+        setLoading(true);
+        try {
+            for (const id of selectedOrderIds) {
+                await onDeleteTransaction(id);
+            }
+            showToast('Bulk delete complete', 'success');
+            setIsSelectionMode(false);
+            setSelectedOrderIds(new Set());
+            if (refetch) await refetch();
+        } catch (err) {
+            console.error(err);
+            showToast('Bulk delete partially failed', 'error');
+        } finally {
+            setLoading(false);
+        }
+    };
+
     const handleSave = async (orderId) => {
         setLoading(true);
         try {
-            // We need to update the specific transaction.
-            // Since our `useSupabaseTransactions` adds new rows, we might need a way to UPDATE.
-            // The current hook `addTransaction` uses INSERT.
-            // We need a direct update using supabase here or extend the hook.
-            // For now, I'll use supabase directly here for the update to keep it self-contained
-            // effectively patching the record.
-
-            // 1. Fetch original to preserve other details
             const original = transactions.find(t => t.id === orderId);
             if (!original) throw new Error("Order not found");
 
@@ -62,24 +112,23 @@ export default function OrderManagement({ transactions, onAddTransaction, onDele
                 .from('transactions')
                 .update({
                     details: updatedDetails,
-                    description: original.description.replace(original.details.customerName, editForm.customerName) // Attempt to keep desc synced
+                    description: original.description.replace(original.details.customerName, editForm.customerName)
                 })
                 .eq('id', orderId);
 
             if (error) throw error;
 
-            // Trigger a UI refresh if possible (the hook refetches on mount, but maybe we need a force refresh)
-            // Ideally `onAddTransaction` handles state updates, but it's for ADD only.
-            // We should probably expose `refetch` or just reload the page for now or rely on realtime if enabled.
-            // For a smoother UX, I'll manually trigger a "fake" update via the prop if it supported update, 
-            // but since it doesn't, I'll assume the parent component might need a way to refresh.
-            // Actually, simplest way: Just reload or use a callback if provided.
-
-            // Hack for immediate UI update if parent doesn't auto-refresh:
-            window.location.reload(); // Simple but effective for this prototype phase
-
             showToast('Order updated!', 'success');
             setEditingId(null);
+
+            // Soft Refresh
+            if (refetch) {
+                await refetch();
+            } else {
+                // Fallback if refetch isn't available
+                window.location.reload();
+            }
+
         } catch (err) {
             console.error(err);
             showToast('Failed to update order', 'error');
@@ -111,15 +160,51 @@ export default function OrderManagement({ transactions, onAddTransaction, onDele
                 </div>
             </div>
 
-            <div className="relative">
-                <Search className="absolute left-4 top-1/2 -translate-y-1/2 text-slate-400" size={20} />
-                <input
-                    type="text"
-                    placeholder="Search by customer name..."
-                    className="glass-input pl-12"
-                    value={searchTerm}
-                    onChange={(e) => setSearchTerm(e.target.value)}
-                />
+            <div className="relative flex gap-4">
+                <div className="relative flex-1">
+                    <Search className="absolute left-4 top-1/2 -translate-y-1/2 text-slate-400" size={20} />
+                    <input
+                        type="text"
+                        placeholder="Search by customer name..."
+                        className="glass-input pl-12"
+                        value={searchTerm}
+                        onChange={(e) => setSearchTerm(e.target.value)}
+                    />
+                </div>
+                {isSelectionMode ? (
+                    <div className="flex gap-2 animate-fade-in">
+                        <div className="flex bg-white/5 rounded-xl overflow-hidden divide-x divide-white/10 border border-white/10">
+                            {STATUSES.map(s => (
+                                <button
+                                    key={s}
+                                    onClick={() => handleBulkStatusUpdate(s)}
+                                    className="px-3 py-2 text-xs font-bold text-slate-300 hover:bg-primary hover:text-white transition-colors capitalize"
+                                >
+                                    {s}
+                                </button>
+                            ))}
+                        </div>
+                        <button
+                            onClick={handleBulkDelete}
+                            className="bg-red-500/20 text-red-400 hover:bg-red-500 hover:text-white px-4 py-2 rounded-xl transition-colors"
+                        >
+                            <Trash2 size={20} />
+                        </button>
+                        <button
+                            onClick={() => { setIsSelectionMode(false); setSelectedOrderIds(new Set()); }}
+                            className="bg-white/10 text-slate-300 hover:bg-white/20 px-4 py-2 rounded-xl transition-colors"
+                        >
+                            <X size={20} />
+                        </button>
+                    </div>
+                ) : (
+                    <button
+                        onClick={() => setIsSelectionMode(true)}
+                        className="btn-secondary whitespace-nowrap"
+                    >
+                        <Layers size={20} /> Multi-Select
+                    </button>
+                )}
             </div>
 
             <div className="flex-1 overflow-y-auto space-y-4 pr-2">
@@ -129,8 +214,22 @@ export default function OrderManagement({ transactions, onAddTransaction, onDele
                             key={order.id}
                             initial={{ opacity: 0, y: 10 }}
                             animate={{ opacity: 1, y: 0 }}
-                            className="glass-card p-6 flex flex-col md:flex-row gap-6 md:items-center group"
+                            onClick={() => isSelectionMode && toggleSelection(order.id)}
+                            className={`glass-card p-6 flex flex-col md:flex-row gap-6 md:items-center group transition-all duration-200 cursor-pointer ${isSelectionMode && selectedOrderIds.has(order.id)
+                                    ? 'ring-2 ring-primary bg-primary/5'
+                                    : ''
+                                }`}
                         >
+                            {/* Checkbox for Selection Mode */}
+                            {isSelectionMode && (
+                                <div className={`w-6 h-6 rounded-md border-2 flex items-center justify-center shrink-0 transition-colors ${selectedOrderIds.has(order.id)
+                                        ? 'bg-primary border-primary'
+                                        : 'border-white/20 bg-black/20'
+                                    }`}>
+                                    {selectedOrderIds.has(order.id) && <CheckCircle size={14} className="text-white" />}
+                                </div>
+                            )}
+
                             {/* Status Icon */}
                             <div className="w-12 h-12 rounded-full bg-white/5 flex items-center justify-center shrink-0">
                                 {order.details?.status === 'shipped' ? <Truck className="text-blue-400" /> :
@@ -141,18 +240,19 @@ export default function OrderManagement({ transactions, onAddTransaction, onDele
 
                             <div className="flex-1 space-y-1">
                                 <div className="flex items-center gap-2 text-slate-400 text-xs">
-                                    <span>{new Date(order.date).toLocaleDateString()}</span>
+                                    <span>{new Date(order.date).toLocaleDateString()} const</span>
                                     <span>•</span>
                                     <span className="font-mono custom-id-font">{order.id.slice(0, 8)}</span>
                                 </div>
 
                                 {editingId === order.id ? (
-                                    <div className="flex items-center gap-2 mt-1">
+                                    <div className="flex items-center gap-2 mt-1" onClick={e => e.stopPropagation()}>
                                         <User size={16} className="text-slate-500" />
                                         <input
                                             className="glass-input py-1 px-2 text-sm max-w-[200px]"
                                             value={editForm.customerName}
                                             onChange={e => setEditForm({ ...editForm, customerName: e.target.value })}
+                                            autoFocus
                                         />
                                     </div>
                                 ) : (
@@ -168,7 +268,7 @@ export default function OrderManagement({ transactions, onAddTransaction, onDele
                                 <span className="text-xl font-bold text-white">₱{order.amount.toLocaleString()}</span>
 
                                 {editingId === order.id ? (
-                                    <div className="flex items-center gap-2">
+                                    <div className="flex items-center gap-2" onClick={e => e.stopPropagation()}>
                                         <select
                                             value={editForm.status}
                                             onChange={e => setEditForm({ ...editForm, status: e.target.value })}
@@ -198,23 +298,29 @@ export default function OrderManagement({ transactions, onAddTransaction, onDele
                                             }`}>
                                             {order.details?.status || 'paid'}
                                         </span>
-                                        <button
-                                            onClick={() => {
-                                                if (confirm('Are you sure you want to delete this order?')) {
-                                                    onDeleteTransaction(order.id);
-                                                }
-                                            }}
-                                            className="p-2 text-slate-500 hover:text-red-400 hover:bg-red-500/10 rounded-lg transition-colors opacity-0 group-hover:opacity-100"
-                                            title="Delete Order"
-                                        >
-                                            <Trash2 size={16} />
-                                        </button>
-                                        <button
-                                            onClick={() => startEditing(order)}
-                                            className="p-2 text-slate-500 hover:text-white hover:bg-white/10 rounded-lg transition-colors opacity-0 group-hover:opacity-100"
-                                        >
-                                            <Edit2 size={16} />
-                                        </button>
+                                        {!isSelectionMode && (
+                                            <>
+                                                <button
+                                                    onClick={(e) => {
+                                                        e.stopPropagation();
+                                                        if (confirm('Are you sure you want to delete this order?')) {
+                                                            onDeleteTransaction(order.id);
+                                                            // For single delete, onDeleteTransaction usually updates state or reload happens via prop
+                                                        }
+                                                    }}
+                                                    className="p-2 text-slate-500 hover:text-red-400 hover:bg-red-500/10 rounded-lg transition-colors opacity-0 group-hover:opacity-100"
+                                                    title="Delete Order"
+                                                >
+                                                    <Trash2 size={16} />
+                                                </button>
+                                                <button
+                                                    onClick={(e) => { e.stopPropagation(); startEditing(order); }}
+                                                    className="p-2 text-slate-500 hover:text-white hover:bg-white/10 rounded-lg transition-colors opacity-0 group-hover:opacity-100"
+                                                >
+                                                    <Edit2 size={16} />
+                                                </button>
+                                            </>
+                                        )}
                                     </div>
                                 )}
                             </div>
