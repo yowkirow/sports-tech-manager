@@ -1,6 +1,6 @@
 import React, { useState, useMemo } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
-import { Package, Clock, CheckCircle, Truck, User, Search, Edit2, Save, X, Trash2, Layers } from 'lucide-react';
+import { Package, Clock, CheckCircle, Truck, User, Search, Edit2, Save, X, Trash2, Layers, ChevronDown, ChevronUp, ShoppingBag } from 'lucide-react';
 import { useToast } from '../ui/Toast';
 
 import { supabase } from '../../lib/supabaseClient';
@@ -12,8 +12,11 @@ export default function OrderManagement({ transactions, onAddTransaction, onDele
     const [filterStatus, setFilterStatus] = useState('all');
     const [searchTerm, setSearchTerm] = useState('');
 
+    // Group Expansion State
+    const [expandedOrderIds, setExpandedOrderIds] = useState(new Set());
+
     // Edit State
-    const [editingId, setEditingId] = useState(null);
+    const [editingId, setEditingId] = useState(null); // Values: 'orderId'
     const [editForm, setEditForm] = useState({});
     const [loading, setLoading] = useState(false);
 
@@ -21,25 +24,57 @@ export default function OrderManagement({ transactions, onAddTransaction, onDele
     const [isSelectionMode, setIsSelectionMode] = useState(false);
     const [selectedOrderIds, setSelectedOrderIds] = useState(new Set());
 
-    // Filter only Sales
-    const orders = useMemo(() => {
-        return transactions.filter(t => t.type === 'sale')
-            .filter(t => {
-                const status = t.details?.status || 'paid';
-                const matchesStatus = filterStatus === 'all' || status === filterStatus;
-                const matchesSearch =
-                    t.details?.customerName?.toLowerCase().includes(searchTerm.toLowerCase()) ||
-                    t.description?.toLowerCase().includes(searchTerm.toLowerCase());
-                return matchesStatus && matchesSearch;
-            });
-    }, [transactions, filterStatus, searchTerm]);
+    // 1. Group Transactions into Orders
+    const groupedOrders = useMemo(() => {
+        const sales = transactions.filter(t => t.type === 'sale');
+        const groups = {};
 
-    const startEditing = (order) => {
-        setEditingId(order.id);
-        setEditForm({
-            customerName: order.details?.customerName || '',
-            status: order.details?.status || 'paid'
+        sales.forEach(t => {
+            // Determine grouping key: Use orderId if available, else fallback to Customer + Minute
+            let key = t.details?.orderId;
+            if (!key) {
+                // Fallback for legacy: Group by Customer + Date (Minute precision)
+                const dateKey = new Date(t.date).toISOString().slice(0, 16); // YYYY-MM-DDTHH:mm
+                key = `${t.details?.customerName || 'Unknown'}-${dateKey}`;
+            }
+
+            if (!groups[key]) {
+                groups[key] = {
+                    id: key, // This is the virtual Order ID
+                    date: t.date,
+                    customerName: t.details?.customerName || 'Unknown',
+                    status: t.details?.status || 'paid', // Use status from first item
+                    items: [], // Individual transactions
+                    totalAmount: 0
+                };
+            }
+
+            groups[key].items.push(t);
+            groups[key].totalAmount += t.amount;
         });
+
+        // Convert to array and sort by date desc
+        return Object.values(groups).sort((a, b) => new Date(b.date) - new Date(a.date));
+
+    }, [transactions]);
+
+    // 2. Filter Groups
+    const filteredOrders = useMemo(() => {
+        return groupedOrders.filter(order => {
+            const matchesStatus = filterStatus === 'all' || order.status === filterStatus;
+            const matchesSearch =
+                order.customerName.toLowerCase().includes(searchTerm.toLowerCase()) ||
+                order.id.toLowerCase().includes(searchTerm.toLowerCase());
+            return matchesStatus && matchesSearch;
+        });
+    }, [groupedOrders, filterStatus, searchTerm]);
+
+
+    const toggleExpansion = (orderId) => {
+        const newSet = new Set(expandedOrderIds);
+        if (newSet.has(orderId)) newSet.delete(orderId);
+        else newSet.add(orderId);
+        setExpandedOrderIds(newSet);
     };
 
     const toggleSelection = (id) => {
@@ -49,21 +84,89 @@ export default function OrderManagement({ transactions, onAddTransaction, onDele
         setSelectedOrderIds(newSet);
     };
 
-    const handleBulkStatusUpdate = async (newStatus) => {
-        if (!window.confirm(`Update status to "${newStatus}" for ${selectedOrderIds.size} orders?`)) return;
+    const startEditing = (order) => {
+        setEditingId(order.id);
+        setEditForm({
+            customerName: order.customerName,
+            status: order.status
+        });
+    };
+
+    const handleSave = async (orderId) => {
         setLoading(true);
         try {
-            // Process each selected order
-            for (const id of selectedOrderIds) {
-                const original = transactions.find(t => t.id === id);
-                if (!original) continue;
+            const order = groupedOrders.find(o => o.id === orderId);
+            if (!order) throw new Error("Order not found");
 
-                const updatedDetails = { ...original.details, status: newStatus };
+            // Update ALL transactions in this group
+            const updates = order.items.map(async (t) => {
+                const updatedDetails = {
+                    ...t.details,
+                    customerName: editForm.customerName,
+                    status: editForm.status
+                };
+
                 const { error } = await supabase
                     .from('transactions')
-                    .update({ details: updatedDetails })
-                    .eq('id', id);
+                    .update({
+                        details: updatedDetails,
+                        description: t.description.replace(t.details.customerName, editForm.customerName) // Attempt to sync desc
+                    })
+                    .eq('id', t.id);
                 if (error) throw error;
+            });
+
+            await Promise.all(updates);
+
+            showToast('Order updated!', 'success');
+            setEditingId(null);
+            if (refetch) await refetch();
+
+        } catch (err) {
+            console.error(err);
+            showToast('Failed to update order', 'error');
+        } finally {
+            setLoading(false);
+        }
+    };
+
+    const handleDeleteOrder = async (orderId) => {
+        if (!confirm('Delete this entire order? This removes all items in it.')) return;
+        setLoading(true);
+        try {
+            const order = groupedOrders.find(o => o.id === orderId);
+            if (!order) return;
+
+            // Delete all transactions in group
+            for (const item of order.items) {
+                await onDeleteTransaction(item.id);
+            }
+
+            showToast('Order deleted', 'success');
+            if (refetch) await refetch();
+        } catch (err) {
+            showToast('Delete failed', 'error');
+        } finally {
+            setLoading(false);
+        }
+    }
+
+    // Bulk Actions (Operating on Order Groups)
+    const handleBulkStatusUpdate = async (newStatus) => {
+        if (!confirm(`Update status to "${newStatus}" for ${selectedOrderIds.size} orders?`)) return;
+        setLoading(true);
+        try {
+            for (const orderId of selectedOrderIds) {
+                const order = groupedOrders.find(o => o.id === orderId);
+                if (!order) continue;
+
+                // Update all items in this order
+                const updates = order.items.map(item =>
+                    supabase.from('transactions')
+                        .update({ details: { ...item.details, status: newStatus } })
+                        .eq('id', item.id)
+                );
+                await Promise.all(updates);
             }
             showToast('Bulk update complete', 'success');
             setIsSelectionMode(false);
@@ -78,11 +181,16 @@ export default function OrderManagement({ transactions, onAddTransaction, onDele
     };
 
     const handleBulkDelete = async () => {
-        if (!window.confirm(`Delete ${selectedOrderIds.size} orders? This cannot be undone.`)) return;
+        if (!confirm(`Delete ${selectedOrderIds.size} orders?`)) return;
         setLoading(true);
         try {
-            for (const id of selectedOrderIds) {
-                await onDeleteTransaction(id);
+            for (const orderId of selectedOrderIds) {
+                const order = groupedOrders.find(o => o.id === orderId);
+                if (!order) continue;
+
+                for (const item of order.items) {
+                    await onDeleteTransaction(item.id);
+                }
             }
             showToast('Bulk delete complete', 'success');
             setIsSelectionMode(false);
@@ -90,52 +198,12 @@ export default function OrderManagement({ transactions, onAddTransaction, onDele
             if (refetch) await refetch();
         } catch (err) {
             console.error(err);
-            showToast('Bulk delete partially failed', 'error');
+            showToast('Bulk delete failed', 'error');
         } finally {
             setLoading(false);
         }
-    };
+    }
 
-    const handleSave = async (orderId) => {
-        setLoading(true);
-        try {
-            const original = transactions.find(t => t.id === orderId);
-            if (!original) throw new Error("Order not found");
-
-            const updatedDetails = {
-                ...original.details,
-                customerName: editForm.customerName,
-                status: editForm.status
-            };
-
-            const { error } = await supabase
-                .from('transactions')
-                .update({
-                    details: updatedDetails,
-                    description: original.description.replace(original.details.customerName, editForm.customerName)
-                })
-                .eq('id', orderId);
-
-            if (error) throw error;
-
-            showToast('Order updated!', 'success');
-            setEditingId(null);
-
-            // Soft Refresh
-            if (refetch) {
-                await refetch();
-            } else {
-                // Fallback if refetch isn't available
-                window.location.reload();
-            }
-
-        } catch (err) {
-            console.error(err);
-            showToast('Failed to update order', 'error');
-        } finally {
-            setLoading(false);
-        }
-    };
 
     return (
         <div className="h-full flex flex-col gap-6">
@@ -209,124 +277,164 @@ export default function OrderManagement({ transactions, onAddTransaction, onDele
 
             <div className="flex-1 overflow-y-auto space-y-4 pr-2">
                 <AnimatePresence>
-                    {orders.map(order => (
+                    {filteredOrders.map(order => (
                         <motion.div
                             key={order.id}
                             initial={{ opacity: 0, y: 10 }}
                             animate={{ opacity: 1, y: 0 }}
-                            onClick={() => isSelectionMode && toggleSelection(order.id)}
-                            className={`glass-card p-6 flex flex-col md:flex-row gap-6 md:items-center group transition-all duration-200 cursor-pointer ${isSelectionMode && selectedOrderIds.has(order.id)
-                                    ? 'ring-2 ring-primary bg-primary/5'
-                                    : ''
+                            className={`glass-card overflow-hidden transition-all duration-200 ${isSelectionMode && selectedOrderIds.has(order.id) ? 'ring-2 ring-primary bg-primary/5' : ''
                                 }`}
                         >
-                            {/* Checkbox for Selection Mode */}
-                            {isSelectionMode && (
-                                <div className={`w-6 h-6 rounded-md border-2 flex items-center justify-center shrink-0 transition-colors ${selectedOrderIds.has(order.id)
-                                        ? 'bg-primary border-primary'
-                                        : 'border-white/20 bg-black/20'
-                                    }`}>
-                                    {selectedOrderIds.has(order.id) && <CheckCircle size={14} className="text-white" />}
-                                </div>
-                            )}
-
-                            {/* Status Icon */}
-                            <div className="w-12 h-12 rounded-full bg-white/5 flex items-center justify-center shrink-0">
-                                {order.details?.status === 'shipped' ? <Truck className="text-blue-400" /> :
-                                    order.details?.status === 'ready' ? <CheckCircle className="text-green-400" /> :
-                                        <Clock className="text-orange-400" />
-                                }
-                            </div>
-
-                            <div className="flex-1 space-y-1">
-                                <div className="flex items-center gap-2 text-slate-400 text-xs">
-                                    <span>{new Date(order.date).toLocaleDateString()} const</span>
-                                    <span>•</span>
-                                    <span className="font-mono custom-id-font">{order.id.slice(0, 8)}</span>
-                                </div>
-
-                                {editingId === order.id ? (
-                                    <div className="flex items-center gap-2 mt-1" onClick={e => e.stopPropagation()}>
-                                        <User size={16} className="text-slate-500" />
-                                        <input
-                                            className="glass-input py-1 px-2 text-sm max-w-[200px]"
-                                            value={editForm.customerName}
-                                            onChange={e => setEditForm({ ...editForm, customerName: e.target.value })}
-                                            autoFocus
-                                        />
-                                    </div>
-                                ) : (
-                                    <h3 className="font-bold text-white text-lg">{order.details?.customerName}</h3>
-                                )}
-
-                                <p className="text-primary text-sm font-medium">
-                                    {order.description}
-                                </p>
-                            </div>
-
-                            <div className="flex flex-col items-end gap-2">
-                                <span className="text-xl font-bold text-white">₱{order.amount.toLocaleString()}</span>
-
-                                {editingId === order.id ? (
-                                    <div className="flex items-center gap-2" onClick={e => e.stopPropagation()}>
-                                        <select
-                                            value={editForm.status}
-                                            onChange={e => setEditForm({ ...editForm, status: e.target.value })}
-                                            className="glass-input py-1 px-2 text-xs capitalize"
-                                        >
-                                            {STATUSES.map(s => <option key={s} value={s} className="bg-slate-900">{s}</option>)}
-                                        </select>
-                                        <button
-                                            onClick={() => handleSave(order.id)}
-                                            disabled={loading}
-                                            className="p-2 bg-green-500/20 text-green-400 rounded-lg hover:bg-green-500/30"
-                                        >
-                                            <Save size={16} />
-                                        </button>
-                                        <button
-                                            onClick={() => setEditingId(null)}
-                                            className="p-2 bg-red-500/20 text-red-400 rounded-lg hover:bg-red-500/30"
-                                        >
-                                            <X size={16} />
-                                        </button>
-                                    </div>
-                                ) : (
-                                    <div className="flex items-center gap-2">
-                                        <span className={`px-3 py-1 rounded-full text-xs font-bold capitalize border ${order.details?.status === 'shipped' ? 'bg-blue-500/10 border-blue-500/20 text-blue-400' :
-                                            order.details?.status === 'ready' ? 'bg-green-500/10 border-green-500/20 text-green-400' :
-                                                'bg-orange-500/10 border-orange-500/20 text-orange-400'
-                                            }`}>
-                                            {order.details?.status || 'paid'}
-                                        </span>
-                                        {!isSelectionMode && (
-                                            <>
-                                                <button
-                                                    onClick={(e) => {
-                                                        e.stopPropagation();
-                                                        if (confirm('Are you sure you want to delete this order?')) {
-                                                            onDeleteTransaction(order.id);
-                                                            // For single delete, onDeleteTransaction usually updates state or reload happens via prop
-                                                        }
-                                                    }}
-                                                    className="p-2 text-slate-500 hover:text-red-400 hover:bg-red-500/10 rounded-lg transition-colors opacity-0 group-hover:opacity-100"
-                                                    title="Delete Order"
-                                                >
-                                                    <Trash2 size={16} />
-                                                </button>
-                                                <button
-                                                    onClick={(e) => { e.stopPropagation(); startEditing(order); }}
-                                                    className="p-2 text-slate-500 hover:text-white hover:bg-white/10 rounded-lg transition-colors opacity-0 group-hover:opacity-100"
-                                                >
-                                                    <Edit2 size={16} />
-                                                </button>
-                                            </>
-                                        )}
+                            {/* Main Order Header */}
+                            <div
+                                className="p-6 flex flex-col md:flex-row gap-6 md:items-center cursor-pointer group"
+                                onClick={() => {
+                                    if (isSelectionMode) toggleSelection(order.id);
+                                    else toggleExpansion(order.id);
+                                }}
+                            >
+                                {/* Checkbox */}
+                                {isSelectionMode && (
+                                    <div className={`w-6 h-6 rounded-md border-2 flex items-center justify-center shrink-0 transition-colors ${selectedOrderIds.has(order.id)
+                                            ? 'bg-primary border-primary'
+                                            : 'border-white/20 bg-black/20'
+                                        }`}>
+                                        {selectedOrderIds.has(order.id) && <CheckCircle size={14} className="text-white" />}
                                     </div>
                                 )}
+
+                                {/* Status Icon */}
+                                <div className="w-12 h-12 rounded-full bg-white/5 flex items-center justify-center shrink-0">
+                                    {order.status === 'shipped' ? <Truck className="text-blue-400" /> :
+                                        order.status === 'ready' ? <CheckCircle className="text-green-400" /> :
+                                            <Clock className="text-orange-400" />
+                                    }
+                                </div>
+
+                                <div className="flex-1 space-y-1">
+                                    <div className="flex items-center gap-2 text-slate-400 text-xs">
+                                        <span>{new Date(order.date).toLocaleDateString()}</span>
+                                        <span>•</span>
+                                        <span className="font-mono custom-id-font">{order.items.length} Items</span>
+                                    </div>
+
+                                    {editingId === order.id ? (
+                                        <div className="flex items-center gap-2 mt-1" onClick={e => e.stopPropagation()}>
+                                            <User size={16} className="text-slate-500" />
+                                            <input
+                                                className="glass-input py-1 px-2 text-sm max-w-[200px]"
+                                                value={editForm.customerName}
+                                                onChange={e => setEditForm({ ...editForm, customerName: e.target.value })}
+                                                autoFocus
+                                            />
+                                        </div>
+                                    ) : (
+                                        <h3 className="font-bold text-white text-lg">{order.customerName}</h3>
+                                    )}
+                                </div>
+
+                                <div className="flex flex-col items-end gap-2">
+                                    <span className="text-xl font-bold text-white">₱{order.totalAmount.toLocaleString()}</span>
+
+                                    {editingId === order.id ? (
+                                        <div className="flex items-center gap-2" onClick={e => e.stopPropagation()}>
+                                            <select
+                                                value={editForm.status}
+                                                onChange={e => setEditForm({ ...editForm, status: e.target.value })}
+                                                className="glass-input py-1 px-2 text-xs capitalize"
+                                            >
+                                                {STATUSES.map(s => <option key={s} value={s} className="bg-slate-900">{s}</option>)}
+                                            </select>
+                                            <button
+                                                onClick={() => handleSave(order.id)}
+                                                disabled={loading}
+                                                className="p-2 bg-green-500/20 text-green-400 rounded-lg hover:bg-green-500/30"
+                                            >
+                                                <Save size={16} />
+                                            </button>
+                                            <button
+                                                onClick={() => setEditingId(null)}
+                                                className="p-2 bg-red-500/20 text-red-400 rounded-lg hover:bg-red-500/30"
+                                            >
+                                                <X size={16} />
+                                            </button>
+                                        </div>
+                                    ) : (
+                                        <div className="flex items-center gap-2">
+                                            <span className={`px-3 py-1 rounded-full text-xs font-bold capitalize border ${order.status === 'shipped' ? 'bg-blue-500/10 border-blue-500/20 text-blue-400' :
+                                                order.status === 'ready' ? 'bg-green-500/10 border-green-500/20 text-green-400' :
+                                                    'bg-orange-500/10 border-orange-500/20 text-orange-400'
+                                                }`}>
+                                                {order.status}
+                                            </span>
+
+                                            {!isSelectionMode && (
+                                                <>
+                                                    <button
+                                                        onClick={(e) => {
+                                                            e.stopPropagation();
+                                                            handleDeleteOrder(order.id);
+                                                        }}
+                                                        className="p-2 text-slate-500 hover:text-red-400 hover:bg-red-500/10 rounded-lg transition-colors opacity-0 group-hover:opacity-100"
+                                                    >
+                                                        <Trash2 size={16} />
+                                                    </button>
+                                                    <button
+                                                        onClick={(e) => { e.stopPropagation(); startEditing(order); }}
+                                                        className="p-2 text-slate-500 hover:text-white hover:bg-white/10 rounded-lg transition-colors opacity-0 group-hover:opacity-100"
+                                                    >
+                                                        <Edit2 size={16} />
+                                                    </button>
+                                                    <button
+                                                        className="p-2 text-slate-500 hover:text-white transition-colors"
+                                                    >
+                                                        {expandedOrderIds.has(order.id) ? <ChevronUp size={20} /> : <ChevronDown size={20} />}
+                                                    </button>
+                                                </>
+                                            )}
+                                        </div>
+                                    )}
+                                </div>
                             </div>
+
+                            {/* Expanded Items */}
+                            <AnimatePresence>
+                                {expandedOrderIds.has(order.id) && (
+                                    <motion.div
+                                        initial={{ height: 0, opacity: 0 }}
+                                        animate={{ height: 'auto', opacity: 1 }}
+                                        exit={{ height: 0, opacity: 0 }}
+                                        className="border-t border-white/5 bg-white/5"
+                                    >
+                                        <div className="p-4 space-y-2">
+                                            <p className="text-xs text-slate-500 font-semibold uppercase tracking-wider mb-2 px-2">Order Items</p>
+                                            {order.items.map(item => (
+                                                <div key={item.id} className="flex items-center justify-between p-2 rounded-lg hover:bg-white/5">
+                                                    <div className="flex items-center gap-3">
+                                                        <div className="w-8 h-8 rounded bg-slate-800 flex items-center justify-center text-slate-500">
+                                                            <ShoppingBag size={14} />
+                                                        </div>
+                                                        <div>
+                                                            <p className="text-sm text-slate-200 font-medium">{item.details?.itemName || 'Unknown Item'}</p>
+                                                            <p className="text-xs text-slate-500">
+                                                                {item.details?.size && `Size: ${item.details.size}`}
+                                                                {item.details?.color && ` • ${item.details.color}`}
+                                                            </p>
+                                                        </div>
+                                                    </div>
+                                                    <div className="text-right">
+                                                        <p className="text-sm text-white">₱{(item.amount).toLocaleString()}</p>
+                                                        <p className="text-xs text-slate-500">Qty: {item.details?.quantity || 1}</p>
+                                                    </div>
+                                                </div>
+                                            ))}
+                                        </div>
+                                    </motion.div>
+                                )}
+                            </AnimatePresence>
                         </motion.div>
                     ))}
-                    {orders.length === 0 && (
+                    {filteredOrders.length === 0 && (
                         <div className="text-center text-slate-500 mt-20">
                             <Package size={48} className="mx-auto mb-4 opacity-50" />
                             <p>No orders found</p>

@@ -203,6 +203,9 @@ export default function POSInterface({ transactions, onAddTransaction }) {
 
         setCheckoutLoading(true);
         try {
+            // Generate a unique Order ID for this entire cart
+            const orderId = crypto.randomUUID();
+
             for (const item of cart) {
                 const isShirt = !!item.linkedColor;
                 const transaction = {
@@ -213,6 +216,7 @@ export default function POSInterface({ transactions, onAddTransaction }) {
                     date: new Date().toISOString(),
                     description: `Sold ${item.name} (${item.size})`,
                     details: {
+                        orderId, // Link all items to this order
                         customerName,
                         status: orderStatus,
                         quantity: item.quantity,
