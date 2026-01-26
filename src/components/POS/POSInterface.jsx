@@ -357,7 +357,7 @@ export default function POSInterface({ transactions, onAddTransaction }) {
                     )}
                 </div>
 
-                <div className="flex-1 overflow-y-auto pr-2 grid grid-cols-2 md:grid-cols-3 xl:grid-cols-4 gap-4 content-start">
+                <div className="flex-1 overflow-y-auto pr-2 grid grid-cols-[repeat(auto-fill,minmax(160px,1fr))] gap-4 content-start">
                     {!isSelectionMode && (
                         <div onClick={() => { setEditingProduct(null); setShowProductModal(true); }} className="glass-card flex flex-col items-center justify-center gap-4 border-dashed border-white/20 hover:border-primary/50 cursor-pointer min-h-[200px] lg:min-h-[250px] group opacity-60 hover:opacity-100">
                             <div className="w-12 h-12 rounded-full bg-white/5 flex items-center justify-center group-hover:scale-110 transition-transform">

@@ -1,6 +1,6 @@
 import React, { useState, useMemo } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
-import { Package, Clock, CheckCircle, Truck, User, Search, Edit2, Save, X, Trash2, Layers, ChevronDown, ChevronUp, ShoppingBag } from 'lucide-react';
+import { Package, Clock, CheckCircle, Truck, User, Search, Edit2, Save, X, Trash2, Layers, ChevronDown, ChevronUp, ShoppingBag, Loader2 } from 'lucide-react';
 import { useToast } from '../ui/Toast';
 
 import { supabase } from '../../lib/supabaseClient';
@@ -24,6 +24,7 @@ export default function OrderManagement({ transactions, onAddTransaction, onDele
     // Bulk Selection State
     const [isSelectionMode, setIsSelectionMode] = useState(false);
     const [selectedOrderIds, setSelectedOrderIds] = useState(new Set());
+    const [showBulkPaymentModal, setShowBulkPaymentModal] = useState(false);
 
     // 1. Group Transactions into Orders
     const groupedOrders = useMemo(() => {
@@ -157,8 +158,9 @@ export default function OrderManagement({ transactions, onAddTransaction, onDele
     }
 
     // Bulk Actions (Operating on Order Groups)
-    const handleBulkStatusUpdate = async (newStatus) => {
-        if (!confirm(`Update status to "${newStatus}" for ${selectedOrderIds.size} orders?`)) return;
+    const handleBulkStatusUpdate = async (newStatus, newPaymentMode = null) => {
+        const action = newStatus ? `Update status to "${newStatus}"` : `Update payment to "${newPaymentMode}"`;
+        if (!confirm(`${action} for ${selectedOrderIds.size} orders?`)) return;
         setLoading(true);
         try {
             for (const orderId of selectedOrderIds) {
@@ -166,11 +168,15 @@ export default function OrderManagement({ transactions, onAddTransaction, onDele
                 if (!order) continue;
 
                 // Update all items in this order
-                const updates = order.items.map(item =>
-                    supabase.from('transactions')
-                        .update({ details: { ...item.details, status: newStatus } })
+                const updates = order.items.map(item => {
+                    const updateData = {};
+                    if (newStatus) updateData.status = newStatus;
+                    if (newPaymentMode) updateData.paymentMode = newPaymentMode;
+
+                    return supabase.from('transactions')
+                        .update({ details: { ...item.details, ...updateData } })
                         .eq('id', item.id)
-                );
+                });
                 await Promise.all(updates);
             }
             showToast('Bulk update complete', 'success');
@@ -258,6 +264,12 @@ export default function OrderManagement({ transactions, onAddTransaction, onDele
                             ))}
                         </div>
                         <button
+                            onClick={() => setShowBulkPaymentModal(true)}
+                            className="bg-white/10 text-slate-300 hover:bg-white/20 px-4 py-2 rounded-xl transition-colors text-xs font-bold whitespace-nowrap"
+                        >
+                            Edit Payment
+                        </button>
+                        <button
                             onClick={handleBulkDelete}
                             className="bg-red-500/20 text-red-400 hover:bg-red-500 hover:text-white px-4 py-2 rounded-xl transition-colors"
                         >
@@ -309,10 +321,17 @@ export default function OrderManagement({ transactions, onAddTransaction, onDele
                                 )}
 
                                 {/* Status Icon */}
-                                <div className="w-12 h-12 rounded-full bg-white/5 flex items-center justify-center shrink-0">
-                                    {order.status === 'shipped' ? <Truck className="text-blue-400" /> :
-                                        order.status === 'ready' ? <CheckCircle className="text-green-400" /> :
-                                            <Clock className="text-orange-400" />
+                                <div className={`w-12 h-12 rounded-full flex items-center justify-center shrink-0 ${order.status === 'shipped' ? 'bg-blue-500/10 text-blue-400' :
+                                    order.status === 'ready' ? 'bg-purple-500/10 text-purple-400' :
+                                        order.status === 'in_progress' ? 'bg-blue-500/10 text-blue-400' :
+                                            order.status === 'paid' ? 'bg-emerald-500/10 text-emerald-400' :
+                                                'bg-orange-500/10 text-orange-400'
+                                    }`}>
+                                    {order.status === 'shipped' ? <Truck size={20} /> :
+                                        order.status === 'ready' ? <Package size={20} /> :
+                                            order.status === 'in_progress' ? <Loader2 size={20} className="animate-spin" /> :
+                                                order.status === 'paid' ? <CheckCircle size={20} /> :
+                                                    <Clock size={20} />
                                     }
                                 </div>
 
@@ -389,13 +408,13 @@ export default function OrderManagement({ transactions, onAddTransaction, onDele
                                                             e.stopPropagation();
                                                             handleDeleteOrder(order.id);
                                                         }}
-                                                        className="p-2 text-slate-500 hover:text-red-400 hover:bg-red-500/10 rounded-lg transition-colors opacity-0 group-hover:opacity-100"
+                                                        className="p-2 text-slate-500 hover:text-red-400 hover:bg-red-500/10 rounded-lg transition-colors opacity-100 lg:opacity-0 lg:group-hover:opacity-100"
                                                     >
                                                         <Trash2 size={16} />
                                                     </button>
                                                     <button
                                                         onClick={(e) => { e.stopPropagation(); startEditing(order); }}
-                                                        className="p-2 text-slate-500 hover:text-white hover:bg-white/10 rounded-lg transition-colors opacity-0 group-hover:opacity-100"
+                                                        className="p-2 text-slate-500 hover:text-white hover:bg-white/10 rounded-lg transition-colors opacity-100 lg:opacity-0 lg:group-hover:opacity-100"
                                                     >
                                                         <Edit2 size={16} />
                                                     </button>
@@ -456,6 +475,40 @@ export default function OrderManagement({ transactions, onAddTransaction, onDele
                     )}
                 </AnimatePresence>
             </div>
+
+            {/* Bulk Payment Modal */}
+            <AnimatePresence>
+                {showBulkPaymentModal && (
+                    <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/80 backdrop-blur-sm p-4">
+                        <motion.div
+                            initial={{ scale: 0.9, opacity: 0 }}
+                            animate={{ scale: 1, opacity: 1 }}
+                            exit={{ scale: 0.9, opacity: 0 }}
+                            className="glass-panel p-6 max-w-sm w-full"
+                        >
+                            <div className="flex justify-between items-center mb-4">
+                                <h3 className="text-xl font-bold text-white">Bulk Edit Payment</h3>
+                                <button onClick={() => setShowBulkPaymentModal(false)} className="text-slate-400 hover:text-white"><X size={24} /></button>
+                            </div>
+                            <p className="text-sm text-slate-400 mb-4">Select new payment mode for {selectedOrderIds.size} orders:</p>
+                            <div className="grid grid-cols-2 gap-2">
+                                {PAYMENT_MODES.map(mode => (
+                                    <button
+                                        key={mode}
+                                        onClick={() => {
+                                            handleBulkStatusUpdate(null, mode);
+                                            setShowBulkPaymentModal(false);
+                                        }}
+                                        className="p-3 rounded-lg bg-white/5 hover:bg-primary/20 hover:text-primary transition-colors text-sm font-bold text-slate-200 border border-white/5 hover:border-primary/50"
+                                    >
+                                        {mode}
+                                    </button>
+                                ))}
+                            </div>
+                        </motion.div>
+                    </div>
+                )}
+            </AnimatePresence>
         </div>
     );
 }
