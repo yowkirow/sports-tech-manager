@@ -28,6 +28,10 @@ export default function POSInterface({ transactions, onAddTransaction }) {
     const [isSelectionMode, setIsSelectionMode] = useState(false);
     const [selectedProducts, setSelectedProducts] = useState(new Set());
 
+    // Reorder State
+    const [isReorderMode, setIsReorderMode] = useState(false);
+    const [localOrderedProducts, setLocalOrderedProducts] = useState([]);
+
     // Checkout Meta State
     const [customerName, setCustomerName] = useState('');
     const [fulfillmentStatus, setFulfillmentStatus] = useState('pending');
@@ -41,8 +45,14 @@ export default function POSInterface({ transactions, onAddTransaction }) {
     const rawInventory = useRawInventory(transactions);
     const products = useProducts(transactions);
 
-    // Filtering logic
-    const filteredProducts = products.filter(p =>
+    // Sync local order when products change (and not reordering)
+    useMemo(() => {
+        if (!isReorderMode) setLocalOrderedProducts(products);
+    }, [products, isReorderMode]);
+
+    // Filtering logic (Use local order if reordering, otherwise default)
+    const effectiveProducts = isReorderMode ? localOrderedProducts : products;
+    const filteredProducts = effectiveProducts.filter(p =>
         p.name.toLowerCase().includes(searchTerm.toLowerCase())
     );
 
@@ -183,6 +193,46 @@ export default function POSInterface({ transactions, onAddTransaction }) {
         }
     };
 
+    const handleMoveProduct = (index, direction) => {
+        const newOrder = [...localOrderedProducts];
+        const targetIndex = index + direction;
+        if (targetIndex < 0 || targetIndex >= newOrder.length) return;
+
+        // Swap
+        [newOrder[index], newOrder[targetIndex]] = [newOrder[targetIndex], newOrder[index]];
+        setLocalOrderedProducts(newOrder);
+    };
+
+    const handleSaveOrder = async () => {
+        if (!window.confirm('Save new product order?')) return;
+        setCheckoutLoading(true);
+        try {
+            // Re-define all products with new 'order' index
+            for (let i = 0; i < localOrderedProducts.length; i++) {
+                const p = localOrderedProducts[i];
+                await onAddTransaction({
+                    id: crypto.randomUUID(),
+                    type: 'define_product',
+                    category: 'system',
+                    amount: 0,
+                    description: `Reorder: ${p.name}`,
+                    date: new Date().toISOString(),
+                    details: {
+                        ...p,
+                        order: i
+                    }
+                });
+            }
+            showToast('Order Saved!', 'success');
+            setIsReorderMode(false);
+        } catch (err) {
+            console.error(err);
+            showToast('Failed to save order', 'error');
+        } finally {
+            setCheckoutLoading(false);
+        }
+    };
+
     return (
         <div className="flex flex-col lg:flex-row gap-6 h-[calc(100vh-120px)] relative">
             {showProductModal && (
@@ -273,24 +323,49 @@ export default function POSInterface({ transactions, onAddTransaction }) {
                         </div>
                     ) : (
                         <div className="flex gap-2">
-                            <button
-                                onClick={() => setIsSelectionMode(true)}
-                                className="px-4 py-2 bg-white/5 hover:bg-white/10 text-slate-300 rounded-xl font-bold border border-white/10 transition-colors"
-                            >
-                                Select
-                            </button>
-                            <button
-                                onClick={() => { setEditingProduct(null); setShowProductModal(true); }}
-                                className="btn-secondary whitespace-nowrap"
-                            >
-                                <Plus size={20} /> <span className="hidden sm:inline">Define Product</span>
-                            </button>
+                            {isReorderMode ? (
+                                <>
+                                    <button
+                                        onClick={handleSaveOrder}
+                                        className="px-4 py-2 bg-green-600 hover:bg-green-700 text-white rounded-xl font-bold transition-colors flex items-center gap-2"
+                                    >
+                                        <CheckCircle size={18} /> Save Order
+                                    </button>
+                                    <button
+                                        onClick={() => setIsReorderMode(false)}
+                                        className="px-4 py-2 bg-white/10 hover:bg-white/20 text-slate-300 rounded-xl font-bold transition-colors"
+                                    >
+                                        Cancel
+                                    </button>
+                                </>
+                            ) : (
+                                <>
+                                    <button
+                                        onClick={() => setIsSelectionMode(true)}
+                                        className="px-4 py-2 bg-white/5 hover:bg-white/10 text-slate-300 rounded-xl font-bold border border-white/10 transition-colors"
+                                    >
+                                        Select
+                                    </button>
+                                    <button
+                                        onClick={() => setIsReorderMode(true)}
+                                        className="px-4 py-2 bg-white/5 hover:bg-white/10 text-slate-300 rounded-xl font-bold border border-white/10 transition-colors"
+                                    >
+                                        Reorder
+                                    </button>
+                                    <button
+                                        onClick={() => { setEditingProduct(null); setShowProductModal(true); }}
+                                        className="btn-secondary whitespace-nowrap"
+                                    >
+                                        <Plus size={20} /> <span className="hidden sm:inline">Define Product</span>
+                                    </button>
+                                </>
+                            )}
                         </div>
                     )}
                 </div>
 
                 <div className="flex-1 overflow-y-auto pr-2 grid grid-cols-[repeat(auto-fill,minmax(160px,1fr))] gap-4 content-start">
-                    {!isSelectionMode && (
+                    {!isSelectionMode && !isReorderMode && (
                         <div onClick={() => { setEditingProduct(null); setShowProductModal(true); }} className="glass-card flex flex-col items-center justify-center gap-4 border-dashed border-white/20 hover:border-primary/50 cursor-pointer min-h-[200px] lg:min-h-[250px] group opacity-60 hover:opacity-100">
                             <div className="w-12 h-12 rounded-full bg-white/5 flex items-center justify-center group-hover:scale-110 transition-transform">
                                 <Plus size={24} className="text-slate-400 group-hover:text-primary" />
@@ -309,9 +384,25 @@ export default function POSInterface({ transactions, onAddTransaction }) {
                                 className={`glass-card p-0 overflow-hidden cursor-pointer group flex flex-col h-full relative ${selectedProducts.has(product.name) ? 'ring-2 ring-primary bg-primary/10' : ''}`}
                                 onClick={() => {
                                     if (isSelectionMode) toggleSelection(product.name);
-                                    else setActiveProduct(product);
+                                    else if (!isReorderMode) setActiveProduct(product);
                                 }}
                             >
+                                {isReorderMode && (
+                                    <div className="absolute inset-0 z-30 bg-black/40 backdrop-blur-[1px] flex items-center justify-center gap-2 opacity-0 group-hover:opacity-100 transition-opacity">
+                                        <button
+                                            onClick={(e) => { e.stopPropagation(); handleMoveProduct(filteredProducts.indexOf(product), -1); }}
+                                            className="p-3 bg-white text-black rounded-full hover:scale-110 transition-transform"
+                                        >
+                                            ←
+                                        </button>
+                                        <button
+                                            onClick={(e) => { e.stopPropagation(); handleMoveProduct(filteredProducts.indexOf(product), 1); }}
+                                            className="p-3 bg-white text-black rounded-full hover:scale-110 transition-transform"
+                                        >
+                                            →
+                                        </button>
+                                    </div>
+                                )}
                                 {isSelectionMode && (
                                     <div className="absolute top-2 left-2 z-20 pointer-events-none">
                                         <div className={`w-6 h-6 rounded-full border-2 flex items-center justify-center transition-colors ${selectedProducts.has(product.name) ? 'bg-primary border-primary' : 'border-white/40 bg-black/40'}`}>
@@ -430,7 +521,7 @@ export default function POSInterface({ transactions, onAddTransaction }) {
                     </div>
                 )}
             </AnimatePresence>
-        </div>
+        </div >
     );
 }
 

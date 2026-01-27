@@ -54,7 +54,7 @@ export const useProducts = (transactions) => {
 
         chronoTransactions.forEach(t => {
             if (t.type === 'define_product') {
-                const { name, price, imageUrl, linkedColor, category } = t.details;
+                const { name, price, imageUrl, linkedColor, category, order } = t.details;
                 if (!name) return;
                 products.set(name, {
                     id: t.id, // Use latest ID
@@ -62,7 +62,8 @@ export const useProducts = (transactions) => {
                     price,
                     imageUrl,
                     linkedColor,
-                    category: category || 'shirts'
+                    category: category || 'shirts',
+                    order: order !== undefined ? order : 9999 // Default to end
                 });
             } else if (t.type === 'delete_product') {
                 const { name } = t.details;
@@ -70,6 +71,10 @@ export const useProducts = (transactions) => {
             }
         });
 
-        return Array.from(products.values());
+        // Sort by defined order, then fallback to name
+        return Array.from(products.values()).sort((a, b) => {
+            if (a.order !== b.order) return a.order - b.order;
+            return 0; // Keep insertion order if same (or add name sort)
+        });
     }, [transactions]);
 };
