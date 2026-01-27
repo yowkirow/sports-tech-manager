@@ -18,7 +18,11 @@ export default function Storefront({ transactions, onPlaceOrder }) {
 
     // Checkout State
     const [customerName, setCustomerName] = useState('');
-    const [contactNumber, setContactNumber] = useState(''); // Optional: for notifications
+    const [contactNumber, setContactNumber] = useState('');
+    const [shippingAddress, setShippingAddress] = useState('');
+    const [city, setCity] = useState('');
+    const [province, setProvince] = useState('');
+    const [zipCode, setZipCode] = useState('');
     const [paymentMode, setPaymentMode] = useState('Cash');
     const [checkoutLoading, setCheckoutLoading] = useState(false);
     const [orderComplete, setOrderComplete] = useState(false);
@@ -56,6 +60,7 @@ export default function Storefront({ transactions, onPlaceOrder }) {
 
     const handleCheckout = async () => {
         if (!customerName) return showToast('Please enter your name', 'error');
+        if (!shippingAddress || !city || !province || !contactNumber) return showToast('Please complete shipping details', 'error');
         setCheckoutLoading(true);
 
         try {
@@ -82,6 +87,13 @@ export default function Storefront({ transactions, onPlaceOrder }) {
                     paymentStatus: 'unpaid',
                     status: 'pending', // Legacy support
                     paymentMode,
+                    shippingDetails: {
+                        address: shippingAddress,
+                        city,
+                        province,
+                        zipCode,
+                        contactNumber
+                    },
                     imageUrl: item.imageUrl,
                     isOnlineOrder: true
                 }
@@ -320,12 +332,17 @@ export default function Storefront({ transactions, onPlaceOrder }) {
 
                             <div className="p-6 border-t border-white/10 bg-slate-900/50 backdrop-blur-md space-y-4">
                                 <div className="space-y-3">
-                                    <input
-                                        className="glass-input w-full py-3"
-                                        placeholder="Your Name (Required)"
-                                        value={customerName}
-                                        onChange={e => setCustomerName(e.target.value)}
-                                    />
+                                    <div className="grid grid-cols-2 gap-3">
+                                        <input className="glass-input w-full py-3" placeholder="Name *" value={customerName} onChange={e => setCustomerName(e.target.value)} />
+                                        <input className="glass-input w-full py-3" placeholder="Contact # *" value={contactNumber} onChange={e => setContactNumber(e.target.value)} />
+                                    </div>
+                                    <input className="glass-input w-full py-3" placeholder="Street Address *" value={shippingAddress} onChange={e => setShippingAddress(e.target.value)} />
+                                    <div className="grid grid-cols-2 gap-3">
+                                        <input className="glass-input w-full py-3" placeholder="City *" value={city} onChange={e => setCity(e.target.value)} />
+                                        <input className="glass-input w-full py-3" placeholder="Province *" value={province} onChange={e => setProvince(e.target.value)} />
+                                    </div>
+                                    <input className="glass-input w-full py-3" placeholder="Zip Code" value={zipCode} onChange={e => setZipCode(e.target.value)} />
+
                                     <select
                                         className="glass-input w-full py-3"
                                         value={paymentMode}

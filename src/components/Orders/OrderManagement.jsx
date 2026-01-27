@@ -67,10 +67,13 @@ export default function OrderManagement({ transactions, onAddTransaction, onDele
                     fulfillmentStatus: fulfillment,
                     paymentStatus: payment,
                     paymentMode: t.details?.paymentMode || 'Cash',
+                    isOnlineOrder: t.details?.isOnlineOrder || false,
                     items: [],
                     totalAmount: 0
                 };
             }
+
+            if (t.details?.isOnlineOrder) groups[key].isOnlineOrder = true; // Ensure flag is set if any item has it
 
             groups[key].items.push(t);
             groups[key].totalAmount += t.amount;
@@ -338,10 +341,10 @@ export default function OrderManagement({ transactions, onAddTransaction, onDele
 
                                 {/* Status Icon (Fulfillment) */}
                                 <div className={`w-12 h-12 rounded-full flex items-center justify-center shrink-0 ${order.fulfillmentStatus === 'shipped' ? 'bg-blue-500/10 text-blue-400' :
-                                        order.fulfillmentStatus === 'ready' ? 'bg-purple-500/10 text-purple-400' :
-                                            order.fulfillmentStatus === 'in_progress' ? 'bg-orange-500/10 text-orange-400' :
-                                                order.fulfillmentStatus === 'cancelled' ? 'bg-red-500/10 text-red-400' :
-                                                    'bg-slate-500/10 text-slate-400'
+                                    order.fulfillmentStatus === 'ready' ? 'bg-purple-500/10 text-purple-400' :
+                                        order.fulfillmentStatus === 'in_progress' ? 'bg-orange-500/10 text-orange-400' :
+                                            order.fulfillmentStatus === 'cancelled' ? 'bg-red-500/10 text-red-400' :
+                                                'bg-slate-500/10 text-slate-400'
                                     }`}>
                                     {order.fulfillmentStatus === 'shipped' ? <Truck size={20} /> :
                                         order.fulfillmentStatus === 'ready' ? <Package size={20} /> :
@@ -366,9 +369,14 @@ export default function OrderManagement({ transactions, onAddTransaction, onDele
 
                                         {/* Badges */}
                                         <div className="flex items-center gap-2">
+                                            {order.isOnlineOrder && order.fulfillmentStatus === 'pending' && (
+                                                <span className="px-2 py-0.5 rounded-full text-[10px] font-bold uppercase tracking-wide bg-blue-500/20 text-blue-400 border border-blue-500/20 animate-pulse">
+                                                    *New
+                                                </span>
+                                            )}
                                             <span className={`px-2 py-0.5 rounded-full text-[10px] font-bold uppercase tracking-wide border ${order.paymentStatus === 'paid'
-                                                    ? 'bg-emerald-500/10 border-emerald-500/20 text-emerald-400'
-                                                    : 'bg-red-500/10 border-red-500/20 text-red-400'
+                                                ? 'bg-emerald-500/10 border-emerald-500/20 text-emerald-400'
+                                                : 'bg-red-500/10 border-red-500/20 text-red-400'
                                                 }`}>
                                                 {order.paymentStatus}
                                             </span>
@@ -423,10 +431,10 @@ export default function OrderManagement({ transactions, onAddTransaction, onDele
                                     ) : (
                                         <div className="flex items-center gap-2">
                                             <span className={`px-3 py-1 rounded-full text-xs font-bold capitalize border ${order.fulfillmentStatus === 'shipped' ? 'bg-blue-500/10 border-blue-500/20 text-blue-400' :
-                                                    order.fulfillmentStatus === 'ready' ? 'bg-purple-500/10 border-purple-500/20 text-purple-400' :
-                                                        order.fulfillmentStatus === 'in_progress' ? 'bg-orange-500/10 border-orange-500/20 text-orange-400' :
-                                                            order.fulfillmentStatus === 'cancelled' ? 'bg-red-500/10 border-red-500/20 text-red-400' :
-                                                                'bg-slate-500/10 border-slate-500/20 text-slate-400'
+                                                order.fulfillmentStatus === 'ready' ? 'bg-purple-500/10 border-purple-500/20 text-purple-400' :
+                                                    order.fulfillmentStatus === 'in_progress' ? 'bg-orange-500/10 border-orange-500/20 text-orange-400' :
+                                                        order.fulfillmentStatus === 'cancelled' ? 'bg-red-500/10 border-red-500/20 text-red-400' :
+                                                            'bg-slate-500/10 border-slate-500/20 text-slate-400'
                                                 }`}>
                                                 {order.fulfillmentStatus.replace('_', ' ')}
                                             </span>
@@ -471,6 +479,26 @@ export default function OrderManagement({ transactions, onAddTransaction, onDele
                                                     </div>
                                                 </div>
                                             ))}
+                                            {order.items[0]?.details?.shippingDetails && (
+                                                <div className="mt-4 p-3 bg-white/5 rounded-xl border border-white/5">
+                                                    <p className="text-xs font-bold text-slate-500 uppercase mb-2 flex items-center gap-2"><Truck size={12} /> Shipping Information</p>
+                                                    <div className="grid grid-cols-2 gap-4 text-sm">
+                                                        <div>
+                                                            <p className="text-slate-400 text-xs">Address</p>
+                                                            <p className="text-white">{order.items[0].details.shippingDetails.address}</p>
+                                                        </div>
+                                                        <div>
+                                                            <p className="text-slate-400 text-xs">Contact</p>
+                                                            {/* Fallback to legacy or new location */}
+                                                            <p className="text-white">{order.items[0].details.shippingDetails.contactNumber || order.items[0].details.contactNumber}</p>
+                                                        </div>
+                                                        <div>
+                                                            <p className="text-slate-400 text-xs">City/Province</p>
+                                                            <p className="text-white">{order.items[0].details.shippingDetails.city}, {order.items[0].details.shippingDetails.province} {order.items[0].details.shippingDetails.zipCode}</p>
+                                                        </div>
+                                                    </div>
+                                                </div>
+                                            )}
                                         </div>
                                     </motion.div>
                                 )}
