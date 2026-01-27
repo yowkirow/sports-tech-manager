@@ -499,6 +499,23 @@ export default function OrderManagement({ transactions, onAddTransaction, onDele
                                                     </div>
                                                 </div>
                                             )}
+
+                                            {/* Proof of Payment Display */}
+                                            {order.items[0]?.details?.proofOfPayment && (
+                                                <div className="mt-2 p-3 bg-emerald-500/5 rounded-xl border border-emerald-500/20">
+                                                    <p className="text-xs font-bold text-emerald-400 uppercase mb-2 flex items-center gap-2"><CheckCircle size={12} /> Proof of Payment</p>
+                                                    <div className="relative group">
+                                                        <img
+                                                            src={order.items[0].details.proofOfPayment}
+                                                            className="h-32 rounded-lg bg-black/40 object-contain cursor-pointer transition-transform hover:scale-105"
+                                                            onClick={() => window.open(order.items[0].details.proofOfPayment, '_blank')}
+                                                        />
+                                                        <div className="absolute inset-0 flex items-center justify-center pointer-events-none opacity-0 group-hover:opacity-100 transition-opacity">
+                                                            <span className="bg-black/80 text-white text-xs px-2 py-1 rounded">Click to View</span>
+                                                        </div>
+                                                    </div>
+                                                </div>
+                                            )}
                                         </div>
                                     </motion.div>
                                 )}
