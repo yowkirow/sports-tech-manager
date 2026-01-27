@@ -1,120 +1,123 @@
 import React, { useState } from 'react';
 import { supabase } from '../../lib/supabaseClient';
 import { motion } from 'framer-motion';
-import { Lock, Mail, Loader2, AlertCircle } from 'lucide-react';
+import { Lock, Loader2, User, ChevronRight, Delete } from 'lucide-react';
 import { useToast } from '../ui/Toast';
 
-export default function Login({ onLoginSuccess }) {
-    const { showToast } = useToast();
-    const [email, setEmail] = useState('');
-    const [password, setPassword] = useState('');
-    const [loading, setLoading] = useState(false);
-    const [isSignUp, setIsSignUp] = useState(false); // Toggle between Login/Signup
+const SYSTEM_EMAIL = 'manager@sportstech.com'; // Fixed system email
 
-    const handleAuth = async (e) => {
-        e.preventDefault();
+export default function Login() {
+    const { showToast } = useToast();
+    const [pin, setPin] = useState('');
+    const [loading, setLoading] = useState(false);
+
+    const handlePinParams = (num) => {
+        if (pin.length < 6) {
+            setPin(prev => prev + num);
+        }
+    };
+
+    const handleDelete = () => {
+        setPin(prev => prev.slice(0, -1));
+    };
+
+    const handleLogin = async (e) => {
+        if (e) e.preventDefault();
+        if (pin.length < 4) return showToast('PIN must be at least 4 digits', 'error');
+
         setLoading(true);
         try {
-            if (isSignUp) {
-                const { error } = await supabase.auth.signUp({
-                    email,
-                    password,
-                });
-                if (error) throw error;
-                showToast('Account created! Please check your email.', 'success');
-            } else {
-                const { error } = await supabase.auth.signInWithPassword({
-                    email,
-                    password,
-                });
-                if (error) throw error;
-                // onLoginSuccess is handled by the onAuthStateChange listener in App.jsx usually, 
-                // but we can trigger a toast here.
-                showToast('Welcome back!', 'success');
-            }
+            const { error } = await supabase.auth.signInWithPassword({
+                email: SYSTEM_EMAIL,
+                password: pin,
+            });
+            if (error) throw error;
+            showToast('Welcome back!', 'success');
         } catch (error) {
             console.error(error);
-            showToast(error.message, 'error');
+            showToast('Invalid PIN', 'error');
+            setPin(''); // Clear on error
         } finally {
             setLoading(false);
         }
     };
 
+    // Auto-submit when PIN reaches 6 digits (optional, but nice UX)
+    React.useEffect(() => {
+        if (pin.length === 6) {
+            handleLogin();
+        }
+    }, [pin]);
+
     return (
-        <div className="fixed inset-0 flex items-center justify-center bg-slate-900 p-4">
+        <div className="fixed inset-0 flex items-center justify-center bg-slate-900 p-4 font-sans selection:bg-primary/30">
             {/* Background Effects */}
             <div className="absolute top-[-10%] left-[-10%] w-[40%] h-[40%] bg-primary/20 rounded-full blur-[120px]" />
             <div className="absolute bottom-[-10%] right-[-10%] w-[40%] h-[40%] bg-accent/20 rounded-full blur-[120px]" />
 
             <motion.div
-                initial={{ opacity: 0, y: 20 }}
-                animate={{ opacity: 1, y: 0 }}
-                className="glass-panel w-full max-w-md p-8 relative z-10"
+                initial={{ opacity: 0, scale: 0.95 }}
+                animate={{ opacity: 1, scale: 1 }}
+                className="glass-panel w-full max-w-sm p-8 relative z-10 flex flex-col items-center"
             >
-                <div className="text-center mb-8">
-                    <div className="w-16 h-16 bg-gradient-to-br from-primary to-accent rounded-2xl flex items-center justify-center mx-auto mb-4 shadow-lg shadow-primary/20">
+                <div className="mb-8 flex flex-col items-center">
+                    <div className="w-16 h-16 bg-gradient-to-br from-primary to-accent rounded-2xl flex items-center justify-center shadow-lg shadow-indigo-500/20 mb-4">
                         <Lock className="text-white" size={32} />
                     </div>
                     <h1 className="text-2xl font-bold text-white">Manager Access</h1>
-                    <p className="text-slate-400 text-sm mt-2">Restricted to authorized personnel only.</p>
+                    <p className="text-slate-400 text-sm mt-1">Enter access PIN</p>
                 </div>
 
-                <form onSubmit={handleAuth} className="space-y-4">
-                    <div>
-                        <label className="text-xs font-bold text-slate-400 uppercase tracking-wider mb-1 block">Email</label>
-                        <div className="relative">
-                            <Mail className="absolute left-3 top-1/2 -translate-y-1/2 text-slate-500" size={18} />
-                            <input
-                                type="email"
-                                required
-                                value={email}
-                                onChange={(e) => setEmail(e.target.value)}
-                                className="glass-input pl-10 w-full py-3"
-                                placeholder="admin@example.com"
-                            />
-                        </div>
-                    </div>
-                    <div>
-                        <label className="text-xs font-bold text-slate-400 uppercase tracking-wider mb-1 block">Password</label>
-                        <div className="relative">
-                            <Lock className="absolute left-3 top-1/2 -translate-y-1/2 text-slate-500" size={18} />
-                            <input
-                                type="password"
-                                required
-                                value={password}
-                                onChange={(e) => setPassword(e.target.value)}
-                                className="glass-input pl-10 w-full py-3"
-                                placeholder="••••••••"
-                            />
-                        </div>
-                    </div>
+                {/* PIN Display */}
+                <div className="flex gap-4 mb-8">
+                    {[...Array(6)].map((_, i) => (
+                        <div
+                            key={i}
+                            className={`w-3 h-3 rounded-full transition-all duration-300 ${i < pin.length ? 'bg-primary scale-125' : 'bg-slate-700'
+                                }`}
+                        />
+                    ))}
+                </div>
 
+                {/* Numpad */}
+                <div className="grid grid-cols-3 gap-4 w-full max-w-[280px] mb-6">
+                    {[1, 2, 3, 4, 5, 6, 7, 8, 9].map(num => (
+                        <button
+                            key={num}
+                            onClick={() => handlePinParams(num)}
+                            disabled={loading}
+                            className="h-16 w-16 rounded-full bg-white/5 hover:bg-white/10 text-xl font-bold text-white transition-colors flex items-center justify-center mx-auto"
+                        >
+                            {num}
+                        </button>
+                    ))}
+                    <div /> {/* Spacer */}
                     <button
-                        type="submit"
+                        onClick={() => handlePinParams(0)}
                         disabled={loading}
-                        className="btn-primary w-full py-3 mt-4 flex items-center justify-center gap-2"
+                        className="h-16 w-16 rounded-full bg-white/5 hover:bg-white/10 text-xl font-bold text-white transition-colors flex items-center justify-center mx-auto"
                     >
-                        {loading ? <Loader2 className="animate-spin" /> : (isSignUp ? 'Create Account' : 'Login')}
+                        0
                     </button>
-                </form>
-
-                <div className="mt-6 text-center">
                     <button
-                        onClick={() => setIsSignUp(!isSignUp)}
-                        className="text-xs text-slate-500 hover:text-white transition-colors"
+                        onClick={handleDelete}
+                        disabled={loading}
+                        className="h-16 w-16 rounded-full hover:bg-white/5 text-slate-400 hover:text-white transition-colors flex items-center justify-center mx-auto"
                     >
-                        {isSignUp ? "Already have an account? Login" : "First time setup? Create Account"}
+                        <Delete size={24} />
                     </button>
-
-                    {!isSignUp && (
-                        <div className="mt-4 p-3 bg-blue-500/10 border border-blue-500/20 rounded-lg flex items-start gap-3 text-left">
-                            <AlertCircle className="text-blue-400 shrink-0 mt-0.5" size={16} />
-                            <p className="text-xs text-blue-200">
-                                <b>Storefront Access:</b> Customers do not need to log in. Provide them with the store link instead.
-                            </p>
-                        </div>
-                    )}
                 </div>
+
+                {loading && (
+                    <div className="absolute inset-0 bg-black/60 backdrop-blur-sm flex items-center justify-center rounded-2xl">
+                        <Loader2 className="animate-spin text-primary" size={48} />
+                    </div>
+                )}
+
+                <p className="text-xs text-slate-500 mt-4 text-center">
+                    Using system account: <br /> manager@sportstech.com
+                </p>
+
             </motion.div>
         </div>
     );
