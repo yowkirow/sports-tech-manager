@@ -78,7 +78,9 @@ export default function Storefront({ transactions, onPlaceOrder }) {
                     size: item.size,
                     color: item.linkedColor || 'Varied',
                     quantity: item.quantity,
-                    status: 'in_progress', // Default status for new orders
+                    fulfillmentStatus: 'pending',
+                    paymentStatus: 'unpaid',
+                    status: 'pending', // Legacy support
                     paymentMode,
                     imageUrl: item.imageUrl,
                     isOnlineOrder: true

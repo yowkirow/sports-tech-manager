@@ -1,54 +1,73 @@
 import React, { useState, useMemo } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
-import { Package, Clock, CheckCircle, Truck, User, Search, Edit2, Save, X, Trash2, Layers, ChevronDown, ChevronUp, ShoppingBag, Loader2 } from 'lucide-react';
+import { Package, Clock, CheckCircle, Truck, User, Search, Edit2, Save, X, Trash2, Layers, ChevronDown, ChevronUp, ShoppingBag, Loader2, AlertCircle, Banknote, Filter } from 'lucide-react';
 import { useToast } from '../ui/Toast';
-
 import { supabase } from '../../lib/supabaseClient';
 
-const STATUSES = ['paid', 'in_progress', 'ready', 'shipped'];
+const FULFILLMENT_STATUSES = ['pending', 'in_progress', 'ready', 'shipped', 'cancelled'];
+const PAYMENT_STATUSES = ['unpaid', 'paid'];
 const PAYMENT_MODES = ['Cash', 'Gcash', 'Bank Transfer', 'COD'];
 
 export default function OrderManagement({ transactions, onAddTransaction, onDeleteTransaction, refetch }) {
     const { showToast } = useToast();
-    const [filterStatus, setFilterStatus] = useState('all');
+    const [filterFulfillment, setFilterFulfillment] = useState('all');
+    const [filterPayment, setFilterPayment] = useState('all'); // 'all', 'paid', 'unpaid'
     const [searchTerm, setSearchTerm] = useState('');
 
     // Group Expansion State
     const [expandedOrderIds, setExpandedOrderIds] = useState(new Set());
 
     // Edit State
-    const [editingId, setEditingId] = useState(null); // Values: 'orderId'
+    const [editingId, setEditingId] = useState(null);
     const [editForm, setEditForm] = useState({});
     const [loading, setLoading] = useState(false);
 
-    // Bulk Selection State
+    // Bulk Actions
     const [isSelectionMode, setIsSelectionMode] = useState(false);
     const [selectedOrderIds, setSelectedOrderIds] = useState(new Set());
-    const [showBulkPaymentModal, setShowBulkPaymentModal] = useState(false);
+    const [showBulkEditModal, setShowBulkEditModal] = useState(false);
 
-    // 1. Group Transactions into Orders
+    // 1. Group Transactions & Migrate Data
     const groupedOrders = useMemo(() => {
         const sales = transactions.filter(t => t.type === 'sale');
         const groups = {};
 
         sales.forEach(t => {
-            // Determine grouping key: Use orderId if available, else fallback to Customer + Minute
             let key = t.details?.orderId;
             if (!key) {
-                // Fallback for legacy: Group by Customer + Date (Minute precision)
-                const dateKey = new Date(t.date).toISOString().slice(0, 16); // YYYY-MM-DDTHH:mm
+                const dateKey = new Date(t.date).toISOString().slice(0, 16);
                 key = `${t.details?.customerName || 'Unknown'}-${dateKey}`;
             }
 
             if (!groups[key]) {
+                // --- MIGRATION LOGIC ---
+                let fulfillment = t.details?.fulfillmentStatus;
+                let payment = t.details?.paymentStatus;
+
+                if (!fulfillment || !payment) {
+                    // Fallback for old data
+                    const legacyStatus = t.details?.status || 'paid';
+                    if (legacyStatus === 'paid') {
+                        fulfillment = 'pending';
+                        payment = 'paid';
+                    } else {
+                        fulfillment = legacyStatus; // in_progress, ready, shipped
+                        // If it's shipped/ready, we don't strictly know if it's paid, 
+                        // but typically 'shipped' implies paid or COD. 
+                        // Safest default is 'unpaid' so user checks it, OR 'paid' if COD.
+                        // Let's default to 'unpaid' for safety unless it was implicitly 'paid'.
+                        payment = 'unpaid';
+                    }
+                }
+
                 groups[key] = {
-                    id: key, // This is the virtual Order ID
+                    id: key,
                     date: t.date,
                     customerName: t.details?.customerName || 'Unknown',
-                    customerName: t.details?.customerName || 'Unknown',
-                    status: t.details?.status || 'paid', // Use status from first item
-                    paymentMode: t.details?.paymentMode || 'Cash', // Use MOP from first item
-                    items: [], // Individual transactions
+                    fulfillmentStatus: fulfillment,
+                    paymentStatus: payment,
+                    paymentMode: t.details?.paymentMode || 'Cash',
+                    items: [],
                     totalAmount: 0
                 };
             }
@@ -57,21 +76,21 @@ export default function OrderManagement({ transactions, onAddTransaction, onDele
             groups[key].totalAmount += t.amount;
         });
 
-        // Convert to array and sort by date desc
         return Object.values(groups).sort((a, b) => new Date(b.date) - new Date(a.date));
-
     }, [transactions]);
 
     // 2. Filter Groups
     const filteredOrders = useMemo(() => {
         return groupedOrders.filter(order => {
-            const matchesStatus = filterStatus === 'all' || order.status === filterStatus;
+            const matchesFulfillment = filterFulfillment === 'all' || order.fulfillmentStatus === filterFulfillment;
+            const matchesPayment = filterPayment === 'all' || order.paymentStatus === filterPayment;
             const matchesSearch =
                 order.customerName.toLowerCase().includes(searchTerm.toLowerCase()) ||
                 order.id.toLowerCase().includes(searchTerm.toLowerCase());
-            return matchesStatus && matchesSearch;
+
+            return matchesFulfillment && matchesPayment && matchesSearch;
         });
-    }, [groupedOrders, filterStatus, searchTerm]);
+    }, [groupedOrders, filterFulfillment, filterPayment, searchTerm]);
 
 
     const toggleExpansion = (orderId) => {
@@ -92,8 +111,9 @@ export default function OrderManagement({ transactions, onAddTransaction, onDele
         setEditingId(order.id);
         setEditForm({
             customerName: order.customerName,
-            status: order.status,
-            paymentMode: order.paymentMode || 'Cash'
+            fulfillmentStatus: order.fulfillmentStatus,
+            paymentStatus: order.paymentStatus,
+            paymentMode: order.paymentMode
         });
     };
 
@@ -103,27 +123,29 @@ export default function OrderManagement({ transactions, onAddTransaction, onDele
             const order = groupedOrders.find(o => o.id === orderId);
             if (!order) throw new Error("Order not found");
 
-            // Update ALL transactions in this group
             const updates = order.items.map(async (t) => {
                 const updatedDetails = {
                     ...t.details,
                     customerName: editForm.customerName,
-                    status: editForm.status,
-                    paymentMode: editForm.paymentMode
+                    fulfillmentStatus: editForm.fulfillmentStatus,
+                    paymentStatus: editForm.paymentStatus,
+                    paymentMode: editForm.paymentMode,
+                    // Remove legacy status to avoid confusion, or keep it synced to fulfillment?
+                    // Let's keep it synced to fulfillment for safety if other components read it
+                    status: editForm.fulfillmentStatus
                 };
 
                 const { error } = await supabase
                     .from('transactions')
                     .update({
                         details: updatedDetails,
-                        description: t.description.replace(t.details.customerName, editForm.customerName) // Attempt to sync desc
+                        description: t.description.replace(t.details.customerName, editForm.customerName)
                     })
                     .eq('id', t.id);
                 if (error) throw error;
             });
 
             await Promise.all(updates);
-
             showToast('Order updated!', 'success');
             setEditingId(null);
             if (refetch) await refetch();
@@ -137,17 +159,14 @@ export default function OrderManagement({ transactions, onAddTransaction, onDele
     };
 
     const handleDeleteOrder = async (orderId) => {
-        if (!confirm('Delete this entire order? This removes all items in it.')) return;
+        if (!confirm('Delete this entire order?')) return;
         setLoading(true);
         try {
             const order = groupedOrders.find(o => o.id === orderId);
             if (!order) return;
-
-            // Delete all transactions in group
             for (const item of order.items) {
                 await onDeleteTransaction(item.id);
             }
-
             showToast('Order deleted', 'success');
             if (refetch) await refetch();
         } catch (err) {
@@ -157,31 +176,29 @@ export default function OrderManagement({ transactions, onAddTransaction, onDele
         }
     }
 
-    // Bulk Actions (Operating on Order Groups)
-    const handleBulkStatusUpdate = async (newStatus, newPaymentMode = null) => {
-        const action = newStatus ? `Update status to "${newStatus}"` : `Update payment to "${newPaymentMode}"`;
-        if (!confirm(`${action} for ${selectedOrderIds.size} orders?`)) return;
+    const handleBulkUpdate = async (updates) => {
+        if (!confirm(`Update ${selectedOrderIds.size} orders?`)) return;
         setLoading(true);
         try {
             for (const orderId of selectedOrderIds) {
                 const order = groupedOrders.find(o => o.id === orderId);
                 if (!order) continue;
 
-                // Update all items in this order
-                const updates = order.items.map(item => {
-                    const updateData = {};
-                    if (newStatus) updateData.status = newStatus;
-                    if (newPaymentMode) updateData.paymentMode = newPaymentMode;
+                const dbUpdates = order.items.map(item => {
+                    const newDetails = { ...item.details, ...updates };
+                    // Sync legacy field
+                    if (updates.fulfillmentStatus) newDetails.status = updates.fulfillmentStatus;
 
                     return supabase.from('transactions')
-                        .update({ details: { ...item.details, ...updateData } })
+                        .update({ details: newDetails })
                         .eq('id', item.id)
                 });
-                await Promise.all(updates);
+                await Promise.all(dbUpdates);
             }
             showToast('Bulk update complete', 'success');
             setIsSelectionMode(false);
             setSelectedOrderIds(new Set());
+            setShowBulkEditModal(false);
             if (refetch) await refetch();
         } catch (err) {
             console.error(err);
@@ -191,51 +208,47 @@ export default function OrderManagement({ transactions, onAddTransaction, onDele
         }
     };
 
-    const handleBulkDelete = async () => {
-        if (!confirm(`Delete ${selectedOrderIds.size} orders?`)) return;
-        setLoading(true);
-        try {
-            for (const orderId of selectedOrderIds) {
-                const order = groupedOrders.find(o => o.id === orderId);
-                if (!order) continue;
-
-                for (const item of order.items) {
-                    await onDeleteTransaction(item.id);
-                }
-            }
-            showToast('Bulk delete complete', 'success');
-            setIsSelectionMode(false);
-            setSelectedOrderIds(new Set());
-            if (refetch) await refetch();
-        } catch (err) {
-            console.error(err);
-            showToast('Bulk delete failed', 'error');
-        } finally {
-            setLoading(false);
-        }
-    }
-
-
     return (
         <div className="h-full flex flex-col gap-6">
-            <div className="flex flex-col md:flex-row justify-between items-center gap-4">
-                <h2 className="text-2xl font-bold text-white flex items-center gap-2">
-                    <Package className="text-primary" /> Order Management
-                </h2>
+            <div className="flex flex-col xl:flex-row justify-between items-start xl:items-center gap-4">
+                <div className="flex items-center gap-4 w-full xl:w-auto">
+                    <h2 className="text-2xl font-bold text-white flex items-center gap-2 whitespace-nowrap">
+                        <Package className="text-primary" /> Order Management
+                    </h2>
+                </div>
 
-                <div className="flex gap-2 bg-white/5 p-1 rounded-xl">
-                    {['all', ...STATUSES].map(status => (
-                        <button
-                            key={status}
-                            onClick={() => setFilterStatus(status)}
-                            className={`px-4 py-2 rounded-lg text-sm font-semibold capitalize transition-all ${filterStatus === status
-                                ? 'bg-primary text-white shadow-lg'
-                                : 'text-slate-400 hover:text-white hover:bg-white/5'
-                                }`}
-                        >
-                            {status}
-                        </button>
-                    ))}
+                <div className="flex flex-wrap gap-2 w-full xl:w-auto">
+                    {/* Fulfillment Filter */}
+                    <div className="flex bg-white/5 p-1 rounded-xl overflow-x-auto">
+                        {['all', ...FULFILLMENT_STATUSES].map(status => (
+                            <button
+                                key={status}
+                                onClick={() => setFilterFulfillment(status)}
+                                className={`px-3 py-1.5 rounded-lg text-xs font-semibold capitalize whitespace-nowrap transition-all ${filterFulfillment === status
+                                    ? 'bg-primary text-white shadow-lg'
+                                    : 'text-slate-400 hover:text-white hover:bg-white/5'
+                                    }`}
+                            >
+                                {status.replace('_', ' ')}
+                            </button>
+                        ))}
+                    </div>
+
+                    {/* Payment Filter */}
+                    <div className="flex bg-white/5 p-1 rounded-xl">
+                        {['all', 'paid', 'unpaid'].map(status => (
+                            <button
+                                key={status}
+                                onClick={() => setFilterPayment(status)}
+                                className={`px-3 py-1.5 rounded-lg text-xs font-semibold capitalize whitespace-nowrap transition-all ${filterPayment === status
+                                    ? 'bg-emerald-600 text-white shadow-lg'
+                                    : 'text-slate-400 hover:text-white hover:bg-white/5'
+                                    }`}
+                            >
+                                {status}
+                            </button>
+                        ))}
+                    </div>
                 </div>
             </div>
 
@@ -244,7 +257,7 @@ export default function OrderManagement({ transactions, onAddTransaction, onDele
                     <Search className="absolute left-4 top-1/2 -translate-y-1/2 text-slate-400" size={20} />
                     <input
                         type="text"
-                        placeholder="Search by customer name..."
+                        placeholder="Search customer or ID..."
                         className="glass-input pl-12"
                         value={searchTerm}
                         onChange={(e) => setSearchTerm(e.target.value)}
@@ -252,25 +265,30 @@ export default function OrderManagement({ transactions, onAddTransaction, onDele
                 </div>
                 {isSelectionMode ? (
                     <div className="flex gap-2 animate-fade-in">
-                        <div className="flex bg-white/5 rounded-xl overflow-hidden divide-x divide-white/10 border border-white/10">
-                            {STATUSES.map(s => (
-                                <button
-                                    key={s}
-                                    onClick={() => handleBulkStatusUpdate(s)}
-                                    className="px-3 py-2 text-xs font-bold text-slate-300 hover:bg-primary hover:text-white transition-colors capitalize"
-                                >
-                                    {s.replace('_', ' ')}
-                                </button>
-                            ))}
-                        </div>
                         <button
-                            onClick={() => setShowBulkPaymentModal(true)}
-                            className="bg-white/10 text-slate-300 hover:bg-white/20 px-4 py-2 rounded-xl transition-colors text-xs font-bold whitespace-nowrap"
+                            onClick={() => setShowBulkEditModal(true)}
+                            className="bg-primary text-white hover:bg-primary-hover px-4 py-2 rounded-xl transition-colors text-sm font-bold whitespace-nowrap flex items-center gap-2"
                         >
-                            Edit Payment
+                            <Edit2 size={16} /> Bulk Edit
                         </button>
                         <button
-                            onClick={handleBulkDelete}
+                            onClick={async () => {
+                                if (confirm(`Delete ${selectedOrderIds.size} orders?`)) {
+                                    setLoading(true);
+                                    try {
+                                        for (const orderId of selectedOrderIds) {
+                                            const order = groupedOrders.find(o => o.id === orderId);
+                                            if (order) {
+                                                for (const item of order.items) await onDeleteTransaction(item.id);
+                                            }
+                                        }
+                                        setIsSelectionMode(false);
+                                        setSelectedOrderIds(new Set());
+                                        if (refetch) await refetch();
+                                        showToast('Deleted', 'success');
+                                    } finally { setLoading(false); }
+                                }
+                            }}
                             className="bg-red-500/20 text-red-400 hover:bg-red-500 hover:text-white px-4 py-2 rounded-xl transition-colors"
                         >
                             <Trash2 size={20} />
@@ -299,18 +317,16 @@ export default function OrderManagement({ transactions, onAddTransaction, onDele
                             key={order.id}
                             initial={{ opacity: 0, y: 10 }}
                             animate={{ opacity: 1, y: 0 }}
-                            className={`glass-card overflow-hidden transition-all duration-200 ${isSelectionMode && selectedOrderIds.has(order.id) ? 'ring-2 ring-primary bg-primary/5' : ''
-                                }`}
+                            className={`glass-card overflow-hidden transition-all duration-200 ${isSelectionMode && selectedOrderIds.has(order.id) ? 'ring-2 ring-primary bg-primary/5' : ''}`}
                         >
-                            {/* Main Order Header */}
+                            {/* Order Header */}
                             <div
-                                className="p-6 flex flex-col md:flex-row gap-6 md:items-center cursor-pointer group"
+                                className="p-4 lg:p-6 flex flex-col md:flex-row gap-4 md:items-center cursor-pointer group"
                                 onClick={() => {
                                     if (isSelectionMode) toggleSelection(order.id);
                                     else toggleExpansion(order.id);
                                 }}
                             >
-                                {/* Checkbox */}
                                 {isSelectionMode && (
                                     <div className={`w-6 h-6 rounded-md border-2 flex items-center justify-center shrink-0 transition-colors ${selectedOrderIds.has(order.id)
                                         ? 'bg-primary border-primary'
@@ -320,111 +336,109 @@ export default function OrderManagement({ transactions, onAddTransaction, onDele
                                     </div>
                                 )}
 
-                                {/* Status Icon */}
-                                <div className={`w-12 h-12 rounded-full flex items-center justify-center shrink-0 ${order.status === 'shipped' ? 'bg-blue-500/10 text-blue-400' :
-                                    order.status === 'ready' ? 'bg-purple-500/10 text-purple-400' :
-                                        order.status === 'in_progress' ? 'bg-blue-500/10 text-blue-400' :
-                                            order.status === 'paid' ? 'bg-emerald-500/10 text-emerald-400' :
-                                                'bg-orange-500/10 text-orange-400'
+                                {/* Status Icon (Fulfillment) */}
+                                <div className={`w-12 h-12 rounded-full flex items-center justify-center shrink-0 ${order.fulfillmentStatus === 'shipped' ? 'bg-blue-500/10 text-blue-400' :
+                                        order.fulfillmentStatus === 'ready' ? 'bg-purple-500/10 text-purple-400' :
+                                            order.fulfillmentStatus === 'in_progress' ? 'bg-orange-500/10 text-orange-400' :
+                                                order.fulfillmentStatus === 'cancelled' ? 'bg-red-500/10 text-red-400' :
+                                                    'bg-slate-500/10 text-slate-400'
                                     }`}>
-                                    {order.status === 'shipped' ? <Truck size={20} /> :
-                                        order.status === 'ready' ? <Package size={20} /> :
-                                            order.status === 'in_progress' ? <Loader2 size={20} className="animate-spin" /> :
-                                                order.status === 'paid' ? <CheckCircle size={20} /> :
+                                    {order.fulfillmentStatus === 'shipped' ? <Truck size={20} /> :
+                                        order.fulfillmentStatus === 'ready' ? <Package size={20} /> :
+                                            order.fulfillmentStatus === 'in_progress' ? <Loader2 size={20} className="animate-spin" /> :
+                                                order.fulfillmentStatus === 'cancelled' ? <X size={20} /> :
                                                     <Clock size={20} />
                                     }
                                 </div>
 
-                                <div className="flex-1 space-y-1">
-                                    <div className="flex items-center gap-2 text-slate-400 text-xs">
-                                        <span>{new Date(order.date).toLocaleDateString()}</span>
-                                        <span>•</span>
-                                        <span className="font-mono custom-id-font">{order.items.length} Items</span>
-                                        <span>•</span>
-                                        <span className="text-primary">{order.paymentMode}</span>
-                                    </div>
-
-                                    {editingId === order.id ? (
-                                        <div className="flex items-center gap-2 mt-1" onClick={e => e.stopPropagation()}>
-                                            <User size={16} className="text-slate-500" />
+                                <div className="flex-1 min-w-0">
+                                    <div className="flex flex-wrap items-center gap-x-3 gap-y-1 mb-1">
+                                        {editingId === order.id ? (
                                             <input
-                                                className="glass-input py-1 px-2 text-sm max-w-[200px]"
+                                                className="glass-input py-1 px-2 text-lg font-bold w-full max-w-[200px]"
                                                 value={editForm.customerName}
                                                 onChange={e => setEditForm({ ...editForm, customerName: e.target.value })}
-                                                autoFocus
+                                                onClick={e => e.stopPropagation()}
                                             />
+                                        ) : (
+                                            <h3 className="font-bold text-white text-lg truncate">{order.customerName}</h3>
+                                        )}
+
+                                        {/* Badges */}
+                                        <div className="flex items-center gap-2">
+                                            <span className={`px-2 py-0.5 rounded-full text-[10px] font-bold uppercase tracking-wide border ${order.paymentStatus === 'paid'
+                                                    ? 'bg-emerald-500/10 border-emerald-500/20 text-emerald-400'
+                                                    : 'bg-red-500/10 border-red-500/20 text-red-400'
+                                                }`}>
+                                                {order.paymentStatus}
+                                            </span>
+                                            <span className="text-xs text-slate-500 font-mono hidden sm:inline">{order.id.slice(-6)}</span>
                                         </div>
-                                    ) : (
-                                        <h3 className="font-bold text-white text-lg">{order.customerName}</h3>
-                                    )}
+                                    </div>
+
+                                    <div className="flex items-center gap-3 text-slate-400 text-xs">
+                                        <span>{new Date(order.date).toLocaleDateString()}</span>
+                                        <span>•</span>
+                                        <span>{order.items.length} Items</span>
+                                        <span>•</span>
+                                        <span className="text-primary flex items-center gap-1">
+                                            <Banknote size={12} /> {order.paymentMode}
+                                        </span>
+                                    </div>
                                 </div>
 
-                                <div className="flex flex-col items-end gap-2">
+                                <div className="flex flex-col items-end gap-2 shrink-0">
                                     <span className="text-xl font-bold text-white">₱{order.totalAmount.toLocaleString()}</span>
 
                                     {editingId === order.id ? (
-                                        <div className="flex items-center gap-2" onClick={e => e.stopPropagation()}>
-                                            <select
-                                                value={editForm.paymentMode}
-                                                onChange={e => setEditForm({ ...editForm, paymentMode: e.target.value })}
-                                                className="glass-input py-1 px-2 text-xs"
-                                            >
-                                                {PAYMENT_MODES.map(m => <option key={m} value={m} className="bg-slate-900">{m}</option>)}
-                                            </select>
-                                            <select
-                                                value={editForm.status}
-                                                onChange={e => setEditForm({ ...editForm, status: e.target.value })}
-                                                className="glass-input py-1 px-2 text-xs capitalize"
-                                            >
-                                                {STATUSES.map(s => <option key={s} value={s} className="bg-slate-900">{s.replace('_', ' ')}</option>)}
-                                            </select>
-                                            <button
-                                                onClick={() => handleSave(order.id)}
-                                                disabled={loading}
-                                                className="p-2 bg-green-500/20 text-green-400 rounded-lg hover:bg-green-500/30"
-                                            >
-                                                <Save size={16} />
-                                            </button>
-                                            <button
-                                                onClick={() => setEditingId(null)}
-                                                className="p-2 bg-red-500/20 text-red-400 rounded-lg hover:bg-red-500/30"
-                                            >
-                                                <X size={16} />
-                                            </button>
+                                        <div className="flex flex-col gap-2 items-end bg-black/40 p-2 rounded-xl border border-white/10 shadow-xl z-10" onClick={e => e.stopPropagation()}>
+                                            <div className="grid grid-cols-2 gap-2">
+                                                <select
+                                                    value={editForm.fulfillmentStatus}
+                                                    onChange={e => setEditForm({ ...editForm, fulfillmentStatus: e.target.value })}
+                                                    className="glass-input py-1 px-2 text-xs capitalize"
+                                                >
+                                                    {FULFILLMENT_STATUSES.map(s => <option key={s} value={s} className="bg-slate-900">{s.replace('_', ' ')}</option>)}
+                                                </select>
+                                                <select
+                                                    value={editForm.paymentStatus}
+                                                    onChange={e => setEditForm({ ...editForm, paymentStatus: e.target.value })}
+                                                    className="glass-input py-1 px-2 text-xs capitalize"
+                                                >
+                                                    {PAYMENT_STATUSES.map(s => <option key={s} value={s} className="bg-slate-900">{s}</option>)}
+                                                </select>
+                                                <select
+                                                    value={editForm.paymentMode}
+                                                    onChange={e => setEditForm({ ...editForm, paymentMode: e.target.value })}
+                                                    className="glass-input py-1 px-2 text-xs col-span-2"
+                                                >
+                                                    {PAYMENT_MODES.map(s => <option key={s} value={s} className="bg-slate-900">{s}</option>)}
+                                                </select>
+                                            </div>
+                                            <div className="flex gap-2 w-full">
+                                                <button onClick={() => handleSave(order.id)} className="flex-1 bg-green-600/20 text-green-400 py-1 rounded hover:bg-green-600/40"><Save size={14} className="mx-auto" /></button>
+                                                <button onClick={() => setEditingId(null)} className="flex-1 bg-red-600/20 text-red-400 py-1 rounded hover:bg-red-600/40"><X size={14} className="mx-auto" /></button>
+                                            </div>
                                         </div>
                                     ) : (
                                         <div className="flex items-center gap-2">
-                                            <span className={`px-3 py-1 rounded-full text-xs font-bold capitalize border ${order.status === 'shipped' ? 'bg-blue-500/10 border-blue-500/20 text-blue-400' :
-                                                order.status === 'ready' ? 'bg-green-500/10 border-green-500/20 text-green-400' :
-                                                    'bg-orange-500/10 border-orange-500/20 text-orange-400'
+                                            <span className={`px-3 py-1 rounded-full text-xs font-bold capitalize border ${order.fulfillmentStatus === 'shipped' ? 'bg-blue-500/10 border-blue-500/20 text-blue-400' :
+                                                    order.fulfillmentStatus === 'ready' ? 'bg-purple-500/10 border-purple-500/20 text-purple-400' :
+                                                        order.fulfillmentStatus === 'in_progress' ? 'bg-orange-500/10 border-orange-500/20 text-orange-400' :
+                                                            order.fulfillmentStatus === 'cancelled' ? 'bg-red-500/10 border-red-500/20 text-red-400' :
+                                                                'bg-slate-500/10 border-slate-500/20 text-slate-400'
                                                 }`}>
-                                                {order.status.replace('_', ' ')}
+                                                {order.fulfillmentStatus.replace('_', ' ')}
                                             </span>
-
                                             {!isSelectionMode && (
-                                                <>
-                                                    <button
-                                                        onClick={(e) => {
-                                                            e.stopPropagation();
-                                                            handleDeleteOrder(order.id);
-                                                        }}
-                                                        className="p-2 text-slate-500 hover:text-red-400 hover:bg-red-500/10 rounded-lg transition-colors opacity-100 lg:opacity-0 lg:group-hover:opacity-100"
-                                                    >
-                                                        <Trash2 size={16} />
-                                                    </button>
-                                                    <button
-                                                        onClick={(e) => { e.stopPropagation(); startEditing(order); }}
-                                                        className="p-2 text-slate-500 hover:text-white hover:bg-white/10 rounded-lg transition-colors opacity-100 lg:opacity-0 lg:group-hover:opacity-100"
-                                                    >
-                                                        <Edit2 size={16} />
-                                                    </button>
-                                                    <button
-                                                        className="p-2 text-slate-500 hover:text-white transition-colors"
-                                                    >
-                                                        {expandedOrderIds.has(order.id) ? <ChevronUp size={20} /> : <ChevronDown size={20} />}
-                                                    </button>
-                                                </>
+                                                <div className="flex gap-1 opacity-0 group-hover:opacity-100 transition-opacity">
+                                                    <button onClick={(e) => { e.stopPropagation(); startEditing(order); }} className="p-2 hover:bg-white/10 rounded-lg text-slate-400 hover:text-white"><Edit2 size={16} /></button>
+                                                    <button onClick={(e) => { e.stopPropagation(); handleDeleteOrder(order.id); }} className="p-2 hover:bg-red-500/20 rounded-lg text-slate-400 hover:text-red-400"><Trash2 size={16} /></button>
+                                                </div>
                                             )}
+                                            <div className="p-2 text-slate-500">
+                                                {expandedOrderIds.has(order.id) ? <ChevronUp size={20} /> : <ChevronDown size={20} />}
+                                            </div>
                                         </div>
                                     )}
                                 </div>
@@ -434,30 +448,26 @@ export default function OrderManagement({ transactions, onAddTransaction, onDele
                             <AnimatePresence>
                                 {expandedOrderIds.has(order.id) && (
                                     <motion.div
-                                        initial={{ height: 0, opacity: 0 }}
-                                        animate={{ height: 'auto', opacity: 1 }}
-                                        exit={{ height: 0, opacity: 0 }}
-                                        className="border-t border-white/5 bg-white/5"
+                                        initial={{ height: 0 }}
+                                        animate={{ height: 'auto' }}
+                                        exit={{ height: 0 }}
+                                        className="bg-white/5 border-t border-white/5"
                                     >
                                         <div className="p-4 space-y-2">
-                                            <p className="text-xs text-slate-500 font-semibold uppercase tracking-wider mb-2 px-2">Order Items</p>
                                             {order.items.map(item => (
-                                                <div key={item.id} className="flex items-center justify-between p-2 rounded-lg hover:bg-white/5">
+                                                <div key={item.id} className="flex justify-between items-center p-2 rounded-lg hover:bg-white/5 text-sm">
                                                     <div className="flex items-center gap-3">
                                                         <div className="w-8 h-8 rounded bg-slate-800 flex items-center justify-center text-slate-500">
                                                             <ShoppingBag size={14} />
                                                         </div>
                                                         <div>
-                                                            <p className="text-sm text-slate-200 font-medium">{item.details?.itemName || 'Unknown Item'}</p>
-                                                            <p className="text-xs text-slate-500">
-                                                                {item.details?.size && `Size: ${item.details.size}`}
-                                                                {item.details?.color && ` • ${item.details.color}`}
-                                                            </p>
+                                                            <p className="font-medium text-slate-200">{item.details?.itemName}</p>
+                                                            <p className="text-xs text-slate-500">{item.details?.size} • {item.details?.color}</p>
                                                         </div>
                                                     </div>
                                                     <div className="text-right">
-                                                        <p className="text-sm text-white">₱{(item.amount).toLocaleString()}</p>
-                                                        <p className="text-xs text-slate-500">Qty: {item.details?.quantity || 1}</p>
+                                                        <p className="font-mono text-white">₱{item.amount.toLocaleString()}</p>
+                                                        <p className="text-xs text-slate-500">x{item.details?.quantity}</p>
                                                     </div>
                                                 </div>
                                             ))}
@@ -470,41 +480,48 @@ export default function OrderManagement({ transactions, onAddTransaction, onDele
                     {filteredOrders.length === 0 && (
                         <div className="text-center text-slate-500 mt-20">
                             <Package size={48} className="mx-auto mb-4 opacity-50" />
-                            <p>No orders found</p>
+                            <p>No orders matched your filters</p>
                         </div>
                     )}
                 </AnimatePresence>
             </div>
 
-            {/* Bulk Payment Modal */}
+            {/* Bulk Edit Modal */}
             <AnimatePresence>
-                {showBulkPaymentModal && (
+                {showBulkEditModal && (
                     <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/80 backdrop-blur-sm p-4">
                         <motion.div
-                            initial={{ scale: 0.9, opacity: 0 }}
+                            initial={{ scale: 0.95, opacity: 0 }}
                             animate={{ scale: 1, opacity: 1 }}
-                            exit={{ scale: 0.9, opacity: 0 }}
+                            exit={{ scale: 0.95, opacity: 0 }}
                             className="glass-panel p-6 max-w-sm w-full"
                         >
-                            <div className="flex justify-between items-center mb-4">
-                                <h3 className="text-xl font-bold text-white">Bulk Edit Payment</h3>
-                                <button onClick={() => setShowBulkPaymentModal(false)} className="text-slate-400 hover:text-white"><X size={24} /></button>
+                            <h3 className="text-xl font-bold text-white mb-4">Bulk Update ({selectedOrderIds.size})</h3>
+
+                            <div className="space-y-4">
+                                <div>
+                                    <label className="text-xs font-bold text-slate-500 uppercase">Fulfillment Status</label>
+                                    <div className="flex flex-wrap gap-2 mt-2">
+                                        {FULFILLMENT_STATUSES.map(s => (
+                                            <button key={s} onClick={() => handleBulkUpdate({ fulfillmentStatus: s })} className="px-3 py-1 bg-white/5 hover:bg-primary hover:text-white rounded-lg text-xs capitalize transition-colors border border-white/5">
+                                                {s.replace('_', ' ')}
+                                            </button>
+                                        ))}
+                                    </div>
+                                </div>
+                                <div>
+                                    <label className="text-xs font-bold text-slate-500 uppercase">Payment Status</label>
+                                    <div className="flex flex-wrap gap-2 mt-2">
+                                        {PAYMENT_STATUSES.map(s => (
+                                            <button key={s} onClick={() => handleBulkUpdate({ paymentStatus: s })} className="px-3 py-1 bg-white/5 hover:bg-emerald-600 hover:text-white rounded-lg text-xs capitalize transition-colors border border-white/5">
+                                                {s}
+                                            </button>
+                                        ))}
+                                    </div>
+                                </div>
                             </div>
-                            <p className="text-sm text-slate-400 mb-4">Select new payment mode for {selectedOrderIds.size} orders:</p>
-                            <div className="grid grid-cols-2 gap-2">
-                                {PAYMENT_MODES.map(mode => (
-                                    <button
-                                        key={mode}
-                                        onClick={() => {
-                                            handleBulkStatusUpdate(null, mode);
-                                            setShowBulkPaymentModal(false);
-                                        }}
-                                        className="p-3 rounded-lg bg-white/5 hover:bg-primary/20 hover:text-primary transition-colors text-sm font-bold text-slate-200 border border-white/5 hover:border-primary/50"
-                                    >
-                                        {mode}
-                                    </button>
-                                ))}
-                            </div>
+
+                            <button onClick={() => setShowBulkEditModal(false)} className="mt-6 w-full py-2 bg-white/5 hover:bg-white/10 rounded-xl text-slate-400">Cancel</button>
                         </motion.div>
                     </div>
                 )}

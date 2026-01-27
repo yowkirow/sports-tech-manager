@@ -30,7 +30,8 @@ export default function POSInterface({ transactions, onAddTransaction }) {
 
     // Checkout Meta State
     const [customerName, setCustomerName] = useState('');
-    const [orderStatus, setOrderStatus] = useState('paid');
+    const [fulfillmentStatus, setFulfillmentStatus] = useState('pending');
+    const [paymentStatus, setPaymentStatus] = useState('paid');
     const [paymentMode, setPaymentMode] = useState('Cash');
     const [showSuggestions, setShowSuggestions] = useState(false);
 
@@ -149,7 +150,9 @@ export default function POSInterface({ transactions, onAddTransaction }) {
                     details: {
                         orderId, // Link all items to this order
                         customerName,
-                        status: orderStatus,
+                        fulfillmentStatus,
+                        paymentStatus,
+                        status: fulfillmentStatus, // Legacy support
                         paymentMode,
                         quantity: item.quantity,
                         itemName: item.name,
@@ -170,7 +173,8 @@ export default function POSInterface({ transactions, onAddTransaction }) {
             showToast('Order Processed!', 'success');
             setCart([]);
             setCustomerName('');
-            setOrderStatus('paid');
+            setFulfillmentStatus('pending');
+            setPaymentStatus('paid');
         } catch (err) {
             console.error(err);
             showToast('Checkout Failed', 'error');
@@ -386,8 +390,10 @@ export default function POSInterface({ transactions, onAddTransaction }) {
                     checkoutLoading={checkoutLoading}
                     customerName={customerName}
                     setCustomerName={setCustomerName}
-                    orderStatus={orderStatus}
-                    setOrderStatus={setOrderStatus}
+                    fulfillmentStatus={fulfillmentStatus}
+                    setFulfillmentStatus={setFulfillmentStatus}
+                    paymentStatus={paymentStatus}
+                    setPaymentStatus={setPaymentStatus}
                     showSuggestions={showSuggestions}
                     setShowSuggestions={setShowSuggestions}
                     filteredCustomers={filteredCustomers}
@@ -412,8 +418,10 @@ export default function POSInterface({ transactions, onAddTransaction }) {
                                 checkoutLoading={checkoutLoading}
                                 customerName={customerName}
                                 setCustomerName={setCustomerName}
-                                orderStatus={orderStatus}
-                                setOrderStatus={setOrderStatus}
+                                fulfillmentStatus={fulfillmentStatus}
+                                setFulfillmentStatus={setFulfillmentStatus}
+                                paymentStatus={paymentStatus}
+                                setPaymentStatus={setPaymentStatus}
                                 showSuggestions={showSuggestions}
                                 setShowSuggestions={setShowSuggestions}
                                 filteredCustomers={filteredCustomers}
@@ -576,8 +584,10 @@ const CartContent = ({
     checkoutLoading,
     customerName,
     setCustomerName,
-    orderStatus,
-    setOrderStatus,
+    fulfillmentStatus,
+    setFulfillmentStatus,
+    paymentStatus,
+    setPaymentStatus,
     paymentMode,
     setPaymentMode,
     showSuggestions,
@@ -649,17 +659,31 @@ const CartContent = ({
                         ))}
                     </select>
                 </div>
-                <div>
-                    <label className="text-xs text-slate-500 mb-1 block">Status</label>
-                    <select
-                        className="glass-input py-2 text-sm w-full capitalize"
-                        value={orderStatus}
-                        onChange={e => setOrderStatus(e.target.value)}
-                    >
-                        {['paid', 'in_progress', 'ready', 'shipped'].map(s => (
-                            <option key={s} value={s} className="bg-slate-900">{s.replace('_', ' ')}</option>
-                        ))}
-                    </select>
+                <div className="grid grid-cols-2 gap-4">
+                    <div>
+                        <label className="text-xs text-slate-500 mb-1 block">Payment Status</label>
+                        <select
+                            className="glass-input py-2 text-sm w-full capitalize"
+                            value={paymentStatus}
+                            onChange={e => setPaymentStatus(e.target.value)}
+                        >
+                            {['unpaid', 'paid'].map(s => (
+                                <option key={s} value={s} className="bg-slate-900">{s}</option>
+                            ))}
+                        </select>
+                    </div>
+                    <div>
+                        <label className="text-xs text-slate-500 mb-1 block">Fulfillment</label>
+                        <select
+                            className="glass-input py-2 text-sm w-full capitalize"
+                            value={fulfillmentStatus}
+                            onChange={e => setFulfillmentStatus(e.target.value)}
+                        >
+                            {['pending', 'in_progress', 'ready', 'shipped'].map(s => (
+                                <option key={s} value={s} className="bg-slate-900">{s.replace('_', ' ')}</option>
+                            ))}
+                        </select>
+                    </div>
                 </div>
             </div>
 
