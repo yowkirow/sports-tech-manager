@@ -10,9 +10,10 @@ import OrderManagement from './components/Orders/OrderManagement';
 import Expenses from './components/Expenses';
 import { LayoutDashboard, Store, ShoppingBag, Receipt, Package, LogOut, X, Wallet, Menu, Globe, Link } from 'lucide-react';
 import clsx from 'clsx';
-import { useToast } from './components/ui/Toast';
 import { motion, AnimatePresence } from 'framer-motion';
 import Storefront from './components/Shop/Storefront';
+import Login from './components/Auth/Login';
+import { supabase } from './lib/supabaseClient';
 
 
 function App() {
@@ -28,7 +29,23 @@ function App() {
     const [activeTab, setActiveTab] = useState('pos'); // Default to POS for speed
     const [showAddStockModal, setShowAddStockModal] = useState(false);
     const [isSidebarOpen, setIsSidebarOpen] = useState(false);
+    const [session, setSession] = useState(null);
     const { showToast } = useToast();
+
+    // Auth Listener
+    React.useEffect(() => {
+        supabase.auth.getSession().then(({ data: { session } }) => {
+            setSession(session);
+        });
+
+        const {
+            data: { subscription },
+        } = supabase.auth.onAuthStateChange((_event, session) => {
+            setSession(session);
+        });
+
+        return () => subscription.unsubscribe();
+    }, []);
 
     const addTransaction = async (transaction) => {
         try {
@@ -88,6 +105,10 @@ function App() {
         );
     }
 
+    if (!session) {
+        return <Login />;
+    }
+
 
     return (
         <div className="flex h-screen bg-slate-900 text-slate-100 overflow-hidden font-sans selection:bg-primary/30 relative">
@@ -144,12 +165,14 @@ function App() {
                         <Globe size={18} />
                         <span className="font-medium text-sm">Copy Store Link</span>
                     </button>
-                    <div className="px-4 py-3 rounded-xl bg-white/5 border border-white/5">
-                        <p className="text-xs text-slate-500 mb-1">System Status</p>
-                        <div className="flex items-center gap-2">
-                            <div className="w-2 h-2 rounded-full bg-emerald-500 animate-pulse"></div>
-                            <span className="text-sm text-emerald-400 font-medium">Online</span>
+                    <div className="px-4 py-3 rounded-xl bg-white/5 border border-white/5 flex items-center justify-between group">
+                        <div>
+                            <p className="text-xs text-slate-500 mb-1">Signed in as</p>
+                            <p className="text-xs text-white truncate max-w-[120px]">{session?.user?.email}</p>
                         </div>
+                        <button onClick={() => supabase.auth.signOut()} className="text-slate-500 hover:text-red-400 p-1">
+                            <LogOut size={16} />
+                        </button>
                     </div>
                 </div>
             </aside>
