@@ -11,6 +11,7 @@ import Expenses from './components/Expenses';
 import { LayoutDashboard, Store, ShoppingBag, Receipt, Package, LogOut, X, Wallet, Menu, Globe, Link } from 'lucide-react';
 import clsx from 'clsx';
 import { motion, AnimatePresence } from 'framer-motion';
+import { useToast } from './components/ui/Toast';
 import Storefront from './components/Shop/Storefront';
 import Login from './components/Auth/Login';
 import { supabase } from './lib/supabaseClient';
