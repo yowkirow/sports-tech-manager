@@ -1,6 +1,7 @@
 import React, { useState, useMemo } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
-import { ShoppingCart, X, Plus, Minus, CheckCircle, Store, Search, Package } from 'lucide-react';
+import { Component, Loader2, Upload, ShoppingCart, X, Plus, Minus, CheckCircle, Store, Search, Package } from 'lucide-react';
+import { supabase } from '../../lib/supabaseClient';
 import { useProducts, useRawInventory } from '../../hooks/useInventory';
 import { useToast } from '../ui/Toast';
 
@@ -23,7 +24,10 @@ export default function Storefront({ transactions, onPlaceOrder }) {
     const [city, setCity] = useState('');
     const [province, setProvince] = useState('');
     const [zipCode, setZipCode] = useState('');
-    const [paymentMode, setPaymentMode] = useState('Cash');
+    const [paymentMode, setPaymentMode] = useState('COD');
+    const [proofFile, setProofFile] = useState(null);
+    const [proofUrl, setProofUrl] = useState('');
+    const [uploadingProof, setUploadingProof] = useState(false);
     const [checkoutLoading, setCheckoutLoading] = useState(false);
     const [orderComplete, setOrderComplete] = useState(false);
 
@@ -58,9 +62,43 @@ export default function Storefront({ transactions, onPlaceOrder }) {
         }).filter(i => i.quantity > 0));
     };
 
+    const handleUploadProof = async (e) => {
+        const file = e.target.files[0];
+        if (!file) return;
+        setUploadingProof(true);
+        try {
+            const ext = file.name.split('.').pop();
+            const fileName = `receipt-${Date.now()}.${ext}`;
+            const path = fileName;
+
+            const { error: uploadError } = await supabase.storage.from('product-images').upload(path, file, {
+                cacheControl: '3600',
+                upsert: false,
+                contentType: file.type
+            });
+
+            if (uploadError) throw uploadError;
+
+            const { data } = supabase.storage.from('product-images').getPublicUrl(path);
+            setProofUrl(data.publicUrl);
+            setProofFile(file);
+            showToast('Receipt uploaded!', 'success');
+        } catch (err) {
+            console.error(err);
+            showToast(`Upload failed: ${err.message}`, 'error');
+        } finally {
+            setUploadingProof(false);
+        }
+    };
+
     const handleCheckout = async () => {
         if (!customerName) return showToast('Please enter your name', 'error');
         if (!shippingAddress || !city || !province || !contactNumber) return showToast('Please complete shipping details', 'error');
+
+        // Payment Validation
+        const requiresProof = ['Gcash', 'Bank Transfer'].includes(paymentMode);
+        if (requiresProof && !proofUrl) return showToast('Please upload proof of payment', 'error');
+
         setCheckoutLoading(true);
 
         try {
@@ -95,7 +133,8 @@ export default function Storefront({ transactions, onPlaceOrder }) {
                         contactNumber
                     },
                     imageUrl: item.imageUrl,
-                    isOnlineOrder: true
+                    isOnlineOrder: true,
+                    proofOfPayment: requiresProof ? proofUrl : null
                 }
             }));
 
@@ -348,11 +387,49 @@ export default function Storefront({ transactions, onPlaceOrder }) {
                                         value={paymentMode}
                                         onChange={e => setPaymentMode(e.target.value)}
                                     >
-                                        <option value="Cash" className="bg-slate-900">Cash</option>
+                                        <option value="COD" className="bg-slate-900">Cash on Delivery</option>
                                         <option value="Gcash" className="bg-slate-900">Gcash</option>
                                         <option value="Bank Transfer" className="bg-slate-900">Bank Transfer</option>
-                                        <option value="COD" className="bg-slate-900">Cash on Delivery</option>
                                     </select>
+
+                                    {['Gcash', 'Bank Transfer'].includes(paymentMode) && (
+                                        <div className="mt-4 p-4 border border-dashed border-white/20 rounded-xl bg-white/5">
+                                            <p className="text-xs text-slate-400 mb-2 font-bold uppercase">Proof of Payment</p>
+
+                                            {proofUrl ? (
+                                                <div className="relative">
+                                                    <img src={proofUrl} alt="Proof" className="w-full max-h-48 object-contain rounded-lg bg-black/50" />
+                                                    <button
+                                                        onClick={() => { setProofUrl(''); setProofFile(null); }}
+                                                        className="absolute top-2 right-2 p-1 bg-red-500 rounded-full text-white hover:bg-red-600 transition-colors"
+                                                    >
+                                                        <X size={14} />
+                                                    </button>
+                                                </div>
+                                            ) : (
+                                                <label className="flex flex-col items-center justify-center p-6 cursor-pointer hover:bg-white/5 transition-colors rounded-lg">
+                                                    {uploadingProof ? (
+                                                        <>
+                                                            <Loader2 className="animate-spin text-primary mb-2" />
+                                                            <span className="text-xs text-slate-400">Uploading...</span>
+                                                        </>
+                                                    ) : (
+                                                        <>
+                                                            <Upload className="text-slate-400 mb-2" />
+                                                            <span className="text-xs text-slate-400">Click to upload receipt</span>
+                                                        </>
+                                                    )}
+                                                    <input
+                                                        type="file"
+                                                        accept="image/*"
+                                                        className="hidden"
+                                                        onChange={handleUploadProof}
+                                                        disabled={uploadingProof}
+                                                    />
+                                                </label>
+                                            )}
+                                        </div>
+                                    )}
                                 </div>
 
                                 <div className="flex justify-between items-center text-lg font-bold text-white pt-2">

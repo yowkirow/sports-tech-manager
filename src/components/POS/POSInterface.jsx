@@ -1,6 +1,6 @@
 import React, { useState, useMemo, useRef } from 'react';
-import { motion, AnimatePresence } from 'framer-motion';
-import { Search, ShoppingCart, Trash2, CheckCircle, Package, Plus, Loader2, Edit, X, Upload, Ruler } from 'lucide-react';
+import { motion, AnimatePresence, Reorder } from 'framer-motion';
+import { Search, ShoppingCart, Trash2, CheckCircle, Package, Plus, Loader2, Edit, X, Upload, Ruler, GripVertical } from 'lucide-react';
 import { useToast } from '../ui/Toast';
 import { supabase } from '../../lib/supabaseClient';
 import { useRawInventory, useProducts } from '../../hooks/useInventory';
@@ -374,86 +374,92 @@ export default function POSInterface({ transactions, onAddTransaction }) {
                         </div>
                     )}
 
-                    <AnimatePresence>
-                        {filteredProducts.map(product => (
-                            <motion.div
-                                key={product.id}
-                                layout
-                                initial={{ opacity: 0, scale: 0.9 }}
-                                animate={{ opacity: 1, scale: 1 }}
-                                className={`glass-card p-0 overflow-hidden cursor-pointer group flex flex-col h-full relative ${selectedProducts.has(product.name) ? 'ring-2 ring-primary bg-primary/10' : ''}`}
-                                onClick={() => {
-                                    if (isSelectionMode) toggleSelection(product.name);
-                                    else if (!isReorderMode) setActiveProduct(product);
-                                }}
-                            >
-                                {isReorderMode && (
-                                    <div className="absolute inset-0 z-30 bg-black/40 backdrop-blur-[1px] flex items-center justify-center gap-2 opacity-0 group-hover:opacity-100 transition-opacity">
-                                        <button
-                                            onClick={(e) => { e.stopPropagation(); handleMoveProduct(filteredProducts.indexOf(product), -1); }}
-                                            className="p-3 bg-white text-black rounded-full hover:scale-110 transition-transform"
-                                        >
-                                            ←
-                                        </button>
-                                        <button
-                                            onClick={(e) => { e.stopPropagation(); handleMoveProduct(filteredProducts.indexOf(product), 1); }}
-                                            className="p-3 bg-white text-black rounded-full hover:scale-110 transition-transform"
-                                        >
-                                            →
-                                        </button>
+                    {isReorderMode ? (
+                        <Reorder.Group axis="y" values={localOrderedProducts} onReorder={setLocalOrderedProducts}>
+                            {localOrderedProducts.map(product => (
+                                <Reorder.Item key={product.id} value={product} className="bg-white/5 mb-2 rounded-xl flex items-center p-2 cursor-grab active:cursor-grabbing border border-white/5 hover:border-white/20">
+                                    <div className="p-2 text-slate-400">
+                                        <GripVertical size={20} />
                                     </div>
-                                )}
-                                {isSelectionMode && (
-                                    <div className="absolute top-2 left-2 z-20 pointer-events-none">
-                                        <div className={`w-6 h-6 rounded-full border-2 flex items-center justify-center transition-colors ${selectedProducts.has(product.name) ? 'bg-primary border-primary' : 'border-white/40 bg-black/40'}`}>
-                                            {selectedProducts.has(product.name) && <CheckCircle size={14} className="text-white" />}
+                                    <div className="w-12 h-12 rounded bg-black/30 overflow-hidden shrink-0 mx-3">
+                                        {product.imageUrl && <img src={product.imageUrl} className="w-full h-full object-cover" />}
+                                    </div>
+                                    <div className="flex-1">
+                                        <h3 className="font-bold text-white">{product.name}</h3>
+                                        <p className="text-xs text-primary">₱{product.price}</p>
+                                    </div>
+                                    <div className="text-xs text-slate-500 font-mono px-4">
+                                        #{localOrderedProducts.indexOf(product) + 1}
+                                    </div>
+                                </Reorder.Item>
+                            ))}
+                        </Reorder.Group>
+                    ) : (
+                        <AnimatePresence>
+                            {filteredProducts.map(product => (
+                                <motion.div
+                                    key={product.id}
+                                    layout
+                                    initial={{ opacity: 0, scale: 0.9 }}
+                                    animate={{ opacity: 1, scale: 1 }}
+                                    className={`glass-card p-0 overflow-hidden cursor-pointer group flex flex-col h-full relative ${selectedProducts.has(product.name) ? 'ring-2 ring-primary bg-primary/10' : ''}`}
+                                    onClick={() => {
+                                        if (isSelectionMode) toggleSelection(product.name);
+                                        else setActiveProduct(product);
+                                    }}
+                                >
+                                    {isSelectionMode && (
+                                        <div className="absolute top-2 left-2 z-20 pointer-events-none">
+                                            <div className={`w-6 h-6 rounded-full border-2 flex items-center justify-center transition-colors ${selectedProducts.has(product.name) ? 'bg-primary border-primary' : 'border-white/40 bg-black/40'}`}>
+                                                {selectedProducts.has(product.name) && <CheckCircle size={14} className="text-white" />}
+                                            </div>
+                                        </div>
+                                    )}
+
+                                    {!isSelectionMode && (
+                                        <button
+                                            onClick={(e) => { e.stopPropagation(); setEditingProduct(product); setShowProductModal(true); }}
+                                            className="absolute top-2 right-2 z-10 p-2 bg-black/60 hover:bg-primary rounded-lg text-white opacity-0 group-hover:opacity-100 transition-all focus:opacity-100 lg:opacity-0"
+                                        >
+                                            <Edit size={14} />
+                                        </button>
+                                    )}
+
+                                    <div className="aspect-[4/5] bg-black/20 relative w-full">
+                                        {product.imageUrl ? (
+                                            <img
+                                                src={product.imageUrl}
+                                                alt={product.name}
+                                                className="w-full h-full object-cover"
+                                                onError={(e) => {
+                                                    console.error("Image load failed for:", product.name, product.imageUrl);
+                                                    e.target.style.display = 'none';
+                                                    e.target.nextSibling.classList.remove('hidden');
+                                                    e.target.nextSibling.classList.add('flex');
+                                                }}
+                                            />
+                                        ) : null}
+                                        {/* Fallback - RED if error (url exists), GRAY if no url */}
+                                        <div className={`w-full h-full flex items-center justify-center ${product.imageUrl ? 'text-red-500 bg-red-500/10' : 'text-slate-600'} ${product.imageUrl ? 'hidden' : 'flex'}`}>
+                                            <Package size={32} />
+                                            {product.imageUrl && <span className="text-[10px] absolute bottom-8">Failed Load</span>}
+                                        </div>
+
+                                        <div className="absolute bottom-2 left-2 bg-black/60 px-2 py-1 rounded text-[10px] text-white backdrop-blur-md">
+                                            Uses: {product.linkedColor}
                                         </div>
                                     </div>
-                                )}
-
-                                {!isSelectionMode && (
-                                    <button
-                                        onClick={(e) => { e.stopPropagation(); setEditingProduct(product); setShowProductModal(true); }}
-                                        className="absolute top-2 right-2 z-10 p-2 bg-black/60 hover:bg-primary rounded-lg text-white opacity-0 group-hover:opacity-100 transition-all focus:opacity-100 lg:opacity-0"
-                                    >
-                                        <Edit size={14} />
-                                    </button>
-                                )}
-
-                                <div className="aspect-[4/5] bg-black/20 relative w-full">
-                                    {product.imageUrl ? (
-                                        <img
-                                            src={product.imageUrl}
-                                            alt={product.name}
-                                            className="w-full h-full object-cover"
-                                            onError={(e) => {
-                                                console.error("Image load failed for:", product.name, product.imageUrl);
-                                                e.target.style.display = 'none';
-                                                e.target.nextSibling.classList.remove('hidden');
-                                                e.target.nextSibling.classList.add('flex');
-                                            }}
-                                        />
-                                    ) : null}
-                                    {/* Fallback - RED if error (url exists), GRAY if no url */}
-                                    <div className={`w-full h-full flex items-center justify-center ${product.imageUrl ? 'text-red-500 bg-red-500/10' : 'text-slate-600'} ${product.imageUrl ? 'hidden' : 'flex'}`}>
-                                        <Package size={32} />
-                                        {product.imageUrl && <span className="text-[10px] absolute bottom-8">Failed Load</span>}
+                                    <div className="p-4 flex flex-col flex-1">
+                                        <h3 className="font-semibold text-white leading-tight mb-1 line-clamp-2">{product.name}</h3>
+                                        <div className="mt-auto flex justify-between items-center">
+                                            <span className="text-primary font-bold">₱{product.price}</span>
+                                            <ArrowRightIcon className="text-white/20 group-hover:text-white transition-colors" />
+                                        </div>
                                     </div>
-
-                                    <div className="absolute bottom-2 left-2 bg-black/60 px-2 py-1 rounded text-[10px] text-white backdrop-blur-md">
-                                        Uses: {product.linkedColor}
-                                    </div>
-                                </div>
-                                <div className="p-4 flex flex-col flex-1">
-                                    <h3 className="font-semibold text-white leading-tight mb-1 line-clamp-2">{product.name}</h3>
-                                    <div className="mt-auto flex justify-between items-center">
-                                        <span className="text-primary font-bold">₱{product.price}</span>
-                                        <ArrowRightIcon className="text-white/20 group-hover:text-white transition-colors" />
-                                    </div>
-                                </div>
-                            </motion.div>
-                        ))}
-                    </AnimatePresence>
+                                </motion.div>
+                            ))}
+                        </AnimatePresence>
+                    )}
                 </div>
             </div>
 
