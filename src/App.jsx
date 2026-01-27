@@ -8,10 +8,12 @@ import AddStockForm from './components/Inventory/AddStockForm';
 import POSInterface from './components/POS/POSInterface';
 import OrderManagement from './components/Orders/OrderManagement';
 import Expenses from './components/Expenses';
-import { LayoutDashboard, Store, ShoppingBag, Receipt, Package, LogOut, X, Wallet, Menu } from 'lucide-react';
+import { LayoutDashboard, Store, ShoppingBag, Receipt, Package, LogOut, X, Wallet, Menu, Globe, Link } from 'lucide-react';
 import clsx from 'clsx';
 import { useToast } from './components/ui/Toast';
 import { motion, AnimatePresence } from 'framer-motion';
+import Storefront from './components/Shop/Storefront';
+
 
 function App() {
     const {
@@ -74,6 +76,19 @@ function App() {
         </button>
     );
 
+    // Check for Storefront Mode
+    const isStoreMode = new URLSearchParams(window.location.search).get('mode') === 'store';
+
+    if (isStoreMode) {
+        return (
+            <Storefront
+                transactions={transactions}
+                onPlaceOrder={addTransaction}
+            />
+        );
+    }
+
+
     return (
         <div className="flex h-screen bg-slate-900 text-slate-100 overflow-hidden font-sans selection:bg-primary/30 relative">
             {/* Mobile Overlay */}
@@ -117,7 +132,18 @@ function App() {
                     <NavItem id="dashboard" label="Dashboard" icon={LayoutDashboard} />
                 </nav>
 
-                <div className="p-4 border-t border-white/5">
+                <div className="p-4 border-t border-white/5 space-y-2">
+                    <button
+                        onClick={() => {
+                            const url = window.location.origin + '?mode=store';
+                            navigator.clipboard.writeText(url);
+                            showToast('Store link copied!', 'success');
+                        }}
+                        className="w-full px-4 py-3 rounded-xl bg-primary/10 border border-primary/20 text-primary hover:bg-primary/20 flex items-center gap-3 transition-colors"
+                    >
+                        <Globe size={18} />
+                        <span className="font-medium text-sm">Copy Store Link</span>
+                    </button>
                     <div className="px-4 py-3 rounded-xl bg-white/5 border border-white/5">
                         <p className="text-xs text-slate-500 mb-1">System Status</p>
                         <div className="flex items-center gap-2">
