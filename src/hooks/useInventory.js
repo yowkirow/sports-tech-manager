@@ -53,6 +53,9 @@ export const useProducts = (transactions) => {
         const chronoTransactions = [...transactions].reverse();
 
         chronoTransactions.forEach(t => {
+            // Safety check
+            if (!t.details) return;
+
             if (t.type === 'define_product') {
                 const { name, price, imageUrl, linkedColor, category, order } = t.details;
                 if (!name) return;
@@ -70,7 +73,11 @@ export const useProducts = (transactions) => {
                 });
             } else if (t.type === 'delete_product') {
                 const { name } = t.details;
-                if (name) products.delete(name.trim().toLowerCase());
+                if (name) {
+                    const key = name.trim().toLowerCase();
+                    // console.log(`[Reconstruct] Delete: ${name} (key: ${key})`);
+                    products.delete(key);
+                }
             }
         });
 
