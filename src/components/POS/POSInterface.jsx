@@ -242,6 +242,19 @@ export default function POSInterface({ transactions, onAddTransaction }) {
                     onSave={async (formData) => {
                         setCheckoutLoading(true);
                         try {
+                            // If renaming, delete the old one first
+                            if (editingProduct && editingProduct.name !== formData.name) {
+                                await onAddTransaction({
+                                    id: crypto.randomUUID(),
+                                    type: 'delete_product',
+                                    category: 'system',
+                                    amount: 0,
+                                    description: `Renamed Product (Deleted Old): ${editingProduct.name}`,
+                                    date: new Date().toISOString(),
+                                    details: { name: editingProduct.name }
+                                });
+                            }
+
                             await onAddTransaction({
                                 id: crypto.randomUUID(),
                                 type: 'define_product',
