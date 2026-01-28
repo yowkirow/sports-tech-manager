@@ -56,9 +56,12 @@ export const useProducts = (transactions) => {
             if (t.type === 'define_product') {
                 const { name, price, imageUrl, linkedColor, category, order } = t.details;
                 if (!name) return;
-                products.set(name, {
+                // Normalize key to prevent duplicates from case/whitespace
+                const key = name.trim().toLowerCase();
+
+                products.set(key, {
                     id: t.id, // Use latest ID
-                    name,
+                    name: name.trim(), // Clean up display name too
                     price,
                     imageUrl,
                     linkedColor,
@@ -67,7 +70,7 @@ export const useProducts = (transactions) => {
                 });
             } else if (t.type === 'delete_product') {
                 const { name } = t.details;
-                if (name) products.delete(name);
+                if (name) products.delete(name.trim().toLowerCase());
             }
         });
 
