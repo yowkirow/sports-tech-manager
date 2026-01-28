@@ -451,12 +451,20 @@ export default function POSInterface({ transactions, onAddTransaction, onDeleteT
                                         </button>
                                     )}
 
-                                    <div className="aspect-[4/5] bg-black/20 relative w-full">
+                                    {/* Cinematic Hover Overlay */}
+                                    <div className="absolute inset-0 bg-black/60 opacity-0 group-hover:opacity-100 transition-opacity duration-300 z-10 flex flex-col items-center justify-center p-4 text-center backdrop-blur-[2px]">
+                                        <h3 className="font-bold text-white text-lg leading-tight mb-2 drop-shadow-md">{product.name}</h3>
+                                        <div className="bg-primary text-black text-xs font-bold px-3 py-1.5 rounded-full flex items-center gap-1 shadow-lg transform translate-y-4 group-hover:translate-y-0 transition-transform duration-300">
+                                            <Plus size={14} /> Quick Add
+                                        </div>
+                                    </div>
+
+                                    <div className="aspect-[4/5] bg-black/20 relative w-full overflow-hidden">
                                         {product.imageUrl ? (
                                             <img
                                                 src={product.imageUrl}
                                                 alt={product.name}
-                                                className="w-full h-full object-cover"
+                                                className="w-full h-full object-cover transition-transform duration-500 group-hover:scale-110"
                                                 onError={(e) => {
                                                     console.error("Image load failed for:", product.name, product.imageUrl);
                                                     e.target.style.display = 'none';
