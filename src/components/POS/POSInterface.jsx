@@ -10,7 +10,7 @@ const COLORS = ['White', 'Black', 'Kiwi', 'Cream', 'Baby Blue'];
 
 
 
-export default function POSInterface({ transactions, onAddTransaction }) {
+export default function POSInterface({ transactions, onAddTransaction, onDeleteTransaction }) {
     const { showToast } = useToast();
 
     // State
@@ -278,17 +278,27 @@ export default function POSInterface({ transactions, onAddTransaction }) {
                     onDelete={async (productName) => {
                         setCheckoutLoading(true);
                         try {
-                            await onAddTransaction({
-                                id: crypto.randomUUID(),
-                                type: 'delete_product',
-                                category: 'system',
-                                amount: 0,
-                                description: `Deleted Product: ${productName}`,
-                                date: new Date().toISOString(),
-                                details: { name: productName }
-                            });
-                            showToast('Product Deleted', 'info');
+                            const normalizedName = productName.trim().toLowerCase();
+
+                            // Find ALL related transactions (Define, Reorder, Delete)
+                            const relatedIds = transactions
+                                .filter(t => {
+                                    if (!t.details || !t.details.name) return false;
+                                    return t.details.name.trim().toLowerCase() === normalizedName;
+                                })
+                                .map(t => t.id);
+
+                            if (relatedIds.length === 0) {
+                                showToast('No records found to delete', 'info');
+                                return;
+                            }
+
+                            // Execute Hard Deletes
+                            await Promise.all(relatedIds.map(id => onDeleteTransaction(id)));
+
+                            showToast(`Product deleted (cleaned ${relatedIds.length} records)`, 'success');
                             setShowProductModal(false);
+                            setEditingProduct(null);
                         } catch (err) {
                             showToast(`Delete Error: ${err.message}`, 'error');
                         } finally {

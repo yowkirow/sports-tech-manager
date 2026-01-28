@@ -219,6 +219,7 @@ function App() {
                                 <POSInterface
                                     transactions={transactions}
                                     onAddTransaction={addTransaction}
+                                    onDeleteTransaction={deleteTransaction} // Enable hard deletes
                                     refetch={refetch}
                                 />
                             )}
