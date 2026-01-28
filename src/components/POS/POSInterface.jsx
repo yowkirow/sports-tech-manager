@@ -262,7 +262,10 @@ export default function POSInterface({ transactions, onAddTransaction }) {
                                 amount: 0,
                                 description: `Defined Product: ${formData.name}`,
                                 date: new Date().toISOString(),
-                                details: formData
+                                details: {
+                                    ...formData,
+                                    order: editingProduct?.order // Persist existing order
+                                }
                             });
                             showToast('Product Saved!', 'success');
                             setShowProductModal(false);
