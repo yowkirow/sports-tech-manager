@@ -36,8 +36,8 @@ const useSupabaseTransactions = () => {
 
             if (error) throw error;
 
-            // Update local state
-            setTransactions([data, ...transactions]);
+            // Update local state with functional update to avoid stale closures
+            setTransactions(prev => [data, ...prev]);
             return data;
         } catch (err) {
             console.error('Error adding transaction:', err);
@@ -57,7 +57,7 @@ const useSupabaseTransactions = () => {
             if (error) throw error;
 
             // Update local state
-            setTransactions(transactions.filter(t => t.id !== id));
+            setTransactions(prev => prev.filter(t => t.id !== id));
         } catch (err) {
             console.error('Error deleting transaction:', err);
             setError(err.message);
