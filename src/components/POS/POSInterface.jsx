@@ -294,7 +294,7 @@ export default function POSInterface({ transactions, onAddTransaction, onDeleteT
                             }
 
                             // Execute Hard Deletes
-                            await Promise.all(relatedIds.map(id => onDeleteTransaction(id)));
+                            await Promise.all(relatedIds.map(id => onDeleteTransaction(id, true)));
 
                             showToast(`Product deleted (cleaned ${relatedIds.length} records)`, 'success');
                             setShowProductModal(false);

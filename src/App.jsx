@@ -59,11 +59,11 @@ function App() {
         }
     };
 
-    const deleteTransaction = async (id) => {
-        if (!window.confirm('Delete this record? Inventory counts will be affected.')) return;
+    const deleteTransaction = async (id, skipConfirm = false) => {
+        if (!skipConfirm && !window.confirm('Delete this record? Inventory counts will be affected.')) return;
         try {
             await deleteFromSupabase(id);
-            showToast('Record deleted', 'info');
+            if (!skipConfirm) showToast('Record deleted', 'info');
         } catch (err) {
             showToast('Failed to delete', 'error');
         }
