@@ -329,7 +329,7 @@ export default function Storefront({ transactions, onPlaceOrder }) {
                             animate={{ x: 0 }}
                             exit={{ x: '100%' }}
                             transition={{ type: "spring", damping: 25, stiffness: 200 }}
-                            className="relative w-full sm:max-w-md h-[80vh] sm:h-screen bg-slate-900 border-l border-white/10 shadow-2xl flex flex-col"
+                            className="relative w-full sm:max-w-md h-[90vh] sm:h-screen bg-slate-900 border-l border-white/10 shadow-2xl flex flex-col"
                         >
                             <div className="p-4 border-b border-white/10 flex justify-between items-center bg-slate-900/50 backdrop-blur-md">
                                 <h2 className="text-xl font-bold text-white flex items-center gap-2">
@@ -338,101 +338,109 @@ export default function Storefront({ transactions, onPlaceOrder }) {
                                 <button onClick={() => setIsCartOpen(false)} className="text-slate-400 hover:text-white p-2"><X size={24} /></button>
                             </div>
 
-                            <div className="flex-1 overflow-y-auto p-4 space-y-4">
-                                {cart.map(item => (
-                                    <div key={item.cartId} className="flex gap-4 p-3 bg-white/5 rounded-xl">
-                                        <div className="w-16 h-16 rounded-lg bg-black/20 overflow-hidden shrink-0">
-                                            {item.imageUrl && <img src={item.imageUrl} className="w-full h-full object-cover" />}
-                                        </div>
-                                        <div className="flex-1 min-w-0">
-                                            <div className="flex justify-between items-start mb-1">
-                                                <h4 className="font-bold text-slate-200 truncate pr-2">{item.name}</h4>
-                                                <p className="text-white font-mono">₱{item.price * item.quantity}</p>
+                            <div className="flex-1 overflow-y-auto p-4 space-y-6">
+                                {/* Cart Items */}
+                                <div className="space-y-4">
+                                    {cart.map(item => (
+                                        <div key={item.cartId} className="flex gap-4 p-3 bg-white/5 rounded-xl">
+                                            <div className="w-16 h-16 rounded-lg bg-black/20 overflow-hidden shrink-0">
+                                                {item.imageUrl && <img src={item.imageUrl} className="w-full h-full object-cover" />}
                                             </div>
-                                            <p className="text-xs text-slate-400 mb-2">Size: {item.size}</p>
+                                            <div className="flex-1 min-w-0">
+                                                <div className="flex justify-between items-start mb-1">
+                                                    <h4 className="font-bold text-slate-200 truncate pr-2">{item.name}</h4>
+                                                    <p className="text-white font-mono">₱{item.price * item.quantity}</p>
+                                                </div>
+                                                <p className="text-xs text-slate-400 mb-2">Size: {item.size}</p>
 
-                                            <div className="flex items-center gap-3">
-                                                <div className="flex items-center bg-black/40 rounded-lg p-1">
-                                                    <button onClick={() => updateQuantity(item.cartId, -1)} className="p-1 hover:text-white text-slate-400"><Minus size={14} /></button>
-                                                    <span className="text-sm font-bold w-6 text-center">{item.quantity}</span>
-                                                    <button onClick={() => updateQuantity(item.cartId, 1)} className="p-1 hover:text-white text-slate-400"><Plus size={14} /></button>
+                                                <div className="flex items-center gap-3">
+                                                    <div className="flex items-center bg-black/40 rounded-lg p-1">
+                                                        <button onClick={() => updateQuantity(item.cartId, -1)} className="p-1 hover:text-white text-slate-400"><Minus size={14} /></button>
+                                                        <span className="text-sm font-bold w-6 text-center">{item.quantity}</span>
+                                                        <button onClick={() => updateQuantity(item.cartId, 1)} className="p-1 hover:text-white text-slate-400"><Plus size={14} /></button>
+                                                    </div>
                                                 </div>
                                             </div>
                                         </div>
-                                    </div>
-                                ))}
-                                {cart.length === 0 && (
-                                    <div className="flex flex-col items-center justify-center h-40 text-slate-500">
-                                        <ShoppingCart size={40} className="mb-4 opacity-50" />
-                                        <p>Your cart is empty</p>
+                                    ))}
+                                    {cart.length === 0 && (
+                                        <div className="flex flex-col items-center justify-center h-40 text-slate-500">
+                                            <ShoppingCart size={40} className="mb-4 opacity-50" />
+                                            <p>Your cart is empty</p>
+                                        </div>
+                                    )}
+                                </div>
+
+                                {/* Shipping & Payment Form (Scrollable) */}
+                                {cart.length > 0 && (
+                                    <div className="space-y-3 pt-4 border-t border-white/5">
+                                        <h3 className="text-sm font-bold text-slate-400 uppercase tracking-wider mb-2">Shipping Details</h3>
+                                        <div className="grid grid-cols-2 gap-3">
+                                            <input className="glass-input w-full py-3" placeholder="Name *" value={customerName} onChange={e => setCustomerName(e.target.value)} />
+                                            <input className="glass-input w-full py-3" placeholder="Contact # *" value={contactNumber} onChange={e => setContactNumber(e.target.value)} />
+                                        </div>
+                                        <input className="glass-input w-full py-3" placeholder="Street Address *" value={shippingAddress} onChange={e => setShippingAddress(e.target.value)} />
+                                        <div className="grid grid-cols-2 gap-3">
+                                            <input className="glass-input w-full py-3" placeholder="City *" value={city} onChange={e => setCity(e.target.value)} />
+                                            <input className="glass-input w-full py-3" placeholder="Province *" value={province} onChange={e => setProvince(e.target.value)} />
+                                        </div>
+                                        <input className="glass-input w-full py-3" placeholder="Zip Code" value={zipCode} onChange={e => setZipCode(e.target.value)} />
+
+                                        <h3 className="text-sm font-bold text-slate-400 uppercase tracking-wider mb-2 mt-4">Payment</h3>
+                                        <select
+                                            className="glass-input w-full py-3"
+                                            value={paymentMode}
+                                            onChange={e => setPaymentMode(e.target.value)}
+                                        >
+                                            <option value="COD" className="bg-slate-900">Cash on Delivery</option>
+                                            <option value="Gcash" className="bg-slate-900">Gcash</option>
+                                            <option value="Bank Transfer" className="bg-slate-900">Bank Transfer</option>
+                                        </select>
+
+                                        {['Gcash', 'Bank Transfer'].includes(paymentMode) && (
+                                            <div className="mt-4 p-4 border border-dashed border-white/20 rounded-xl bg-white/5">
+                                                <p className="text-xs text-slate-400 mb-2 font-bold uppercase">Proof of Payment</p>
+
+                                                {proofUrl ? (
+                                                    <div className="relative">
+                                                        <img src={proofUrl} alt="Proof" className="w-full max-h-48 object-contain rounded-lg bg-black/50" />
+                                                        <button
+                                                            onClick={() => { setProofUrl(''); setProofFile(null); }}
+                                                            className="absolute top-2 right-2 p-1 bg-red-500 rounded-full text-white hover:bg-red-600 transition-colors"
+                                                        >
+                                                            <X size={14} />
+                                                        </button>
+                                                    </div>
+                                                ) : (
+                                                    <label className="flex flex-col items-center justify-center p-6 cursor-pointer hover:bg-white/5 transition-colors rounded-lg">
+                                                        {uploadingProof ? (
+                                                            <>
+                                                                <Loader2 className="animate-spin text-primary mb-2" />
+                                                                <span className="text-xs text-slate-400">Uploading...</span>
+                                                            </>
+                                                        ) : (
+                                                            <>
+                                                                <Upload className="text-slate-400 mb-2" />
+                                                                <span className="text-xs text-slate-400">Click to upload receipt</span>
+                                                            </>
+                                                        )}
+                                                        <input
+                                                            type="file"
+                                                            accept="image/*"
+                                                            className="hidden"
+                                                            onChange={handleUploadProof}
+                                                            disabled={uploadingProof}
+                                                        />
+                                                    </label>
+                                                )}
+                                            </div>
+                                        )}
                                     </div>
                                 )}
                             </div>
 
                             <div className="p-6 border-t border-white/10 bg-slate-900/50 backdrop-blur-md space-y-4">
-                                <div className="space-y-3">
-                                    <div className="grid grid-cols-2 gap-3">
-                                        <input className="glass-input w-full py-3" placeholder="Name *" value={customerName} onChange={e => setCustomerName(e.target.value)} />
-                                        <input className="glass-input w-full py-3" placeholder="Contact # *" value={contactNumber} onChange={e => setContactNumber(e.target.value)} />
-                                    </div>
-                                    <input className="glass-input w-full py-3" placeholder="Street Address *" value={shippingAddress} onChange={e => setShippingAddress(e.target.value)} />
-                                    <div className="grid grid-cols-2 gap-3">
-                                        <input className="glass-input w-full py-3" placeholder="City *" value={city} onChange={e => setCity(e.target.value)} />
-                                        <input className="glass-input w-full py-3" placeholder="Province *" value={province} onChange={e => setProvince(e.target.value)} />
-                                    </div>
-                                    <input className="glass-input w-full py-3" placeholder="Zip Code" value={zipCode} onChange={e => setZipCode(e.target.value)} />
-
-                                    <select
-                                        className="glass-input w-full py-3"
-                                        value={paymentMode}
-                                        onChange={e => setPaymentMode(e.target.value)}
-                                    >
-                                        <option value="COD" className="bg-slate-900">Cash on Delivery</option>
-                                        <option value="Gcash" className="bg-slate-900">Gcash</option>
-                                        <option value="Bank Transfer" className="bg-slate-900">Bank Transfer</option>
-                                    </select>
-
-                                    {['Gcash', 'Bank Transfer'].includes(paymentMode) && (
-                                        <div className="mt-4 p-4 border border-dashed border-white/20 rounded-xl bg-white/5">
-                                            <p className="text-xs text-slate-400 mb-2 font-bold uppercase">Proof of Payment</p>
-
-                                            {proofUrl ? (
-                                                <div className="relative">
-                                                    <img src={proofUrl} alt="Proof" className="w-full max-h-48 object-contain rounded-lg bg-black/50" />
-                                                    <button
-                                                        onClick={() => { setProofUrl(''); setProofFile(null); }}
-                                                        className="absolute top-2 right-2 p-1 bg-red-500 rounded-full text-white hover:bg-red-600 transition-colors"
-                                                    >
-                                                        <X size={14} />
-                                                    </button>
-                                                </div>
-                                            ) : (
-                                                <label className="flex flex-col items-center justify-center p-6 cursor-pointer hover:bg-white/5 transition-colors rounded-lg">
-                                                    {uploadingProof ? (
-                                                        <>
-                                                            <Loader2 className="animate-spin text-primary mb-2" />
-                                                            <span className="text-xs text-slate-400">Uploading...</span>
-                                                        </>
-                                                    ) : (
-                                                        <>
-                                                            <Upload className="text-slate-400 mb-2" />
-                                                            <span className="text-xs text-slate-400">Click to upload receipt</span>
-                                                        </>
-                                                    )}
-                                                    <input
-                                                        type="file"
-                                                        accept="image/*"
-                                                        className="hidden"
-                                                        onChange={handleUploadProof}
-                                                        disabled={uploadingProof}
-                                                    />
-                                                </label>
-                                            )}
-                                        </div>
-                                    )}
-                                </div>
-
-                                <div className="flex justify-between items-center text-lg font-bold text-white pt-2">
+                                <div className="flex justify-between items-center text-lg font-bold text-white">
                                     <span>Total</span>
                                     <span>₱{cart.reduce((a, b) => a + (b.price * b.quantity), 0).toLocaleString()}</span>
                                 </div>
