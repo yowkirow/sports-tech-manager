@@ -6,6 +6,7 @@ import { useProducts, useRawInventory } from '../../hooks/useInventory';
 import { useToast } from '../ui/Toast';
 
 const SIZES = ['XS', 'S', 'M', 'L', 'XL', '2XL', '3XL'];
+const MM_CITIES = ['Caloocan', 'Las Piñas', 'Makati', 'Malabon', 'Mandaluyong', 'Manila', 'Marikina', 'Muntinlupa', 'Navotas', 'Parañaque', 'Pasay', 'Pasig', 'Pateros', 'Quezon City', 'San Juan', 'Taguig', 'Valenzuela'];
 
 export default function Storefront({ transactions, onPlaceOrder }) {
     const { showToast } = useToast();
@@ -24,6 +25,7 @@ export default function Storefront({ transactions, onPlaceOrder }) {
     const [city, setCity] = useState('');
     const [province, setProvince] = useState('');
     const [zipCode, setZipCode] = useState('');
+    const [shippingRegion, setShippingRegion] = useState('MM');
     const [paymentMode, setPaymentMode] = useState('COD');
     const [proofFile, setProofFile] = useState(null);
     const [proofUrl, setProofUrl] = useState('');
@@ -105,6 +107,8 @@ export default function Storefront({ transactions, onPlaceOrder }) {
             const orderId = crypto.randomUUID();
             const date = new Date().toISOString();
 
+            const shippingFee = shippingRegion === 'MM' ? 100 : 200;
+
             // Create transactions for each item
             const newTransactions = cart.map(item => ({
                 id: crypto.randomUUID(),
@@ -130,7 +134,9 @@ export default function Storefront({ transactions, onPlaceOrder }) {
                         city,
                         province,
                         zipCode,
-                        contactNumber
+                        contactNumber,
+                        region: shippingRegion,
+                        shippingFee
                     },
                     imageUrl: item.imageUrl,
                     isOnlineOrder: true,
@@ -375,16 +381,54 @@ export default function Storefront({ transactions, onPlaceOrder }) {
                                 {cart.length > 0 && (
                                     <div className="space-y-3 pt-4 border-t border-white/5">
                                         <h3 className="text-sm font-bold text-slate-400 uppercase tracking-wider mb-2">Shipping Details</h3>
+
                                         <div className="grid grid-cols-2 gap-3">
                                             <input className="glass-input w-full py-3" placeholder="Name *" value={customerName} onChange={e => setCustomerName(e.target.value)} />
                                             <input className="glass-input w-full py-3" placeholder="Contact # *" value={contactNumber} onChange={e => setContactNumber(e.target.value)} />
                                         </div>
                                         <input className="glass-input w-full py-3" placeholder="Street Address *" value={shippingAddress} onChange={e => setShippingAddress(e.target.value)} />
-                                        <div className="grid grid-cols-2 gap-3">
-                                            <input className="glass-input w-full py-3" placeholder="City *" value={city} onChange={e => setCity(e.target.value)} />
-                                            <input className="glass-input w-full py-3" placeholder="Province *" value={province} onChange={e => setProvince(e.target.value)} />
+
+                                        {/* Region & City Selection */}
+                                        <div className="bg-white/5 p-3 rounded-xl border border-white/10 space-y-3">
+                                            <label className="text-xs text-slate-400 font-bold block">Shipping Area</label>
+                                            <div className="grid grid-cols-2 gap-2">
+                                                <button
+                                                    onClick={() => { setCity(''); setShippingRegion('MM'); }}
+                                                    className={`py-2 px-3 rounded-lg text-sm font-bold transition-all ${shippingRegion === 'MM' ? 'bg-primary text-black' : 'bg-black/20 text-slate-400 hover:bg-white/10'}`}
+                                                >
+                                                    Metro Manila
+                                                </button>
+                                                <button
+                                                    onClick={() => { setCity(''); setShippingRegion('Provincial'); }}
+                                                    className={`py-2 px-3 rounded-lg text-sm font-bold transition-all ${shippingRegion === 'Provincial' ? 'bg-primary text-black' : 'bg-black/20 text-slate-400 hover:bg-white/10'}`}
+                                                >
+                                                    Outside MM
+                                                </button>
+                                            </div>
+
+                                            {shippingRegion === 'MM' ? (
+                                                <select className="glass-input w-full py-3" value={city} onChange={e => setCity(e.target.value)}>
+                                                    <option value="" disabled>Select City *</option>
+                                                    {MM_CITIES.map(c => <option key={c} value={c} className="bg-slate-900">{c}</option>)}
+                                                </select>
+                                            ) : (
+                                                <input className="glass-input w-full py-3" placeholder="City / Municipality *" value={city} onChange={e => setCity(e.target.value)} />
+                                            )}
+
+                                            <div className="flex items-start gap-2 text-xs text-slate-400 bg-black/20 p-2 rounded border border-white/5">
+                                                <Store size={14} className="shrink-0 mt-0.5" />
+                                                <p>
+                                                    {shippingRegion === 'MM'
+                                                        ? "Shipping via LBC or Lalamove: ₱100 (Shouldered by Buyer)"
+                                                        : "Shipping via LBC: ₱200 (Shouldered by Buyer)"}
+                                                </p>
+                                            </div>
                                         </div>
-                                        <input className="glass-input w-full py-3" placeholder="Zip Code" value={zipCode} onChange={e => setZipCode(e.target.value)} />
+
+                                        <div className="grid grid-cols-2 gap-3">
+                                            <input className="glass-input w-full py-3" placeholder="Province *" value={province} onChange={e => setProvince(e.target.value)} />
+                                            <input className="glass-input w-full py-3" placeholder="Zip Code" value={zipCode} onChange={e => setZipCode(e.target.value)} />
+                                        </div>
 
                                         <h3 className="text-sm font-bold text-slate-400 uppercase tracking-wider mb-2 mt-4">Payment</h3>
                                         <select
@@ -439,10 +483,20 @@ export default function Storefront({ transactions, onPlaceOrder }) {
                                 )}
                             </div>
 
-                            <div className="p-6 border-t border-white/10 bg-slate-900/50 backdrop-blur-md space-y-4">
-                                <div className="flex justify-between items-center text-lg font-bold text-white">
+                            <div className="p-6 border-t border-white/10 bg-slate-900/50 backdrop-blur-md space-y-3">
+                                <div className="space-y-1 text-sm text-slate-400">
+                                    <div className="flex justify-between">
+                                        <span>Subtotal</span>
+                                        <span>₱{cart.reduce((a, b) => a + (b.price * b.quantity), 0).toLocaleString()}</span>
+                                    </div>
+                                    <div className="flex justify-between">
+                                        <span>Shipping ({shippingRegion === 'MM' ? 'MM' : 'Provincial'})</span>
+                                        <span>₱{shippingRegion === 'MM' ? 100 : 200}</span>
+                                    </div>
+                                </div>
+                                <div className="flex justify-between items-center text-xl font-bold text-white pt-2 border-t border-white/5">
                                     <span>Total</span>
-                                    <span>₱{cart.reduce((a, b) => a + (b.price * b.quantity), 0).toLocaleString()}</span>
+                                    <span>₱{(cart.reduce((a, b) => a + (b.price * b.quantity), 0) + (shippingRegion === 'MM' ? 100 : 200)).toLocaleString()}</span>
                                 </div>
 
                                 <button
