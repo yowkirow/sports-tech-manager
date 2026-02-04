@@ -12,9 +12,12 @@ const COLORS = ['White', 'Black', 'Kiwi', 'Cream', 'Baby Blue'];
 
 import { useActivityLog } from '../../hooks/useActivityLog';
 
-export default function POSInterface({ transactions, onAddTransaction, onDeleteTransaction }) {
+export default function POSInterface({ transactions, onAddTransaction, onDeleteTransaction, userRole }) {
     const { showToast } = useToast();
     const { logActivity } = useActivityLog();
+
+    const isReseller = userRole === 'reseller';
+    const RESELLER_PRICE = 400; // Fixed price for resellers
 
     // State
     const [cart, setCart] = useState([]);
@@ -50,11 +53,21 @@ export default function POSInterface({ transactions, onAddTransaction, onDeleteT
 
     // Sync local order when products change (and not reordering)
     useMemo(() => {
-        if (!isReorderMode) setLocalOrderedProducts(products);
+        if (!isReorderMode) setLocalOrderedProducts(products); // Use raw products for ordering locally
     }, [products, isReorderMode]);
 
     // Filtering logic (Use local order if reordering, otherwise default)
-    const effectiveProducts = isReorderMode ? localOrderedProducts : products;
+    // APPLY RESELLER PRICING HERE
+    const effectiveProducts = useMemo(() => {
+        const base = isReorderMode ? localOrderedProducts : products;
+        if (!isReseller) return base;
+
+        return base.map(p => ({
+            ...p,
+            price: RESELLER_PRICE // Override Price
+        }));
+    }, [isReorderMode, localOrderedProducts, products, isReseller]);
+
     const filteredProducts = effectiveProducts.filter(p =>
         p.name.toLowerCase().includes(searchTerm.toLowerCase())
     );

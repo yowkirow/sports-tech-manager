@@ -40,6 +40,36 @@ function App() {
     // Lock Screen State
     const [isLocked, setIsLocked] = useState(false);
 
+    // Reseller Logic
+    const userRole = session?.user?.user_metadata?.role || 'admin'; // 'admin' | 'reseller'
+    const isReseller = userRole === 'reseller';
+
+    // Transactions Filtering (Security: Client Side)
+    // If reseller, only show transactions created by them (or no filter if they view global products?)
+    // Actually, products are global (system category), sales are personal.
+    // So we need to be careful.
+    // Products (define_product, delete_product) should be visible to ALL (global catalog).
+    // Sales/Orders/Expenses should be filtered.
+
+    // BUT useSupabaseTransactions returns raw stream.
+    // For specific views, we should pass filtered lists or let the view filter.
+    // Easiest is to pass `transactions` as-is but filtered where strictly necessary?
+    // No, users requested "Their Orders", so OrderManagement must be filtered.
+    // "Their very own dashboard" -> DashboardStats filtered.
+    // POS -> Needs ALL products (to sell them) but creates OWN sales.
+
+    // Computed Filtered Transactions (For Dashboard, Orders, Sales, Expenses)
+    // Products (type 'define_product') remain visible.
+    const effectiveTransactions = React.useMemo(() => {
+        if (!isReseller) return transactions;
+        return transactions.filter(t => {
+            // Always show products/system events
+            if (t.type === 'define_product' || t.type === 'delete_product') return true;
+            // Otherwise only show own
+            return t.details?.createdBy === session.user.email;
+        });
+    }, [transactions, isReseller, session]);
+
     const { showToast } = useToast();
 
     // Auth Listener
@@ -177,13 +207,17 @@ function App() {
                 <nav className="flex-1 px-4 space-y-2 mt-4 overflow-y-auto">
                     <NavItem id="pos" label="Point of Sale" icon={Store} />
                     <NavItem id="orders" label="Orders" icon={Package} />
-                    <NavItem id="sales" label="Sales" icon={Banknote} />
-                    <NavItem id="expenses" label="Expenses" icon={Wallet} />
-                    <NavItem id="inventory" label="Inventory" icon={ShoppingBag} />
-                    <NavItem id="vouchers" label="Vouchers" icon={Ticket} />
+                    {!isReseller && (
+                        <>
+                            <NavItem id="sales" label="Sales" icon={Banknote} />
+                            <NavItem id="expenses" label="Expenses" icon={Wallet} />
+                            <NavItem id="inventory" label="Inventory" icon={ShoppingBag} />
+                            <NavItem id="vouchers" label="Vouchers" icon={Ticket} />
+                        </>
+                    )}
                     <NavItem id="dashboard" label="Dashboard" icon={LayoutDashboard} />
                     <div className="border-t border-white/5 my-2 mx-4"></div>
-                    <NavItem id="settings" label="Settings" icon={SettingsIcon} />
+                    {!isReseller && <NavItem id="settings" label="Settings" icon={SettingsIcon} />}
                 </nav>
 
                 <div className="p-4 border-t border-white/5 space-y-2">
@@ -257,16 +291,17 @@ function App() {
                         <div className="max-w-7xl mx-auto h-full">
                             {activeTab === 'pos' && (
                                 <POSInterface
-                                    transactions={transactions}
+                                    transactions={transactions} // POS needs ALL transactions to calculate Inventory/Products correctly
                                     onAddTransaction={addTransaction}
                                     onDeleteTransaction={deleteTransaction} // Enable hard deletes
                                     refetch={refetch}
+                                    userRole={userRole} // Pass role for pricing override
                                 />
                             )}
 
                             {activeTab === 'orders' && (
                                 <OrderManagement
-                                    transactions={transactions}
+                                    transactions={effectiveTransactions} // Filtered for Resellers
                                     onAddTransaction={addTransaction}
                                     onDeleteTransaction={deleteTransaction}
                                     refetch={refetch}
@@ -285,8 +320,8 @@ function App() {
 
                             {activeTab === 'dashboard' && (
                                 <div className="space-y-8 animate-fade-in">
-                                    <DashboardStats transactions={transactions} onDeleteAll={handleDeleteAll} />
-                                    <TransactionList transactions={transactions} onDelete={deleteTransaction} />
+                                    <DashboardStats transactions={effectiveTransactions} onDeleteAll={handleDeleteAll} />
+                                    <TransactionList transactions={effectiveTransactions} onDelete={deleteTransaction} />
                                 </div>
                             )}
 
