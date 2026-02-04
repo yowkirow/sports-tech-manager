@@ -116,7 +116,8 @@ export default function OrderManagement({ transactions, onAddTransaction, onDele
             customerName: order.customerName,
             fulfillmentStatus: order.fulfillmentStatus,
             paymentStatus: order.paymentStatus,
-            paymentMode: order.paymentMode
+            paymentMode: order.paymentMode,
+            trackingNumber: order.items[0]?.details?.trackingNumber || ''
         });
     };
 
@@ -132,7 +133,9 @@ export default function OrderManagement({ transactions, onAddTransaction, onDele
                     customerName: editForm.customerName,
                     fulfillmentStatus: editForm.fulfillmentStatus,
                     paymentStatus: editForm.paymentStatus,
+                    paymentStatus: editForm.paymentStatus,
                     paymentMode: editForm.paymentMode,
+                    trackingNumber: editForm.trackingNumber,
                     // Remove legacy status to avoid confusion, or keep it synced to fulfillment?
                     // Let's keep it synced to fulfillment for safety if other components read it
                     status: editForm.fulfillmentStatus
@@ -399,8 +402,26 @@ export default function OrderManagement({ transactions, onAddTransaction, onDele
                                     <span className="text-xl font-bold text-white">₱{order.totalAmount.toLocaleString()}</span>
 
                                     {editingId === order.id ? (
-                                        <div className="flex flex-col gap-2 items-end bg-black/40 p-2 rounded-xl border border-white/10 shadow-xl z-10" onClick={e => e.stopPropagation()}>
-                                            <div className="grid grid-cols-2 gap-2">
+                                        <div className="flex flex-col gap-2 items-end bg-black/40 p-3 rounded-xl border border-white/10 shadow-xl z-10" onClick={e => e.stopPropagation()}>
+                                            <div className="grid grid-cols-2 gap-2 w-full max-w-[300px]">
+                                                {/* Tracking Number Input */}
+                                                <div className="col-span-2 relative">
+                                                    <Truck className="absolute left-2 top-1/2 -translate-y-1/2 text-slate-500" size={14} />
+                                                    <input
+                                                        placeholder="Tracking Number"
+                                                        value={editForm.trackingNumber || ''}
+                                                        onChange={e => {
+                                                            const val = e.target.value;
+                                                            setEditForm(prev => ({
+                                                                ...prev,
+                                                                trackingNumber: val,
+                                                                fulfillmentStatus: val ? 'shipped' : prev.fulfillmentStatus
+                                                            }));
+                                                        }}
+                                                        className="glass-input pl-8 py-1.5 text-xs w-full"
+                                                    />
+                                                </div>
+
                                                 <select
                                                     value={editForm.fulfillmentStatus}
                                                     onChange={e => setEditForm({ ...editForm, fulfillmentStatus: e.target.value })}
@@ -424,29 +445,56 @@ export default function OrderManagement({ transactions, onAddTransaction, onDele
                                                 </select>
                                             </div>
                                             <div className="flex gap-2 w-full">
-                                                <button onClick={() => handleSave(order.id)} className="flex-1 bg-green-600/20 text-green-400 py-1 rounded hover:bg-green-600/40"><Save size={14} className="mx-auto" /></button>
-                                                <button onClick={() => setEditingId(null)} className="flex-1 bg-red-600/20 text-red-400 py-1 rounded hover:bg-red-600/40"><X size={14} className="mx-auto" /></button>
+                                                <button onClick={() => handleSave(order.id)} className="flex-1 bg-green-600/20 text-green-400 py-1.5 rounded hover:bg-green-600/40 font-bold text-xs"><Save size={14} className="mx-auto" /></button>
+                                                <button onClick={() => setEditingId(null)} className="flex-1 bg-red-600/20 text-red-400 py-1.5 rounded hover:bg-red-600/40 text-xs"><X size={14} className="mx-auto" /></button>
                                             </div>
                                         </div>
                                     ) : (
-                                        <div className="flex items-center gap-2">
-                                            <span className={`px-3 py-1 rounded-full text-xs font-bold capitalize border ${order.fulfillmentStatus === 'shipped' ? 'bg-blue-500/10 border-blue-500/20 text-blue-400' :
-                                                order.fulfillmentStatus === 'ready' ? 'bg-purple-500/10 border-purple-500/20 text-purple-400' :
-                                                    order.fulfillmentStatus === 'in_progress' ? 'bg-orange-500/10 border-orange-500/20 text-orange-400' :
-                                                        order.fulfillmentStatus === 'cancelled' ? 'bg-red-500/10 border-red-500/20 text-red-400' :
-                                                            'bg-slate-500/10 border-slate-500/20 text-slate-400'
-                                                }`}>
-                                                {order.fulfillmentStatus.replace('_', ' ')}
-                                            </span>
-                                            {!isSelectionMode && (
-                                                <div className="flex gap-1 opacity-0 group-hover:opacity-100 transition-opacity">
-                                                    <button onClick={(e) => { e.stopPropagation(); startEditing(order); }} className="p-2 hover:bg-white/10 rounded-lg text-slate-400 hover:text-white"><Edit2 size={16} /></button>
-                                                    <button onClick={(e) => { e.stopPropagation(); handleDeleteOrder(order.id); }} className="p-2 hover:bg-red-500/20 rounded-lg text-slate-400 hover:text-red-400"><Trash2 size={16} /></button>
+                                        <div className="flex flex-col items-end gap-2">
+                                            <div className="flex items-center gap-2">
+                                                <span className={`px-3 py-1 rounded-full text-xs font-bold capitalize border ${order.fulfillmentStatus === 'shipped' ? 'bg-blue-500/10 border-blue-500/20 text-blue-400' :
+                                                    order.fulfillmentStatus === 'ready' ? 'bg-purple-500/10 border-purple-500/20 text-purple-400' :
+                                                        order.fulfillmentStatus === 'in_progress' ? 'bg-orange-500/10 border-orange-500/20 text-orange-400' :
+                                                            order.fulfillmentStatus === 'cancelled' ? 'bg-red-500/10 border-red-500/20 text-red-400' :
+                                                                'bg-slate-500/10 border-slate-500/20 text-slate-400'
+                                                    }`}>
+                                                    {order.fulfillmentStatus.replace('_', ' ')}
+                                                </span>
+                                                {!isSelectionMode && (
+                                                    <div className="flex gap-1 opacity-0 group-hover:opacity-100 transition-opacity">
+                                                        <button onClick={(e) => { e.stopPropagation(); startEditing(order); }} className="p-2 hover:bg-white/10 rounded-lg text-slate-400 hover:text-white"><Edit2 size={16} /></button>
+                                                        <button onClick={(e) => { e.stopPropagation(); handleDeleteOrder(order.id); }} className="p-2 hover:bg-red-500/20 rounded-lg text-slate-400 hover:text-red-400"><Trash2 size={16} /></button>
+                                                    </div>
+                                                )}
+                                                <div className="p-2 text-slate-500">
+                                                    {expandedOrderIds.has(order.id) ? <ChevronUp size={20} /> : <ChevronDown size={20} />}
                                                 </div>
-                                            )}
-                                            <div className="p-2 text-slate-500">
-                                                {expandedOrderIds.has(order.id) ? <ChevronUp size={20} /> : <ChevronDown size={20} />}
                                             </div>
+
+                                            {/* Money Received Button for Pending COD */}
+                                            {order.paymentMode === 'COD' && order.paymentStatus === 'unpaid' && order.fulfillmentStatus !== 'cancelled' && !isSelectionMode && (
+                                                <button
+                                                    onClick={(e) => {
+                                                        e.stopPropagation();
+                                                        startEditing(order); // Hack to set form status to paid and save immediately? No, better to have dedicated function.
+                                                        // Actually, let's just do a direct update
+                                                        if (confirm('Mark as Money Received?')) {
+                                                            setEditingId(order.id); // set ID to prevent flicker
+                                                            setEditForm({
+                                                                customerName: order.customerName,
+                                                                fulfillmentStatus: order.fulfillmentStatus,
+                                                                paymentStatus: 'paid', // FORCE PAID
+                                                                paymentMode: order.paymentMode,
+                                                                trackingNumber: order.items[0]?.details?.trackingNumber
+                                                            });
+                                                            setTimeout(() => handleSave(order.id), 100); // Trigger save
+                                                        }
+                                                    }}
+                                                    className="flex items-center gap-1 px-3 py-1 rounded-full bg-emerald-500 text-black text-[10px] font-bold shadow-lg shadow-emerald-500/20 hover:bg-emerald-400 transition-all cursor-pointer z-10"
+                                                >
+                                                    <Banknote size={12} /> Money Received
+                                                </button>
+                                            )}
                                         </div>
                                     )}
                                 </div>
@@ -496,6 +544,12 @@ export default function OrderManagement({ transactions, onAddTransaction, onDele
                                                             <p className="text-slate-400 text-xs">City/Province</p>
                                                             <p className="text-white">{order.items[0].details.shippingDetails.city}, {order.items[0].details.shippingDetails.province} {order.items[0].details.shippingDetails.zipCode}</p>
                                                         </div>
+                                                        {order.items[0].details.trackingNumber && (
+                                                            <div className="col-span-2 mt-2 pt-2 border-t border-white/5">
+                                                                <p className="text-slate-400 text-xs flex items-center gap-2"><Truck size={10} /> Tracking Number</p>
+                                                                <p className="text-primary font-mono font-bold tracking-wider">{order.items[0].details.trackingNumber}</p>
+                                                            </div>
+                                                        )}
                                                     </div>
                                                 </div>
                                             )}

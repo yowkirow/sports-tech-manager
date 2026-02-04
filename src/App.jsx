@@ -8,7 +8,8 @@ import AddStockForm from './components/Inventory/AddStockForm';
 import POSInterface from './components/POS/POSInterface';
 import OrderManagement from './components/Orders/OrderManagement';
 import Expenses from './components/Expenses';
-import { LayoutDashboard, Store, ShoppingBag, Receipt, Package, LogOut, X, Wallet, Menu, Globe, Link } from 'lucide-react';
+import VoucherManager from './components/Vouchers/VoucherManager';
+import { LayoutDashboard, Store, ShoppingBag, Receipt, Package, LogOut, X, Wallet, Menu, Globe, Link, Ticket } from 'lucide-react';
 import clsx from 'clsx';
 import { motion, AnimatePresence } from 'framer-motion';
 import { useToast } from './components/ui/Toast';
@@ -151,6 +152,7 @@ function App() {
                     <NavItem id="orders" label="Orders" icon={Package} />
                     <NavItem id="expenses" label="Expenses" icon={Wallet} />
                     <NavItem id="inventory" label="Inventory" icon={ShoppingBag} />
+                    <NavItem id="vouchers" label="Vouchers" icon={Ticket} />
                     <NavItem id="dashboard" label="Dashboard" icon={LayoutDashboard} />
                 </nav>
 
@@ -191,6 +193,7 @@ function App() {
                             {activeTab === 'expenses' && 'Expenses'}
                             {activeTab === 'dashboard' && 'Dashboard'}
                             {activeTab === 'inventory' && 'Inventory'}
+                            {activeTab === 'vouchers' && 'Vouchers'}
                             {activeTab === 'add-stock' && 'Receive Stock'}
                         </h2>
                     </div>
@@ -257,6 +260,16 @@ function App() {
                                         onAddTransaction={addTransaction}
                                         onDeleteTransaction={deleteTransaction}
                                         onOpenAddStock={() => setShowAddStockModal(true)}
+                                    />
+                                </div>
+                            )}
+
+                            {activeTab === 'vouchers' && (
+                                <div className="animate-fade-in">
+                                    <VoucherManager
+                                        transactions={transactions}
+                                        onAddTransaction={addTransaction}
+                                        onDeleteTransaction={deleteTransaction}
                                     />
                                 </div>
                             )}

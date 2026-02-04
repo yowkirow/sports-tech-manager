@@ -1,6 +1,6 @@
 import React, { useState, useMemo } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
-import { Component, Loader2, Upload, ShoppingCart, X, Plus, Minus, CheckCircle, Store, Search, Package, Clock } from 'lucide-react';
+import { Component, Loader2, Upload, ShoppingCart, X, Plus, Minus, CheckCircle, Store, Search, Package, Clock, Ticket } from 'lucide-react';
 import { supabase } from '../../lib/supabaseClient';
 import { useProducts, useRawInventory } from '../../hooks/useInventory';
 import { useToast } from '../ui/Toast';
@@ -126,6 +126,46 @@ export default function Storefront({ transactions, onPlaceOrder }) {
         }).filter(i => i.quantity > 0));
     };
 
+    // Voucher logic
+    const [voucherCode, setVoucherCode] = useState('');
+    const [appliedVoucher, setAppliedVoucher] = useState(null);
+
+    const subtotal = useMemo(() => cart.reduce((a, b) => a + (b.price * b.quantity), 0), [cart]);
+
+    // Derived discount
+    const discountAmount = useMemo(() => {
+        if (!appliedVoucher) return 0;
+        if (appliedVoucher.discountType === 'percent') {
+            return (subtotal * appliedVoucher.value) / 100;
+        }
+        return Math.min(appliedVoucher.value, subtotal);
+    }, [subtotal, appliedVoucher]);
+
+    const handleApplyVoucher = () => {
+        if (!voucherCode.trim()) return;
+
+        // Find voucher in transactions
+        const voucherTx = transactions.find(t =>
+            t.type === 'voucher' &&
+            t.details.code.toUpperCase() === voucherCode.trim().toUpperCase() &&
+            t.details.active
+        );
+
+        if (!voucherTx) {
+            showToast('Invalid or inactive voucher', 'error');
+            setAppliedVoucher(null);
+            return;
+        }
+
+        setAppliedVoucher(voucherTx.details);
+        showToast(`Voucher applied: ${voucherTx.details.code}`, 'success');
+    };
+
+    const handleRemoveVoucher = () => {
+        setAppliedVoucher(null);
+        setVoucherCode('');
+    };
+
     const handleUploadProof = async (e) => {
         const file = e.target.files[0];
         if (!file) return;
@@ -172,40 +212,51 @@ export default function Storefront({ transactions, onPlaceOrder }) {
             const shippingFee = shippingRegion === 'MM' ? 100 : 200;
 
             // Create transactions for each item
-            const newTransactions = cart.map(item => ({
-                id: crypto.randomUUID(),
-                date,
-                amount: item.price * item.quantity,
-                type: 'sale',
-                category: 'shirts', // Default
-                description: `Online Order: ${item.name} (${item.size})`,
-                details: {
-                    orderId,
-                    customerName,
-                    contactNumber,
-                    itemName: item.name,
-                    size: item.size,
-                    color: item.linkedColor || 'Varied',
-                    quantity: item.quantity,
-                    fulfillmentStatus: 'pending',
-                    paymentStatus: 'unpaid',
-                    status: 'pending', // Legacy support
-                    paymentMode,
-                    shippingDetails: {
-                        address: shippingAddress,
-                        city,
-                        province,
-                        barangay,
-                        // zipCode, // Removed
+            // Create transactions for each item
+            const newTransactions = cart.map(item => {
+                const itemTotal = item.price * item.quantity;
+                const ratio = itemTotal / subtotal;
+                const itemDiscount = discountAmount * ratio;
+                const finalAmount = itemTotal - itemDiscount;
+
+                return {
+                    id: crypto.randomUUID(),
+                    date,
+                    amount: finalAmount, // Discounted amount for revenue tracking
+                    type: 'sale',
+                    category: 'shirts', // Default
+                    description: `Online Order: ${item.name} (${item.size})`,
+                    details: {
+                        orderId,
+                        customerName,
                         contactNumber,
-                        region: shippingRegion,
-                        shippingFee
-                    },
-                    imageUrl: item.imageUrl,
-                    isOnlineOrder: true,
-                    proofOfPayment: requiresProof ? proofUrl : null
-                }
-            }));
+                        itemName: item.name,
+                        size: item.size,
+                        color: item.linkedColor || 'Varied',
+                        quantity: item.quantity,
+                        fulfillmentStatus: 'pending',
+                        paymentStatus: 'unpaid', // Default to unpaid for checks
+                        status: 'pending', // Legacy support
+                        paymentMode,
+                        shippingDetails: {
+                            address: shippingAddress,
+                            city,
+                            province,
+                            barangay,
+                            // zipCode, // Removed
+                            contactNumber,
+                            region: shippingRegion,
+                            shippingFee
+                        },
+                        voucherCode: appliedVoucher ? appliedVoucher.code : null,
+                        discountShare: itemDiscount,
+                        originalAmount: itemTotal,
+                        imageUrl: item.imageUrl,
+                        isOnlineOrder: true,
+                        proofOfPayment: requiresProof ? proofUrl : null
+                    }
+                };
+            });
 
             // Submit all
             for (const t of newTransactions) {
@@ -613,16 +664,53 @@ export default function Storefront({ transactions, onPlaceOrder }) {
                                 <div className="space-y-1 text-sm text-slate-400">
                                     <div className="flex justify-between">
                                         <span>Subtotal</span>
-                                        <span>₱{cart.reduce((a, b) => a + (b.price * b.quantity), 0).toLocaleString()}</span>
+                                        <span>₱{subtotal.toLocaleString()}</span>
                                     </div>
                                     <div className="flex justify-between">
                                         <span>Shipping ({shippingRegion === 'MM' ? 'MM' : 'Provincial'})</span>
                                         <span>₱{shippingRegion === 'MM' ? 100 : 200}</span>
                                     </div>
+                                    {appliedVoucher && (
+                                        <div className="flex justify-between text-emerald-400 font-bold">
+                                            <span>Voucher ({appliedVoucher.code})</span>
+                                            <span>-₱{discountAmount.toLocaleString(undefined, { maximumFractionDigits: 2 })}</span>
+                                        </div>
+                                    )}
                                 </div>
+
+                                {/* Voucher Input */}
+                                <div className="py-2 border-t border-white/5 border-dashed">
+                                    {!appliedVoucher ? (
+                                        <div className="flex gap-2">
+                                            <div className="relative flex-1">
+                                                <Ticket className="absolute left-3 top-1/2 -translate-y-1/2 text-slate-500" size={14} />
+                                                <input
+                                                    placeholder="Voucher Code"
+                                                    value={voucherCode}
+                                                    onChange={e => setVoucherCode(e.target.value.toUpperCase())}
+                                                    className="glass-input pl-9 py-2 text-sm w-full uppercase"
+                                                />
+                                            </div>
+                                            <button
+                                                onClick={handleApplyVoucher}
+                                                className="bg-white/10 hover:bg-white/20 text-white px-4 py-2 rounded-xl text-sm font-bold transition-colors"
+                                            >
+                                                Apply
+                                            </button>
+                                        </div>
+                                    ) : (
+                                        <div className="flex justify-between items-center bg-emerald-500/10 border border-emerald-500/20 p-2 rounded-lg">
+                                            <span className="text-xs text-emerald-400 font-bold flex items-center gap-2">
+                                                <CheckCircle size={14} /> Code Applied
+                                            </span>
+                                            <button onClick={handleRemoveVoucher} className="text-slate-400 hover:text-white p-1"><X size={14} /></button>
+                                        </div>
+                                    )}
+                                </div>
+
                                 <div className="flex justify-between items-center text-xl font-bold text-white pt-2 border-t border-white/5">
                                     <span>Total</span>
-                                    <span>₱{(cart.reduce((a, b) => a + (b.price * b.quantity), 0) + (shippingRegion === 'MM' ? 100 : 200)).toLocaleString()}</span>
+                                    <span>₱{(subtotal - discountAmount + (shippingRegion === 'MM' ? 100 : 200)).toLocaleString()}</span>
                                 </div>
 
                                 <button
