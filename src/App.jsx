@@ -9,13 +9,14 @@ import POSInterface from './components/POS/POSInterface';
 import OrderManagement from './components/Orders/OrderManagement';
 import Expenses from './components/Expenses';
 import VoucherManager from './components/Vouchers/VoucherManager';
-import { LayoutDashboard, Store, ShoppingBag, Receipt, Package, LogOut, X, Wallet, Menu, Globe, Link, Ticket } from 'lucide-react';
+import { LayoutDashboard, Store, ShoppingBag, Receipt, Package, LogOut, X, Wallet, Menu, Globe, Link, Ticket, Settings as SettingsIcon } from 'lucide-react';
 import clsx from 'clsx';
 import { motion, AnimatePresence } from 'framer-motion';
 import { useToast } from './components/ui/Toast';
 import Storefront from './components/Shop/Storefront';
 import Login from './components/Auth/Login';
 import { supabase } from './lib/supabaseClient';
+import ProfileSettings from './components/Settings/ProfileSettings';
 
 
 function App() {
@@ -165,8 +166,10 @@ function App() {
                     </button>
                     <div className="px-4 py-3 rounded-xl bg-white/5 border border-white/5 flex items-center justify-between group">
                         <div>
-                            <p className="text-xs text-slate-500 mb-1">Signed in as</p>
-                            <p className="text-xs text-white truncate max-w-[120px]">{session?.user?.email}</p>
+                            <h1 className="font-bold text-lg leading-tight">SportsTech</h1>
+                            <p className="text-xs text-slate-500 truncate max-w-[150px]">
+                                {session?.user?.user_metadata?.full_name || session?.user?.email?.split('@')[0] || 'Manager'}
+                            </p>
                         </div>
                         <button onClick={() => supabase.auth.signOut()} className="text-slate-500 hover:text-red-400 p-1">
                             <LogOut size={16} />
@@ -189,6 +192,7 @@ function App() {
                             {activeTab === 'dashboard' && 'Dashboard'}
                             {activeTab === 'inventory' && 'Inventory'}
                             {activeTab === 'vouchers' && 'Vouchers'}
+                            {activeTab === 'settings' && 'Settings'}
                             {activeTab === 'add-stock' && 'Receive Stock'}
                         </h2>
                     </div>
@@ -265,6 +269,15 @@ function App() {
                                         transactions={transactions}
                                         onAddTransaction={addTransaction}
                                         onDeleteTransaction={deleteTransaction}
+                                    />
+                                </div>
+                            )}
+
+                            {activeTab === 'settings' && (
+                                <div className="animate-fade-in">
+                                    <ProfileSettings
+                                        user={session?.user}
+                                        onLogout={() => supabase.auth.signOut()}
                                     />
                                 </div>
                             )}
