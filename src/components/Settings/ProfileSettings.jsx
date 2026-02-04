@@ -40,21 +40,20 @@ export default function ProfileSettings({ user, onLogout }) {
 
     const handleChangePin = async (e) => {
         e.preventDefault();
-        if (newPin.length < 4) return showToast('PIN must be at least 4 digits', 'error');
-        if (newPin !== confirmPin) return showToast('PINs do not match', 'error');
+        const passwordToSet = confirmPin; // Using confirmPin state for password input
+        if (passwordToSet.length < 6) return showToast('Password must be at least 6 characters', 'error');
 
         setLoading(true);
         try {
             const { error } = await supabase.auth.updateUser({
-                password: newPin
+                password: passwordToSet
             });
             if (error) throw error;
-            showToast('PIN updated successfully!', 'success');
-            setNewPin('');
+            showToast('Password updated successfully!', 'success');
             setConfirmPin('');
         } catch (error) {
             console.error(error);
-            showToast('Failed to update PIN', 'error');
+            showToast('Failed to update password', 'error');
         } finally {
             setLoading(false);
         }
@@ -109,7 +108,7 @@ export default function ProfileSettings({ user, onLogout }) {
                     </form>
                 </motion.div>
 
-                {/* Security Section */}
+                {/* Security Section - Quick PIN */}
                 <motion.div
                     initial={{ opacity: 0, y: 20 }}
                     animate={{ opacity: 1, y: 0 }}
@@ -120,39 +119,85 @@ export default function ProfileSettings({ user, onLogout }) {
                         <div className="p-2 bg-purple-500/20 text-purple-400 rounded-lg">
                             <Shield size={24} />
                         </div>
-                        <h3 className="text-xl font-bold text-white">Security</h3>
+                        <div>
+                            <h3 className="text-xl font-bold text-white">Quick Access PIN</h3>
+                            <p className="text-xs text-slate-400">Used for Lock Screen only (Metadata)</p>
+                        </div>
                     </div>
 
-                    <form onSubmit={handleChangePin} className="space-y-4">
+                    <div className="space-y-4">
                         <div>
-                            <label className="text-xs font-bold text-slate-500 uppercase block mb-2">New PIN / Password</label>
+                            <label className="text-xs font-bold text-slate-500 uppercase block mb-2">Set Quick PIN (4-6 digits)</label>
                             <div className="relative">
                                 <Lock className="absolute left-3 top-1/2 -translate-y-1/2 text-slate-500" size={16} />
                                 <input
                                     type="password"
                                     value={newPin}
                                     onChange={(e) => setNewPin(e.target.value)}
-                                    placeholder="Enter new 4-6 digit PIN"
-                                    className="glass-input w-full pl-10"
-                                />
-                            </div>
-                        </div>
-                        <div>
-                            <label className="text-xs font-bold text-slate-500 uppercase block mb-2">Confirm New PIN</label>
-                            <div className="relative">
-                                <Lock className="absolute left-3 top-1/2 -translate-y-1/2 text-slate-500" size={16} />
-                                <input
-                                    type="password"
-                                    value={confirmPin}
-                                    onChange={(e) => setConfirmPin(e.target.value)}
-                                    placeholder="Confirm new PIN"
+                                    placeholder="Enter Lock Screen PIN"
                                     className="glass-input w-full pl-10"
                                 />
                             </div>
                         </div>
                         <div className="pt-2">
-                            <button type="submit" disabled={loading} className="btn-primary w-full bg-gradient-to-r from-purple-600 to-indigo-600">
-                                <Save size={18} /> Update PIN
+                            <button
+                                onClick={async () => {
+                                    if (newPin.length < 4) return showToast('PIN must be at least 4 digits', 'error');
+                                    setLoading(true);
+                                    try {
+                                        const { error } = await supabase.auth.updateUser({
+                                            data: { pos_pin: newPin }
+                                        });
+                                        if (error) throw error;
+                                        showToast('Quick PIN updated!', 'success');
+                                        setNewPin('');
+                                    } catch (err) {
+                                        console.error(err);
+                                        showToast('Failed to update PIN', 'error');
+                                    } finally {
+                                        setLoading(false);
+                                    }
+                                }}
+                                disabled={loading}
+                                className="btn-primary w-full bg-gradient-to-r from-purple-600 to-indigo-600"
+                            >
+                                <Save size={18} /> Save Quick PIN
+                            </button>
+                        </div>
+                    </div>
+                </motion.div>
+
+                {/* Password Section */}
+                <motion.div
+                    initial={{ opacity: 0, y: 20 }}
+                    animate={{ opacity: 1, y: 0 }}
+                    transition={{ delay: 0.2 }}
+                    className="glass-card space-y-6"
+                >
+                    <div className="flex items-center gap-3 border-b border-white/5 pb-4">
+                        <div className="p-2 bg-emerald-500/20 text-emerald-400 rounded-lg">
+                            <Lock size={24} />
+                        </div>
+                        <div>
+                            <h3 className="text-xl font-bold text-white">Account Password</h3>
+                            <p className="text-xs text-slate-400">Main login credentials</p>
+                        </div>
+                    </div>
+
+                    <form onSubmit={handleChangePin} className="space-y-4">
+                        <div>
+                            <label className="text-xs font-bold text-slate-500 uppercase block mb-2">New Password</label>
+                            <input
+                                type="password"
+                                value={confirmPin}
+                                onChange={(e) => setConfirmPin(e.target.value)}
+                                placeholder="Enter new password"
+                                className="glass-input w-full"
+                            />
+                        </div>
+                        <div className="pt-2">
+                            <button type="submit" disabled={loading} className="btn-primary w-full bg-emerald-600 hover:bg-emerald-500">
+                                <Save size={18} /> Update Password
                             </button>
                         </div>
                     </form>

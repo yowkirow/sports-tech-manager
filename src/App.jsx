@@ -9,7 +9,7 @@ import POSInterface from './components/POS/POSInterface';
 import OrderManagement from './components/Orders/OrderManagement';
 import Expenses from './components/Expenses';
 import VoucherManager from './components/Vouchers/VoucherManager';
-import { LayoutDashboard, Store, ShoppingBag, Receipt, Package, LogOut, X, Wallet, Menu, Globe, Link, Ticket, Settings as SettingsIcon } from 'lucide-react';
+import { LayoutDashboard, Store, ShoppingBag, Receipt, Package, LogOut, X, Wallet, Menu, Globe, Link, Ticket, Settings as SettingsIcon, Lock } from 'lucide-react';
 import clsx from 'clsx';
 import { motion, AnimatePresence } from 'framer-motion';
 import { useToast } from './components/ui/Toast';
@@ -33,6 +33,11 @@ function App() {
     const [showAddStockModal, setShowAddStockModal] = useState(false);
     const [isSidebarOpen, setIsSidebarOpen] = useState(false);
     const [session, setSession] = useState(null);
+    const [user, setUser] = useState(null);
+
+    // Lock Screen State
+    const [isLocked, setIsLocked] = useState(false);
+
     const { showToast } = useToast();
 
     // Auth Listener
@@ -113,6 +118,20 @@ function App() {
         return <Login />;
     }
 
+    if (isLocked) {
+        return (
+            <Login
+                unlockMode={true}
+                user={user}
+                onUnlock={() => setIsLocked(false)}
+                onLogout={() => {
+                    setIsLocked(false);
+                    supabase.auth.signOut();
+                }}
+            />
+        );
+    }
+
 
     return (
         <div className="flex h-screen bg-slate-900 text-slate-100 overflow-hidden font-sans selection:bg-primary/30 relative">
@@ -173,7 +192,10 @@ function App() {
                                 {session?.user?.user_metadata?.full_name || session?.user?.email?.split('@')[0] || 'Manager'}
                             </p>
                         </div>
-                        <button onClick={() => supabase.auth.signOut()} className="text-slate-500 hover:text-red-400 p-1">
+                        <button onClick={() => setIsLocked(true)} className="text-slate-500 hover:text-white p-1" title="Lock Screen">
+                            <Lock size={16} />
+                        </button>
+                        <button onClick={() => supabase.auth.signOut()} className="text-slate-500 hover:text-red-400 p-1" title="Sign Out">
                             <LogOut size={16} />
                         </button>
                     </div>
