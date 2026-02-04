@@ -164,6 +164,35 @@ export default function OrderManagement({ transactions, onAddTransaction, onDele
         }
     };
 
+    const handleQuickTracking = async (orderId, trackingNumber) => {
+        setLoading(true);
+        try {
+            const order = groupedOrders.find(o => o.id === orderId);
+            if (!order) return;
+
+            const updates = order.items.map(async (t) => {
+                const updatedDetails = {
+                    ...t.details,
+                    trackingNumber,
+                    fulfillmentStatus: trackingNumber ? 'shipped' : t.details.fulfillmentStatus, // Only auto-ship if adding number
+                    status: trackingNumber ? 'shipped' : t.details.status
+                };
+
+                const { error } = await supabase.from('transactions').update({ details: updatedDetails }).eq('id', t.id);
+                if (error) throw error;
+            });
+
+            await Promise.all(updates);
+            showToast('Tracking updated', 'success');
+            if (refetch) await refetch();
+        } catch (err) {
+            console.error(err);
+            showToast('Update failed', 'error');
+        } finally {
+            setLoading(false);
+        }
+    };
+
     const handleDeleteOrder = async (orderId) => {
         if (!confirm('Delete this entire order?')) return;
         setLoading(true);
@@ -452,6 +481,31 @@ export default function OrderManagement({ transactions, onAddTransaction, onDele
                                     ) : (
                                         <div className="flex flex-col items-end gap-2">
                                             <div className="flex items-center gap-2">
+                                                {/* Quick Tracking Input */}
+                                                <div className="relative group/tracking z-20" onClick={e => e.stopPropagation()}>
+                                                    <Truck size={14} className={`absolute left-2 top-1/2 -translate-y-1/2 ${order.items[0]?.details?.trackingNumber ? 'text-primary' : 'text-slate-500'}`} />
+                                                    <input
+                                                        defaultValue={order.items[0]?.details?.trackingNumber || ''}
+                                                        placeholder="Add Tracking"
+                                                        className={`py-1.5 pl-8 pr-2 text-xs w-32 focus:w-48 transition-all rounded-lg border outline-none ${order.items[0]?.details?.trackingNumber
+                                                                ? 'bg-primary/10 border-primary/30 text-primary font-mono font-bold'
+                                                                : 'bg-white/5 border-white/10 text-slate-300 hover:bg-white/10 focus:bg-white/10 focus:border-white/20'
+                                                            }`}
+                                                        onKeyDown={(e) => {
+                                                            if (e.key === 'Enter') {
+                                                                e.target.blur();
+                                                            }
+                                                        }}
+                                                        onBlur={(e) => {
+                                                            const val = e.target.value.trim();
+                                                            const current = order.items[0]?.details?.trackingNumber || '';
+                                                            if (val !== current) {
+                                                                handleQuickTracking(order.id, val);
+                                                            }
+                                                        }}
+                                                    />
+                                                </div>
+
                                                 <span className={`px-3 py-1 rounded-full text-xs font-bold capitalize border ${order.fulfillmentStatus === 'shipped' ? 'bg-blue-500/10 border-blue-500/20 text-blue-400' :
                                                     order.fulfillmentStatus === 'ready' ? 'bg-purple-500/10 border-purple-500/20 text-purple-400' :
                                                         order.fulfillmentStatus === 'in_progress' ? 'bg-orange-500/10 border-orange-500/20 text-orange-400' :
