@@ -330,7 +330,7 @@ export default function Storefront({ transactions, onPlaceOrder }) {
             {/* Header */}
             <header className="h-20 border-b border-white/5 bg-slate-900/80 backdrop-blur-md sticky top-0 z-30 px-4 md:px-8 flex items-center justify-between">
                 <div className="flex items-center gap-3">
-                    <img src="/logo.png" alt="SportsTech" className="h-12 w-auto object-contain" />
+                    <img src="/logo.png" alt="SportsTech" className="h-14 w-auto object-contain" />
                 </div>
 
                 <div className="flex items-center gap-4">

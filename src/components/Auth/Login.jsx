@@ -49,6 +49,24 @@ export default function Login() {
         }
     }, [pin]);
 
+    // Keyboard support
+    React.useEffect(() => {
+        const handleKeyDown = (e) => {
+            if (loading) return;
+
+            if (e.key >= '0' && e.key <= '9') {
+                handlePinParams(e.key);
+            } else if (e.key === 'Backspace') {
+                handleDelete();
+            } else if (e.key === 'Enter') {
+                handleLogin();
+            }
+        };
+
+        window.addEventListener('keydown', handleKeyDown);
+        return () => window.removeEventListener('keydown', handleKeyDown);
+    }, [loading, pin]);
+
     return (
         <div className="fixed inset-0 flex items-center justify-center bg-slate-900 p-4 font-sans selection:bg-primary/30">
             {/* Background Effects */}
@@ -61,7 +79,7 @@ export default function Login() {
                 className="glass-panel w-full max-w-sm p-8 relative z-10 flex flex-col items-center"
             >
                 <div className="mb-8 flex flex-col items-center">
-                    <img src="/logo.png" alt="SportsTech" className="h-20 w-auto object-contain mb-4" />
+                    <img src="/logo.png" alt="SportsTech" className="h-32 w-auto object-contain mb-4" />
                     <h1 className="text-2xl font-bold text-white">Manager Access</h1>
                     <p className="text-slate-400 text-sm mt-1">Enter access PIN</p>
                 </div>
