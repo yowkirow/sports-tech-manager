@@ -127,6 +127,7 @@ export default function AddExpenseForm({ onAddTransaction, onUpdateTransaction, 
     };
 
     return (
+    return (
         <div className="bg-slate-900 border border-white/10 rounded-2xl max-w-lg w-full mx-auto shadow-2xl relative flex flex-col">
             <div className="p-6 border-b border-white/10 flex justify-between items-center shrink-0">
                 <h2 className="text-xl font-bold text-white">{initialData ? 'Edit Expense' : 'Record Expense'}</h2>
@@ -191,39 +192,43 @@ export default function AddExpenseForm({ onAddTransaction, onUpdateTransaction, 
                         />
                     </div>
 
-                    <input
-                        type="date"
-                        value={date}
-                        onChange={(e) => setDate(e.target.value)}
-                        className="glass-input appearance-none w-full"
-                        required
-                    />
-            </div>
+                    <div className="grid grid-cols-2 gap-4">
+                        <div className="space-y-2">
+                            <label className="text-sm text-slate-400">Date</label>
+                            <input
+                                type="date"
+                                value={date}
+                                onChange={(e) => setDate(e.target.value)}
+                                className="glass-input appearance-none w-full"
+                                required
+                            />
+                        </div>
 
-            <div className="space-y-2">
-                <label className="text-sm text-slate-400">Time</label>
-                <input
-                    type="time"
-                    value={time}
-                    onChange={(e) => setTime(e.target.value)}
-                    className="glass-input appearance-none w-full"
-                    required
-                />
-            </div>
+                        <div className="space-y-2">
+                            <label className="text-sm text-slate-400">Time</label>
+                            <input
+                                type="time"
+                                value={time}
+                                onChange={(e) => setTime(e.target.value)}
+                                className="glass-input appearance-none w-full"
+                                required
+                            />
+                        </div>
+                    </div>
 
-            <div className="pt-2">
-                <button
-                    type="submit"
-                    disabled={loading}
-                    className="btn-primary w-full py-3 shadow-lg shadow-indigo-500/20"
-                >
-                    {loading ? <Loader2 className="animate-spin" /> : (initialData ? <Save size={18} /> : <Plus size={18} />)}
-                    {loading ? 'Saving...' : (initialData ? 'Update Expense' : 'Record Expense')}
-                </button>
-            </div>
+                    <div className="pt-2">
+                        <button
+                            type="submit"
+                            disabled={loading}
+                            className="btn-primary w-full py-3 shadow-lg shadow-indigo-500/20"
+                        >
+                            {loading ? <Loader2 className="animate-spin" /> : (initialData ? <Save size={18} /> : <Plus size={18} />)}
+                            {loading ? 'Saving...' : (initialData ? 'Update Expense' : 'Record Expense')}
+                        </button>
+                    </div>
 
-        </form>
-            </div >
-        </div >
+                </form>
+            </div>
+        </div>
     );
 }
