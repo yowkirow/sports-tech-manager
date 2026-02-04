@@ -9,7 +9,6 @@ import AddExpenseForm from './Expenses/AddExpenseForm'; // Reusing form for edit
 
 const EditSaleModal = ({ transaction, onUpdate, onClose }) => {
     const [date, setDate] = useState(transaction.date.split('T')[0]);
-    const [time, setTime] = useState(new Date(transaction.date).toTimeString().slice(0, 5));
     const [amount, setAmount] = useState(transaction.amount);
     const [description, setDescription] = useState(transaction.description);
     const [loading, setLoading] = useState(false);
@@ -19,7 +18,7 @@ const EditSaleModal = ({ transaction, onUpdate, onClose }) => {
         setLoading(true);
         try {
             await onUpdate(transaction.id, {
-                date: new Date(`${date}T${time}:00`).toISOString(),
+                date: new Date(`${date}T${new Date().toTimeString().split(' ')[0]}`).toISOString(),
                 amount: parseFloat(amount),
                 description
             });
@@ -37,10 +36,7 @@ const EditSaleModal = ({ transaction, onUpdate, onClose }) => {
             <form onSubmit={handleSubmit} className="space-y-4">
                 <div>
                     <label className="text-sm text-slate-400">Date</label>
-                    <div className="flex gap-2">
-                        <input type="date" value={date} onChange={e => setDate(e.target.value)} className="glass-input w-full" />
-                        <input type="time" value={time} onChange={e => setTime(e.target.value)} className="glass-input w-32" />
-                    </div>
+                    <input type="date" value={date} onChange={e => setDate(e.target.value)} className="glass-input w-full" />
                 </div>
                 <div>
                     <label className="text-sm text-slate-400">Description</label>

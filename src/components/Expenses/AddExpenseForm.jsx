@@ -24,7 +24,6 @@ export default function AddExpenseForm({ onAddTransaction, onUpdateTransaction, 
     const [category, setCategory] = useState('Rent');
     const [customCategory, setCustomCategory] = useState('');
     const [date, setDate] = useState(new Date().toISOString().split('T')[0]);
-    const [time, setTime] = useState(new Date().toTimeString().slice(0, 5)); // HH:MM
 
     useEffect(() => {
         if (initialData) {
@@ -53,7 +52,6 @@ export default function AddExpenseForm({ onAddTransaction, onUpdateTransaction, 
             if (initialData.date) {
                 const d = new Date(initialData.date);
                 setDate(d.toISOString().split('T')[0]);
-                setTime(d.toTimeString().slice(0, 5));
             }
         }
     }, [initialData]);
@@ -65,10 +63,10 @@ export default function AddExpenseForm({ onAddTransaction, onUpdateTransaction, 
         try {
             const finalCategory = category === 'Other' ? customCategory : category;
 
-            // Combine selected date with current time (or keep original time if editing?)
-            // If editing, try to keep time? No, let's just use current time for simplicity or 00:00
-            // but for expenses, time isn't critical.
-            const dateTimeString = `${date}T${time}:00`;
+            // Combine selected date with current time
+            const now = new Date();
+            const timeString = now.toTimeString().split(' ')[0]; // HH:MM:SS
+            const dateTimeString = `${date}T${timeString}`;
 
             // Check if user is logged in
             const { data: { user } } = await supabase.auth.getUser();
@@ -126,7 +124,6 @@ export default function AddExpenseForm({ onAddTransaction, onUpdateTransaction, 
         }
     };
 
-    return (
     return (
         <div className="bg-slate-900 border border-white/10 rounded-2xl max-w-lg w-full mx-auto shadow-2xl relative flex flex-col">
             <div className="p-6 border-b border-white/10 flex justify-between items-center shrink-0">
@@ -192,24 +189,8 @@ export default function AddExpenseForm({ onAddTransaction, onUpdateTransaction, 
                         />
                     </div>
 
-                    <div className="grid grid-cols-2 gap-4">
-                        <div className="space-y-2">
-                            <label className="text-sm text-slate-400">Date</label>
-                            <input
-                                type="date"
                                 value={date}
                                 onChange={(e) => setDate(e.target.value)}
-                                className="glass-input appearance-none w-full"
-                                required
-                            />
-                        </div>
-
-                        <div className="space-y-2">
-                            <label className="text-sm text-slate-400">Time</label>
-                            <input
-                                type="time"
-                                value={time}
-                                onChange={(e) => setTime(e.target.value)}
                                 className="glass-input appearance-none w-full"
                                 required
                             />
@@ -227,8 +208,8 @@ export default function AddExpenseForm({ onAddTransaction, onUpdateTransaction, 
                         </button>
                     </div>
 
-                </form>
-            </div>
-        </div>
+                </form >
+            </div >
+        </div >
     );
 }
