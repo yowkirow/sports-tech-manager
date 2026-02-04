@@ -495,23 +495,9 @@ export default function POSInterface({ transactions, onAddTransaction, onDeleteT
                                     </div>
 
                                     <div className="aspect-[4/5] bg-slate-800 relative w-full overflow-hidden" style={{ aspectRatio: '0.8' }}>
-                                        {product.imageUrl ? (
-                                            <img
-                                                src={product.imageUrl}
-                                                alt={product.name}
-                                                className="w-full h-full object-cover transition-transform duration-500 group-hover:scale-110"
-                                                onError={(e) => {
-                                                    console.error("Image load failed for:", product.name, product.imageUrl);
-                                                    e.target.style.display = 'none';
-                                                    e.target.nextSibling.classList.remove('hidden');
-                                                    e.target.nextSibling.classList.add('flex');
-                                                }}
-                                            />
-                                        ) : null}
-
-                                        {/* Fallback / Placeholder */}
-                                        <div className={`w-full h-full flex flex-col items-center justify-center transition-colors ${product.imageUrl ? 'hidden bg-red-500/10 text-red-400' : 'flex'}`}
-                                            style={!product.imageUrl && product.linkedColor ? {
+                                        {/* Fallback / Placeholder (Always rendered at z-0) */}
+                                        <div className="absolute inset-0 z-0 w-full h-full flex flex-col items-center justify-center transition-colors"
+                                            style={product.linkedColor ? {
                                                 backgroundColor:
                                                     product.linkedColor === 'White' ? '#f1f5f9' :
                                                         product.linkedColor === 'Black' ? '#1e293b' :
@@ -520,23 +506,33 @@ export default function POSInterface({ transactions, onAddTransaction, onDeleteT
                                                                     product.linkedColor === 'Baby Blue' ? '#bae6fd' : '#334155'
                                             } : {}}
                                         >
-                                            {!product.imageUrl && product.linkedColor ? (
-                                                // Shirt Placeholder
+                                            {product.linkedColor ? (
                                                 <div className="opacity-50 transform group-hover:scale-110 transition-transform duration-500">
-                                                    <svg width="80" height="80" viewBox="0 0 24 24" fill={product.linkedColor === 'Black' ? 'rgba(255,255,255,0.2)' : 'rgba(0,0,0,0.2)'} xmlns="http://www.w3.org/2000/svg">
+                                                    <svg width="80" height="80" viewBox="0 0 24 24" fill={product.linkedColor === 'Black' || product.linkedColor === 'Navy' ? 'rgba(255,255,255,0.2)' : 'rgba(0,0,0,0.1)'} xmlns="http://www.w3.org/2000/svg">
                                                         <path d="M20.38 3.46L16 2L13 3L12 3L11 3L8 2L3.62 3.46C3.2 3.6 2.93 4.02 2.98 4.45L3.81 11.36C3.86 11.41 3.91 11.45 3.97 11.5L6.61 13.56C7.03 13.96 7.74 13.91 8.1 13.43L9.17 12H9.27C9.27 12 14.83 12 14.83 12H14.93L16 13.43C16.36 13.91 17.07 13.95 17.49 13.56L20.13 11.5C20.19 11.45 20.24 11.41 20.29 11.36L21.12 4.45C21.17 4.02 20.9 3.6 20.48 3.46H20.38ZM17 11L14 11V21C14 21.55 13.55 22 13 22H11C10.45 22 10 21.55 10 21V11L7 11L6.72 5L9 5L12 5L15 5L17.28 5L17 11Z" />
                                                     </svg>
                                                 </div>
                                             ) : (
-                                                // Generic Error/Empty
                                                 <div className="flex flex-col items-center gap-2">
-                                                    <Package size={32} className="opacity-50" />
-                                                    {product.imageUrl && <span className="text-[10px] uppercase font-bold tracking-wider">Failed Load</span>}
+                                                    <Package size={32} className="opacity-50 text-slate-500" />
                                                 </div>
                                             )}
                                         </div>
 
-                                        <div className="absolute bottom-2 left-2 bg-black/60 px-2 py-1 rounded text-[10px] text-white backdrop-blur-md">
+                                        {/* Product Image (Z-10, hides on error) */}
+                                        {product.imageUrl && (
+                                            <img
+                                                src={product.imageUrl}
+                                                alt={product.name}
+                                                className="absolute inset-0 z-10 w-full h-full object-cover transition-transform duration-500 group-hover:scale-110"
+                                                onError={(e) => {
+                                                    console.error("Image load failed:", product.name);
+                                                    e.target.style.display = 'none';
+                                                }}
+                                            />
+                                        )}
+
+                                        <div className="absolute bottom-2 left-2 z-20 bg-black/60 px-2 py-1 rounded text-[10px] text-white backdrop-blur-md">
                                             Uses: {product.linkedColor}
                                         </div>
                                     </div>
@@ -689,7 +685,7 @@ const ProductDefinitionModal = ({ editingProduct, onClose, onSave, onDelete }) =
                     </div>
                     <input type="file" ref={fileRef} className="hidden" onChange={handleUpload} />
 
-                    <div className="grid grid-cols-2 gap-4">
+                    <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
                         <div>
                             <label className="text-xs text-slate-400">Name</label>
                             <input className="glass-input mt-1" value={form.name} onChange={e => setForm({ ...form, name: e.target.value })} placeholder="Sypik Classic" />
@@ -837,7 +833,7 @@ const CartContent = ({
                 )}
             </div>
 
-            <div className="grid grid-cols-2 gap-4">
+            <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
                 <div>
                     <label className="text-xs text-slate-500 mb-1 block">Payment Mode</label>
                     <select
