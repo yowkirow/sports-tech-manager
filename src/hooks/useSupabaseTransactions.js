@@ -46,6 +46,28 @@ const useSupabaseTransactions = () => {
         }
     };
 
+    // Update a transaction
+    const updateTransaction = async (id, updates) => {
+        try {
+            const { data, error } = await supabase
+                .from('transactions')
+                .update(updates)
+                .eq('id', id)
+                .select()
+                .single();
+
+            if (error) throw error;
+
+            // Update local state
+            setTransactions(prev => prev.map(t => t.id === id ? data : t));
+            return data;
+        } catch (err) {
+            console.error('Error updating transaction:', err);
+            setError(err.message);
+            throw err;
+        }
+    };
+
     // Delete a transaction
     const deleteTransaction = async (id) => {
         try {
@@ -137,6 +159,7 @@ const useSupabaseTransactions = () => {
         loading,
         error,
         addTransaction,
+        updateTransaction,
         deleteTransaction,
         deleteAllTransactions,
         refetch: fetchTransactions

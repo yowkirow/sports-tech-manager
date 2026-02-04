@@ -436,15 +436,11 @@ export default function Storefront({ transactions, onPlaceOrder }) {
                                     return (
                                         <button
                                             key={size}
-                                            disabled={!hasStock}
                                             onClick={() => addToCart(activeProduct, size)}
-                                            className={`p-3 rounded-xl border text-center transition-all ${hasStock
-                                                ? 'border-white/10 hover:border-primary hover:bg-primary/20 text-white'
-                                                : 'border-white/5 text-slate-600 bg-black/20 cursor-not-allowed'
-                                                }`}
+                                            className="p-3 rounded-xl border text-center transition-all border-white/10 hover:border-primary hover:bg-primary/20 text-white"
                                         >
                                             <div className="font-bold">{size}</div>
-                                            <div className="text-[10px] mt-1 text-slate-500">{hasStock ? `${stock} left` : 'Out'}</div>
+                                            <div className="text-[10px] mt-1 text-slate-500">Available</div>
                                         </button>
                                     );
                                 })}

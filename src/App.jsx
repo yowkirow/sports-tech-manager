@@ -8,8 +8,9 @@ import AddStockForm from './components/Inventory/AddStockForm';
 import POSInterface from './components/POS/POSInterface';
 import OrderManagement from './components/Orders/OrderManagement';
 import Expenses from './components/Expenses';
+import Sales from './components/Sales';
 import VoucherManager from './components/Vouchers/VoucherManager';
-import { LayoutDashboard, Store, ShoppingBag, Receipt, Package, LogOut, X, Wallet, Menu, Globe, Link, Ticket, Settings as SettingsIcon, Lock } from 'lucide-react';
+import { LayoutDashboard, Store, ShoppingBag, Receipt, Package, LogOut, X, Wallet, Banknote, Menu, Globe, Link, Ticket, Settings as SettingsIcon, Lock } from 'lucide-react';
 import clsx from 'clsx';
 import { motion, AnimatePresence } from 'framer-motion';
 import { useToast } from './components/ui/Toast';
@@ -24,6 +25,7 @@ function App() {
         transactions,
         loading,
         addTransaction: addToSupabase,
+        updateTransaction: updateInSupabase,
         deleteTransaction: deleteFromSupabase,
         deleteAllTransactions,
         refetch
@@ -64,6 +66,16 @@ function App() {
         } catch (err) {
             console.error(err);
             showToast(`Failed to save: ${err.message}`, 'error');
+        }
+    };
+
+    const updateTransaction = async (id, updates) => {
+        try {
+            await updateInSupabase(id, updates);
+            showToast('Record updated!', 'success');
+        } catch (err) {
+            console.error(err);
+            showToast(`Failed to update: ${err.message}`, 'error');
         }
     };
 
@@ -165,6 +177,7 @@ function App() {
                 <nav className="flex-1 px-4 space-y-2 mt-4 overflow-y-auto">
                     <NavItem id="pos" label="Point of Sale" icon={Store} />
                     <NavItem id="orders" label="Orders" icon={Package} />
+                    <NavItem id="sales" label="Sales" icon={Banknote} />
                     <NavItem id="expenses" label="Expenses" icon={Wallet} />
                     <NavItem id="inventory" label="Inventory" icon={ShoppingBag} />
                     <NavItem id="vouchers" label="Vouchers" icon={Ticket} />
@@ -212,6 +225,7 @@ function App() {
                         <h2 className="text-lg lg:text-xl font-bold text-white truncate max-w-[200px] sm:max-w-none">
                             {activeTab === 'pos' && 'Point of Sale'}
                             {activeTab === 'orders' && 'Orders'}
+                            {activeTab === 'sales' && 'Sales'}
                             {activeTab === 'expenses' && 'Expenses'}
                             {activeTab === 'dashboard' && 'Dashboard'}
                             {activeTab === 'inventory' && 'Inventory'}
@@ -259,6 +273,16 @@ function App() {
                                 />
                             )}
 
+                            {activeTab === 'sales' && (
+                                <div className="animate-fade-in">
+                                    <Sales
+                                        transactions={transactions}
+                                        onDeleteTransaction={deleteTransaction}
+                                        onUpdateTransaction={updateTransaction}
+                                    />
+                                </div>
+                            )}
+
                             {activeTab === 'dashboard' && (
                                 <div className="space-y-8 animate-fade-in">
                                     <DashboardStats transactions={transactions} onDeleteAll={handleDeleteAll} />
@@ -272,6 +296,7 @@ function App() {
                                         transactions={transactions}
                                         onDeleteTransaction={deleteTransaction}
                                         onAddTransaction={addTransaction}
+                                        onUpdateTransaction={updateTransaction}
                                     />
                                 </div>
                             )}
@@ -310,8 +335,6 @@ function App() {
                 </div>
             </main>
 
-            {/* Global Add Stock Modal */}
-            {/* Global Add Stock Modal - Portaled to Body to escape all stacking contexts */}
             {/* Global Add Stock Modal */}
             {showAddStockModal && createPortal(
                 <div className="fixed inset-0 z-[9999] flex items-center justify-center bg-black/80 backdrop-blur-sm p-4">

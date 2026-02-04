@@ -1,6 +1,6 @@
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
 import { useToast } from '../ui/Toast';
-import { Plus, Loader2, X } from 'lucide-react';
+import { Plus, Loader2, X, Save } from 'lucide-react';
 import { useActivityLog } from '../../hooks/useActivityLog';
 import { supabase } from '../../lib/supabaseClient';
 
@@ -14,7 +14,7 @@ const EXPENSE_CATEGORIES = [
     'Other'
 ];
 
-export default function AddExpenseForm({ onAddTransaction, onClose }) {
+export default function AddExpenseForm({ onAddTransaction, onUpdateTransaction, onClose, initialData = null }) {
     const { showToast } = useToast();
     const { logActivity } = useActivityLog();
     const [loading, setLoading] = useState(false);
@@ -25,6 +25,36 @@ export default function AddExpenseForm({ onAddTransaction, onClose }) {
     const [customCategory, setCustomCategory] = useState('');
     const [date, setDate] = useState(new Date().toISOString().split('T')[0]);
 
+    useEffect(() => {
+        if (initialData) {
+            setDescription(initialData.description || '');
+            setAmount(initialData.amount || '');
+
+            const isCustom = !EXPENSE_CATEGORIES.includes(initialData.category) && initialData.category !== 'general';
+            // Actually, existing categories in DB might be 'general' with subCategory
+            const cat = initialData.category;
+            const subCat = initialData.details?.subCategory;
+
+            if (EXPENSE_CATEGORIES.includes(subCat)) {
+                setCategory(subCat);
+            } else if (subCat) {
+                setCategory('Other');
+                setCustomCategory(subCat);
+            } else {
+                // Fallback
+                if (EXPENSE_CATEGORIES.includes(cat)) setCategory(cat);
+                else {
+                    setCategory('Other');
+                    setCustomCategory(cat);
+                }
+            }
+
+            if (initialData.date) {
+                setDate(new Date(initialData.date).toISOString().split('T')[0]);
+            }
+        }
+    }, [initialData]);
+
     const handleSubmit = async (e) => {
         e.preventDefault();
         setLoading(true);
@@ -32,42 +62,64 @@ export default function AddExpenseForm({ onAddTransaction, onClose }) {
         try {
             const finalCategory = category === 'Other' ? customCategory : category;
 
-            // Combine selected date with current time
+            // Combine selected date with current time (or keep original time if editing?)
+            // If editing, try to keep time? No, let's just use current time for simplicity or 00:00
+            // but for expenses, time isn't critical.
             const now = new Date();
             const timeString = now.toTimeString().split(' ')[0]; // HH:MM:SS
             const dateTimeString = `${date}T${timeString}`;
 
+            // Check if user is logged in
             const { data: { user } } = await supabase.auth.getUser();
 
-            const newTransaction = {
-                id: crypto.randomUUID(),
-                type: 'expense',
-                amount: parseFloat(amount),
-                description: description || `Expense: ${finalCategory}`,
-                category: 'general',
-                date: new Date(dateTimeString).toISOString(),
-                details: {
-                    subCategory: finalCategory,
-                    isGeneral: true,
-                    createdBy: user?.email || 'Unknown'
-                }
-            };
+            if (initialData) {
+                // Update
+                const updates = {
+                    amount: parseFloat(amount),
+                    description: description || `Expense: ${finalCategory}`,
+                    category: 'general', // Schema uses general? Or the actual category? Existing code uses 'general' and details.subCategory
+                    date: new Date(dateTimeString).toISOString(),
+                    details: {
+                        ...initialData.details,
+                        subCategory: finalCategory,
+                        updatedBy: user?.email || 'Unknown',
+                        updatedAt: new Date().toISOString()
+                    }
+                };
 
-            await onAddTransaction(newTransaction);
+                await onUpdateTransaction(initialData.id, updates);
+                await logActivity('Update Expense', { amount: updates.amount, description: updates.description }, initialData.id);
+                showToast('Expense updated', 'success');
+            } else {
+                // Create
+                const newTransaction = {
+                    id: crypto.randomUUID(),
+                    type: 'expense',
+                    amount: parseFloat(amount),
+                    description: description || `Expense: ${finalCategory}`,
+                    category: 'general',
+                    date: new Date(dateTimeString).toISOString(),
+                    details: {
+                        subCategory: finalCategory,
+                        isGeneral: true,
+                        createdBy: user?.email || 'Unknown'
+                    }
+                };
 
-            // Log Activity
-            await logActivity('Add Expense', {
-                amount: newTransaction.amount,
-                category: finalCategory,
-                description: newTransaction.description
-            }, newTransaction.id);
+                await onAddTransaction(newTransaction);
+                await logActivity('Add Expense', {
+                    amount: newTransaction.amount,
+                    category: finalCategory,
+                    description: newTransaction.description
+                }, newTransaction.id);
+                showToast('Expense recorded', 'success');
+            }
 
-            showToast('Expense recorded', 'success');
             onClose();
 
         } catch (error) {
             console.error(error);
-            showToast('Failed to add expense', 'error');
+            showToast(initialData ? 'Failed to update expense' : 'Failed to add expense', 'error');
         } finally {
             setLoading(false);
         }
@@ -76,7 +128,7 @@ export default function AddExpenseForm({ onAddTransaction, onClose }) {
     return (
         <div className="bg-slate-900 border border-white/10 rounded-2xl max-w-lg w-full mx-auto shadow-2xl relative flex flex-col">
             <div className="p-6 border-b border-white/10 flex justify-between items-center shrink-0">
-                <h2 className="text-xl font-bold text-white">Record Expense</h2>
+                <h2 className="text-xl font-bold text-white">{initialData ? 'Edit Expense' : 'Record Expense'}</h2>
                 <button
                     onClick={onClose}
                     className="text-slate-400 hover:text-white transition-colors bg-white/5 p-2 rounded-lg hover:bg-white/10"
@@ -155,8 +207,8 @@ export default function AddExpenseForm({ onAddTransaction, onClose }) {
                             disabled={loading}
                             className="btn-primary w-full py-3 shadow-lg shadow-indigo-500/20"
                         >
-                            {loading ? <Loader2 className="animate-spin" /> : <Plus size={18} />}
-                            {loading ? 'Saving...' : 'Record Expense'}
+                            {loading ? <Loader2 className="animate-spin" /> : (initialData ? <Save size={18} /> : <Plus size={18} />)}
+                            {loading ? 'Saving...' : (initialData ? 'Update Expense' : 'Record Expense')}
                         </button>
                     </div>
 
