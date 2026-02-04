@@ -133,7 +133,6 @@ export default function OrderManagement({ transactions, onAddTransaction, onDele
                     customerName: editForm.customerName,
                     fulfillmentStatus: editForm.fulfillmentStatus,
                     paymentStatus: editForm.paymentStatus,
-                    paymentStatus: editForm.paymentStatus,
                     paymentMode: editForm.paymentMode,
                     trackingNumber: editForm.trackingNumber,
                     // Remove legacy status to avoid confusion, or keep it synced to fulfillment?
@@ -488,8 +487,8 @@ export default function OrderManagement({ transactions, onAddTransaction, onDele
                                                         defaultValue={order.items[0]?.details?.trackingNumber || ''}
                                                         placeholder="Add Tracking"
                                                         className={`py-1.5 pl-8 pr-2 text-xs w-32 focus:w-48 transition-all rounded-lg border outline-none ${order.items[0]?.details?.trackingNumber
-                                                                ? 'bg-primary/10 border-primary/30 text-primary font-mono font-bold'
-                                                                : 'bg-white/5 border-white/10 text-slate-300 hover:bg-white/10 focus:bg-white/10 focus:border-white/20'
+                                                            ? 'bg-primary/10 border-primary/30 text-primary font-mono font-bold'
+                                                            : 'bg-white/5 border-white/10 text-slate-300 hover:bg-white/10 focus:bg-white/10 focus:border-white/20'
                                                             }`}
                                                         onKeyDown={(e) => {
                                                             if (e.key === 'Enter') {
