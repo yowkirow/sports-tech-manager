@@ -11,15 +11,13 @@ const ADMIN_ACCOUNTS = [
 
 export default function Login({ unlockMode = false, user = null, onUnlock, onLogout }) {
     const { showToast } = useToast();
-    const [mode, setMode] = useState(unlockMode ? 'pin' : 'password'); // 'pin' | 'password'
-
-    // Selected User (for Login)
-    const [selectedEmail, setSelectedEmail] = useState(ADMIN_ACCOUNTS[0].email);
+    const [mode, setMode] = useState('pin'); // Default to PIN for everyone
 
     // PIN State (Unlock)
     const [pin, setPin] = useState('');
 
     // Password State (Login)
+    const [email, setEmail] = useState('');
     const [password, setPassword] = useState('');
 
     const [loading, setLoading] = useState(false);
@@ -52,14 +50,41 @@ export default function Login({ unlockMode = false, user = null, onUnlock, onLog
         }, 500);
     };
 
+    // Login with PIN (Tries specific admin emails)
+    const handlePinLogin = async () => {
+        if (pin.length < 4) return showToast('PIN must be at least 4 digits', 'error');
+        setLoading(true);
+        try {
+            let success = false;
+            for (const adminEmail of ADMIN_ACCOUNTS.map(a => a.email)) {
+                const { error } = await supabase.auth.signInWithPassword({
+                    email: adminEmail,
+                    password: pin,
+                });
+                if (!error) {
+                    success = true;
+                    break;
+                }
+            }
+            if (!success) throw new Error('Invalid PIN or Password');
+            showToast('Welcome back!', 'success');
+        } catch (error) {
+            console.error(error);
+            showToast('Invalid PIN', 'error');
+            setPin('');
+        } finally {
+            setLoading(false);
+        }
+    };
+
     const handlePasswordLogin = async (e) => {
         e.preventDefault();
-        if (!selectedEmail || !password) return showToast('Please enter password', 'error');
+        if (!email || !password) return showToast('Please enter password', 'error');
 
         setLoading(true);
         try {
             const { error } = await supabase.auth.signInWithPassword({
-                email: selectedEmail,
+                email,
                 password,
             });
             if (error) throw error;
@@ -75,8 +100,10 @@ export default function Login({ unlockMode = false, user = null, onUnlock, onLog
     React.useEffect(() => {
         if (unlockMode && pin.length >= 4 && pin.length === (user?.user_metadata?.pos_pin?.length || 6)) {
             handleUnlock();
+        } else if (!unlockMode && mode === 'pin' && pin.length === 6) {
+            handlePinLogin();
         }
-    }, [pin, unlockMode, user]); // Added unlockMode and user to dependencies
+    }, [pin, unlockMode, user, mode, handleUnlock, handlePinLogin]);
 
     React.useEffect(() => {
         const handleKeyDown = (e) => {
@@ -84,12 +111,12 @@ export default function Login({ unlockMode = false, user = null, onUnlock, onLog
             if (mode === 'pin') {
                 if (e.key >= '0' && e.key <= '9') handlePinParams(e.key);
                 else if (e.key === 'Backspace') handleDelete();
-                else if (e.key === 'Enter') handleUnlock();
+                else if (e.key === 'Enter') unlockMode ? handleUnlock() : handlePinLogin();
             }
         };
         window.addEventListener('keydown', handleKeyDown);
         return () => window.removeEventListener('keydown', handleKeyDown);
-    }, [loading, pin, mode, handleUnlock]); // Added handleUnlock to dependencies
+    }, [loading, pin, mode, unlockMode]);
 
     return (
         <div className="fixed inset-0 flex items-center justify-center bg-slate-900 p-4 font-sans selection:bg-primary/30">
@@ -127,8 +154,8 @@ export default function Login({ unlockMode = false, user = null, onUnlock, onLog
                                         key={acc.email}
                                         onClick={() => setSelectedEmail(acc.email)}
                                         className={`p-3 rounded-xl border text-sm font-medium transition-all ${selectedEmail === acc.email
-                                                ? 'bg-primary text-white border-primary shadow-lg shadow-primary/20'
-                                                : 'bg-white/5 text-slate-400 border-white/10 hover:bg-white/10'
+                                            ? 'bg-primary text-white border-primary shadow-lg shadow-primary/20'
+                                            : 'bg-white/5 text-slate-400 border-white/10 hover:bg-white/10'
                                             }`}
                                     >
                                         {acc.name}
@@ -170,8 +197,8 @@ export default function Login({ unlockMode = false, user = null, onUnlock, onLog
                                     <div
                                         key={i}
                                         className={`w-10 h-12 rounded-lg border-2 flex items-center justify-center text-xl font-bold transition-all duration-300 ${i < pin.length
-                                                ? 'border-primary bg-primary/20 text-white shadow-[0_0_15px_rgba(239,68,68,0.3)]'
-                                                : 'border-slate-700 bg-slate-800/50 text-slate-500'
+                                            ? 'border-primary bg-primary/20 text-white shadow-[0_0_15px_rgba(239,68,68,0.3)]'
+                                            : 'border-slate-700 bg-slate-800/50 text-slate-500'
                                             }`}
                                     >
                                         {pin[i] || ''}
