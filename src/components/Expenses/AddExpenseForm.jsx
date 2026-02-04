@@ -87,7 +87,8 @@ export default function AddExpenseForm({ onAddTransaction, onUpdateTransaction, 
                         ...initialData.details,
                         subCategory: finalCategory,
                         updatedBy: user?.email || 'Unknown',
-                        updatedAt: new Date().toISOString()
+                        updatedAt: new Date().toISOString(),
+                        timestamp: newDate.toISOString() // Persist exact time in JSON
                     }
                 };
 
@@ -106,7 +107,8 @@ export default function AddExpenseForm({ onAddTransaction, onUpdateTransaction, 
                     details: {
                         subCategory: finalCategory,
                         isGeneral: true,
-                        createdBy: user?.email || 'Unknown'
+                        createdBy: user?.email || 'Unknown',
+                        timestamp: newDate.toISOString() // Persist exact time in JSON
                     }
                 };
 

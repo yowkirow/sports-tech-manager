@@ -62,7 +62,7 @@ export default function OrderManagement({ transactions, onAddTransaction, onDele
 
                 groups[key] = {
                     id: key,
-                    date: t.date,
+                    date: t.details?.timestamp || t.date, // Prefer timestamp
                     customerName: t.details?.customerName || 'Unknown',
                     fulfillmentStatus: fulfillment,
                     paymentStatus: payment,
@@ -145,7 +145,8 @@ export default function OrderManagement({ transactions, onAddTransaction, onDele
                     trackingNumber: editForm.trackingNumber,
                     // Remove legacy status to avoid confusion, or keep it synced to fulfillment?
                     // Let's keep it synced to fulfillment for safety if other components read it
-                    status: editForm.fulfillmentStatus
+                    status: editForm.fulfillmentStatus,
+                    timestamp: isoDate // Persist exact time in JSON
                 };
 
                 const { error } = await supabase
