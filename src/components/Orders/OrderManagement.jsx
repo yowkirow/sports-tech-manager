@@ -182,7 +182,28 @@ export default function OrderManagement({ transactions, onAddTransaction, onDele
             });
 
             await Promise.all(updates);
-            showToast('Tracking updated', 'success');
+
+            // Send SMS via Edge Function
+            if (trackingNumber && order.items[0]?.details?.contactNumber) {
+                const { error: smsError } = await supabase.functions.invoke('send-tracking-sms', {
+                    body: {
+                        phoneNumber: order.items[0].details.contactNumber,
+                        customerName: order.customerName,
+                        trackingNumber,
+                        orderItems: order.items.map(i => `${i.details.quantity}x ${i.description}`).join(', ')
+                    }
+                });
+
+                if (smsError) {
+                    console.error('SMS Failed:', smsError);
+                    showToast('Tracking saved, but SMS failed', 'warning');
+                } else {
+                    showToast('Tracking saved & SMS sent!', 'success');
+                }
+            } else {
+                showToast('Tracking updated', 'success');
+            }
+
             if (refetch) await refetch();
         } catch (err) {
             console.error(err);
