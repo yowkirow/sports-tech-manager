@@ -424,13 +424,13 @@ export default function POSInterface({ transactions, onAddTransaction, onDeleteT
                     )}
                 </div>
 
-                <div className="flex-1 overflow-y-auto pr-2 grid grid-cols-[repeat(auto-fill,minmax(160px,1fr))] gap-4 content-start">
+                <div className="flex-1 overflow-y-auto pr-2 grid grid-cols-[repeat(auto-fill,minmax(140px,1fr))] gap-3 sm:gap-4 content-start">
                     {!isSelectionMode && !isReorderMode && !isReseller && (
-                        <div onClick={() => { setEditingProduct(null); setShowProductModal(true); }} className="glass-card flex flex-col items-center justify-center gap-4 border-dashed border-white/20 hover:border-primary/50 cursor-pointer min-h-[200px] lg:min-h-[250px] group opacity-60 hover:opacity-100">
-                            <div className="w-12 h-12 rounded-full bg-white/5 flex items-center justify-center group-hover:scale-110 transition-transform">
-                                <Plus size={24} className="text-slate-400 group-hover:text-primary" />
+                        <div onClick={() => { setEditingProduct(null); setShowProductModal(true); }} className="glass-card flex flex-col items-center justify-center gap-4 border-dashed border-white/20 hover:border-primary/50 cursor-pointer min-h-[180px] sm:min-h-[220px] lg:min-h-[250px] group opacity-60 hover:opacity-100">
+                            <div className="w-10 h-10 sm:w-12 sm:h-12 rounded-full bg-white/5 flex items-center justify-center group-hover:scale-110 transition-transform">
+                                <Plus size={20} className="text-slate-400 group-hover:text-primary" />
                             </div>
-                            <span className="font-medium text-slate-400">New Product</span>
+                            <span className="font-medium text-slate-400 text-sm sm:text-base">New Product</span>
                         </div>
                     )}
 
@@ -552,10 +552,10 @@ export default function POSInterface({ transactions, onAddTransaction, onDeleteT
                                             Uses: {product.linkedColor}
                                         </div>
                                     </div>
-                                    <div className="p-4 flex flex-col flex-1">
-                                        <h3 className="font-semibold text-white leading-tight mb-1 line-clamp-2">{product.name}</h3>
+                                    <div className="p-3 sm:p-4 flex flex-col flex-1">
+                                        <h3 className="font-semibold text-white leading-tight mb-1 line-clamp-2 text-sm sm:text-base">{product.name}</h3>
                                         <div className="mt-auto flex justify-between items-center">
-                                            <span className="text-primary font-bold">₱{product.price}</span>
+                                            <span className="text-primary font-bold text-sm sm:text-base">₱{product.price}</span>
                                             <ArrowRightIcon className="text-white/20 group-hover:text-white transition-colors" />
                                         </div>
                                     </div>
