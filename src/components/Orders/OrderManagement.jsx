@@ -573,30 +573,7 @@ export default function OrderManagement({ transactions, onAddTransaction, onDele
                                                 </div>
                                             </div>
 
-                                            {/* Money Received Button for Pending COD */}
-                                            {order.paymentMode === 'COD' && order.paymentStatus === 'unpaid' && order.fulfillmentStatus !== 'cancelled' && !isSelectionMode && (
-                                                <button
-                                                    onClick={(e) => {
-                                                        e.stopPropagation();
-                                                        startEditing(order); // Hack to set form status to paid and save immediately? No, better to have dedicated function.
-                                                        // Actually, let's just do a direct update
-                                                        if (confirm('Mark as Money Received?')) {
-                                                            setEditingId(order.id); // set ID to prevent flicker
-                                                            setEditForm({
-                                                                customerName: order.customerName,
-                                                                fulfillmentStatus: order.fulfillmentStatus,
-                                                                paymentStatus: 'paid', // FORCE PAID
-                                                                paymentMode: order.paymentMode,
-                                                                trackingNumber: order.items[0]?.details?.trackingNumber
-                                                            });
-                                                            setTimeout(() => handleSave(order.id), 100); // Trigger save
-                                                        }
-                                                    }}
-                                                    className="flex items-center gap-1 px-3 py-1 rounded-full bg-emerald-500 text-black text-[10px] font-bold shadow-lg shadow-emerald-500/20 hover:bg-emerald-400 transition-all cursor-pointer z-10"
-                                                >
-                                                    <Banknote size={12} /> Money Received
-                                                </button>
-                                            )}
+
                                         </div>
                                     )}
                                 </div>
