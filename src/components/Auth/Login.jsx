@@ -19,6 +19,32 @@ export default function Login({ unlockMode = false, user = null, onUnlock, onLog
 
     const [loading, setLoading] = useState(false);
 
+    const [adminList, setAdminList] = useState(ADMIN_ACCOUNTS);
+
+    // Fetch Admins from Supabase
+    React.useEffect(() => {
+        const fetchAdmins = async () => {
+            try {
+                const { data, error } = await supabase
+                    .from('admin_directory')
+                    .select('email, name');
+
+                if (error) throw error;
+                if (data && data.length > 0) {
+                    setAdminList(prev => {
+                        // Merge with config, prioritizing DB (or just replace if you want DB to be source of truth)
+                        // For now, let's just use DB data if available, or fallback to config
+                        return data;
+                    });
+                }
+            } catch (err) {
+                console.error('Failed to fetch admin directory:', err);
+                // Fallback to static config is automatic since we initialized state with it
+            }
+        };
+        fetchAdmins();
+    }, []);
+
     // PIN Handlers
     const handlePinParams = (num) => {
         if (pin.length < 6) setPin(prev => prev + num);
@@ -53,7 +79,8 @@ export default function Login({ unlockMode = false, user = null, onUnlock, onLog
         setLoading(true);
         try {
             let success = false;
-            for (const adminEmail of ADMIN_ACCOUNTS.map(a => a.email)) {
+            // Use dynamic adminList
+            for (const adminEmail of adminList.map(a => a.email)) {
                 const { error } = await supabase.auth.signInWithPassword({
                     email: adminEmail,
                     password: pin,

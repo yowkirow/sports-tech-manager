@@ -44,4 +44,35 @@ CREATE POLICY "Allow all access" ON transactions
 2. You should see a `transactions` table listed
 3. The table should be empty (0 rows)
 
-Once this is done, come back and let me know!
+## Create the Admin Directory Table
+
+To manage the list of administrators dynamically (valid emails for PIN login), run this SQL:
+
+```sql
+-- Create admin directory table
+CREATE TABLE admin_directory (
+  id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+  created_at TIMESTAMP WITH TIME ZONE DEFAULT NOW(),
+  email TEXT NOT NULL UNIQUE,
+  name TEXT NOT NULL
+);
+
+-- Enable RLS
+ALTER TABLE admin_directory ENABLE ROW LEVEL SECURITY;
+
+-- Allow public read access (so Login page can see who is allowed)
+CREATE POLICY "Allow public read" ON admin_directory
+  FOR SELECT
+  USING (true);
+
+-- Allow authenticated users (Admins) to Insert/Update/Delete
+CREATE POLICY "Allow admins to manage" ON admin_directory
+  FOR ALL
+  USING (auth.role() = 'authenticated');
+
+-- Seed initial data
+INSERT INTO admin_directory (email, name) VALUES 
+('manager@sportstech.com', 'Manager'),
+('admin2@sportstech.com', 'Admin 2'),
+('pia.justine@gmail.com', 'Pia');
+```
