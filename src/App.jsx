@@ -68,7 +68,7 @@ function App() {
             // Always show products/system events
             if (t.type === 'define_product' || t.type === 'delete_product') return true;
             // Otherwise only show own
-            return t.details?.createdBy === session.user.email;
+            return t.details?.createdBy === session?.user?.email;
         });
     }, [transactions, isReseller, session]);
 
@@ -320,6 +320,7 @@ function App() {
                                     onAddTransaction={addTransaction}
                                     onDeleteTransaction={deleteTransaction}
                                     refetch={refetch}
+                                    userRole={userRole} // Pass role for restrictions
                                 />
                             )}
 

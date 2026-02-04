@@ -8,8 +8,9 @@ const FULFILLMENT_STATUSES = ['pending', 'in_progress', 'ready', 'shipped', 'can
 const PAYMENT_STATUSES = ['unpaid', 'paid'];
 const PAYMENT_MODES = ['Cash', 'Gcash', 'Bank Transfer', 'COD'];
 
-export default function OrderManagement({ transactions, onAddTransaction, onDeleteTransaction, refetch }) {
+export default function OrderManagement({ transactions, onAddTransaction, onDeleteTransaction, refetch, userRole }) {
     const { showToast } = useToast();
+    const isReseller = userRole === 'reseller';
     const [filterFulfillment, setFilterFulfillment] = useState('all');
     const [filterPayment, setFilterPayment] = useState('all'); // 'all', 'paid', 'unpaid'
     const [searchTerm, setSearchTerm] = useState('');
@@ -441,6 +442,7 @@ export default function OrderManagement({ transactions, onAddTransaction, onDele
                                                 }`}>
                                                 {order.paymentStatus}
                                             </span>
+                                            {/* ID showing for admins only? or everyone? Let's keep it */}
                                             <span className="text-xs text-slate-500 font-mono hidden sm:inline">{order.id.slice(-6)}</span>
                                         </div>
                                     </div>

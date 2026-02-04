@@ -396,24 +396,28 @@ export default function POSInterface({ transactions, onAddTransaction, onDeleteT
                                 </>
                             ) : (
                                 <>
-                                    <button
-                                        onClick={() => setIsSelectionMode(true)}
-                                        className="px-4 py-2 bg-white/5 hover:bg-white/10 text-slate-300 rounded-xl font-bold border border-white/10 transition-colors"
-                                    >
-                                        Select
-                                    </button>
-                                    <button
-                                        onClick={() => setIsReorderMode(true)}
-                                        className="px-4 py-2 bg-white/5 hover:bg-white/10 text-slate-300 rounded-xl font-bold border border-white/10 transition-colors"
-                                    >
-                                        Reorder
-                                    </button>
-                                    <button
-                                        onClick={() => { setEditingProduct(null); setShowProductModal(true); }}
-                                        className="btn-secondary whitespace-nowrap"
-                                    >
-                                        <Plus size={20} /> <span className="hidden sm:inline">Define Product</span>
-                                    </button>
+                                    {!isReseller && (
+                                        <>
+                                            <button
+                                                onClick={() => setIsSelectionMode(true)}
+                                                className="px-4 py-2 bg-white/5 hover:bg-white/10 text-slate-300 rounded-xl font-bold border border-white/10 transition-colors"
+                                            >
+                                                Select
+                                            </button>
+                                            <button
+                                                onClick={() => setIsReorderMode(true)}
+                                                className="px-4 py-2 bg-white/5 hover:bg-white/10 text-slate-300 rounded-xl font-bold border border-white/10 transition-colors"
+                                            >
+                                                Reorder
+                                            </button>
+                                            <button
+                                                onClick={() => { setEditingProduct(null); setShowProductModal(true); }}
+                                                className="btn-secondary whitespace-nowrap"
+                                            >
+                                                <Plus size={20} /> <span className="hidden sm:inline">Define Product</span>
+                                            </button>
+                                        </>
+                                    )}
                                 </>
                             )}
                         </div>
@@ -421,7 +425,7 @@ export default function POSInterface({ transactions, onAddTransaction, onDeleteT
                 </div>
 
                 <div className="flex-1 overflow-y-auto pr-2 grid grid-cols-[repeat(auto-fill,minmax(160px,1fr))] gap-4 content-start">
-                    {!isSelectionMode && !isReorderMode && (
+                    {!isSelectionMode && !isReorderMode && !isReseller && (
                         <div onClick={() => { setEditingProduct(null); setShowProductModal(true); }} className="glass-card flex flex-col items-center justify-center gap-4 border-dashed border-white/20 hover:border-primary/50 cursor-pointer min-h-[200px] lg:min-h-[250px] group opacity-60 hover:opacity-100">
                             <div className="w-12 h-12 rounded-full bg-white/5 flex items-center justify-center group-hover:scale-110 transition-transform">
                                 <Plus size={24} className="text-slate-400 group-hover:text-primary" />
@@ -472,7 +476,8 @@ export default function POSInterface({ transactions, onAddTransaction, onDeleteT
                                         </div>
                                     )}
 
-                                    {!isSelectionMode && (
+                                    {/* Edit Button - Hide for resellers */}
+                                    {!isSelectionMode && !isReseller && (
                                         <button
                                             onClick={(e) => { e.stopPropagation(); setEditingProduct(product); setShowProductModal(true); }}
                                             className="absolute top-2 right-2 z-10 p-2 bg-black/60 hover:bg-primary rounded-lg text-white opacity-0 group-hover:opacity-100 transition-all focus:opacity-100 lg:opacity-0"
@@ -558,6 +563,7 @@ export default function POSInterface({ transactions, onAddTransaction, onDeleteT
                     showSuggestions={showSuggestions}
                     setShowSuggestions={setShowSuggestions}
                     filteredCustomers={filteredCustomers}
+                    isReseller={isReseller}
                 />
             </div>
 
@@ -586,6 +592,7 @@ export default function POSInterface({ transactions, onAddTransaction, onDeleteT
                                 showSuggestions={showSuggestions}
                                 setShowSuggestions={setShowSuggestions}
                                 filteredCustomers={filteredCustomers}
+                                isReseller={isReseller}
                             />
                         </div>
                     </div>
@@ -753,7 +760,8 @@ const CartContent = ({
     setPaymentMode,
     showSuggestions,
     setShowSuggestions,
-    filteredCustomers
+    filteredCustomers,
+    isReseller
 }) => (
     <div className="flex flex-col h-full">
         <div className="p-6 border-b border-white/10 hidden lg:block">
@@ -833,26 +841,30 @@ const CartContent = ({
                             ))}
                         </select>
                     </div>
-                    <div>
-                        <label className="text-xs text-slate-500 mb-1 block">Fulfillment</label>
-                        <select
-                            className="glass-input py-2 text-sm w-full capitalize"
-                            value={fulfillmentStatus}
-                            onChange={e => setFulfillmentStatus(e.target.value)}
-                        >
-                            {['pending', 'in_progress', 'ready', 'shipped'].map(s => (
-                                <option key={s} value={s} className="bg-slate-900">{s.replace('_', ' ')}</option>
-                            ))}
                         </select>
                     </div>
+                    {!isReseller && (
+                        <div>
+                            <label className="text-xs text-slate-500 mb-1 block">Fulfillment</label>
+                            <select
+                                className="glass-input py-2 text-sm w-full capitalize"
+                                value={fulfillmentStatus}
+                                onChange={e => setFulfillmentStatus(e.target.value)}
+                            >
+                                {['pending', 'in_progress', 'ready', 'shipped'].map(s => (
+                                    <option key={s} value={s} className="bg-slate-900">{s.replace('_', ' ')}</option>
+                                ))}
+                            </select>
+                        </div>
+                    )}
                 </div>
             </div>
 
             <button onClick={handleCheckout} disabled={checkoutLoading || cart.length === 0} className="btn-primary w-full py-4 text-lg">
                 {checkoutLoading ? <Loader2 className="animate-spin" /> : <CheckCircle size={20} />} Checkout
             </button>
-        </div>
-    </div>
+        </div >
+    </div >
 );
 
 function CreditCardIcon() {
