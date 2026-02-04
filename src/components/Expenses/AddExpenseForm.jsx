@@ -29,13 +29,18 @@ export default function AddExpenseForm({ onAddTransaction, onClose }) {
         try {
             const finalCategory = category === 'Other' ? customCategory : category;
 
+            // Combine selected date with current time
+            const now = new Date();
+            const timeString = now.toTimeString().split(' ')[0]; // HH:MM:SS
+            const dateTimeString = `${date}T${timeString}`;
+
             const newTransaction = {
                 id: crypto.randomUUID(),
                 type: 'expense',
                 amount: parseFloat(amount),
                 description: description || `Expense: ${finalCategory}`,
                 category: 'general',
-                date: new Date(date).toISOString(),
+                date: new Date(dateTimeString).toISOString(),
                 details: {
                     subCategory: finalCategory,
                     isGeneral: true
