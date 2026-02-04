@@ -24,8 +24,7 @@ const Expenses = ({ transactions, onDeleteTransaction, onAddTransaction, onUpdat
 
     const totalExpenses = expenses.reduce((sum, t) => sum + (t.amount || 0), 0);
 
-    const formatDate = (t) => {
-        const isoString = t.details?.timestamp || t.date;
+    const formatDate = (isoString) => {
         return new Date(isoString).toLocaleDateString('en-US', {
             month: 'short', day: 'numeric', year: 'numeric', hour: '2-digit', minute: '2-digit'
         });
@@ -124,7 +123,7 @@ const Expenses = ({ transactions, onDeleteTransaction, onAddTransaction, onUpdat
                                                 {t.category}
                                             </span>
                                         </td>
-                                        <td className="p-4 text-slate-400">{formatDate(t)}</td>
+                                        <td className="p-4 text-slate-400">{formatDate(t.date)}</td>
                                         <td className="p-4 text-right text-rose-400 font-bold">
                                             ₱{t.amount?.toLocaleString()}
                                         </td>

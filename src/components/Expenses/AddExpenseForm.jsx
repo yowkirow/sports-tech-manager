@@ -73,9 +73,6 @@ export default function AddExpenseForm({ onAddTransaction, onUpdateTransaction, 
             // Check if user is logged in
             const { data: { user } } = await supabase.auth.getUser();
 
-            // DEBUG: Show what time is calculated
-            showToast(`Debug: Saving Time as ${newDate.toLocaleTimeString()}`, 'success');
-
             if (initialData) {
                 // Update
                 const updates = {
@@ -87,8 +84,7 @@ export default function AddExpenseForm({ onAddTransaction, onUpdateTransaction, 
                         ...initialData.details,
                         subCategory: finalCategory,
                         updatedBy: user?.email || 'Unknown',
-                        updatedAt: new Date().toISOString(),
-                        timestamp: newDate.toISOString() // Persist exact time in JSON
+                        updatedAt: new Date().toISOString()
                     }
                 };
 
@@ -107,8 +103,7 @@ export default function AddExpenseForm({ onAddTransaction, onUpdateTransaction, 
                     details: {
                         subCategory: finalCategory,
                         isGeneral: true,
-                        createdBy: user?.email || 'Unknown',
-                        timestamp: newDate.toISOString() // Persist exact time in JSON
+                        createdBy: user?.email || 'Unknown'
                     }
                 };
 

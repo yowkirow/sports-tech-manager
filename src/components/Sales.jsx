@@ -26,11 +26,7 @@ const EditSaleModal = ({ transaction, onUpdate, onClose }) => {
             await onUpdate(transaction.id, {
                 date: newDate.toISOString(),
                 amount: parseFloat(amount),
-                description,
-                details: {
-                    ...transaction.details,
-                    timestamp: newDate.toISOString() // Persist exact time in JSON
-                }
+                description
             });
             onClose();
         } catch (err) {
@@ -85,8 +81,7 @@ const Sales = ({ transactions, onDeleteTransaction, onUpdateTransaction }) => {
 
     const totalSales = sales.reduce((sum, t) => sum + (t.amount || 0), 0);
 
-    const formatDate = (t) => {
-        const isoString = t.details?.timestamp || t.date;
+    const formatDate = (isoString) => {
         return new Date(isoString).toLocaleDateString('en-US', {
             month: 'short', day: 'numeric', year: 'numeric', hour: '2-digit', minute: '2-digit'
         });
@@ -163,7 +158,7 @@ const Sales = ({ transactions, onDeleteTransaction, onUpdateTransaction }) => {
                                         <td className="p-4 text-slate-300">
                                             {t.details?.customerName || 'Unknown'}
                                         </td>
-                                        <td className="p-4 text-slate-400">{formatDate(t)}</td>
+                                        <td className="p-4 text-slate-400">{formatDate(t.date)}</td>
                                         <td className="p-4 text-right text-emerald-400 font-bold">
                                             ₱{t.amount?.toLocaleString()}
                                         </td>
