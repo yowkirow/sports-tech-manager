@@ -56,7 +56,8 @@ function App() {
                 showToast('Inventory updated!', 'success');
             }
         } catch (err) {
-            showToast('Failed to save transaction', 'error');
+            console.error(err);
+            showToast(`Failed to save: ${err.message}`, 'error');
         }
     };
 

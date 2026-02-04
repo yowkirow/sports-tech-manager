@@ -147,18 +147,45 @@ export default function Storefront({ transactions, onPlaceOrder }) {
         // Find voucher in transactions
         const voucherTx = transactions.find(t =>
             t.type === 'voucher' &&
-            t.details.code.toUpperCase() === voucherCode.trim().toUpperCase() &&
-            t.details.active
+            t.details.code.toUpperCase() === voucherCode.trim().toUpperCase()
         );
 
-        if (!voucherTx) {
+        if (!voucherTx || !voucherTx.details.active) {
             showToast('Invalid or inactive voucher', 'error');
             setAppliedVoucher(null);
             return;
         }
 
-        setAppliedVoucher(voucherTx.details);
-        showToast(`Voucher applied: ${voucherTx.details.code}`, 'success');
+        const details = voucherTx.details;
+
+        // check expiry
+        if (details.expiryDate) {
+            const expiry = new Date(details.expiryDate);
+            const now = new Date();
+            // Reset times for accurate date comparison
+            expiry.setHours(23, 59, 59, 999);
+            if (now > expiry) {
+                showToast('Voucher has expired', 'error');
+                return;
+            }
+        }
+
+        // check usage limit
+        if (details.usageLimit) {
+            const uniqueUses = new Set(
+                transactions
+                    .filter(tr => tr.type === 'sale' && tr.details?.voucherCode === details.code)
+                    .map(tr => tr.details.orderId)
+            ).size;
+
+            if (uniqueUses >= details.usageLimit) {
+                showToast('Voucher usage limit reached', 'error');
+                return;
+            }
+        }
+
+        setAppliedVoucher(details);
+        showToast(`Voucher applied: ${details.code}`, 'success');
     };
 
     const handleRemoveVoucher = () => {

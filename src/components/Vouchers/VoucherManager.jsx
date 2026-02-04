@@ -8,14 +8,34 @@ export default function VoucherManager({ transactions, onAddTransaction, onDelet
     const [showAddModal, setShowAddModal] = useState(false);
     const [searchTerm, setSearchTerm] = useState('');
 
-    const vouchers = transactions.filter(t => t.type === 'voucher').map(t => ({
-        id: t.id,
-        code: t.details.code,
-        discountType: t.details.discountType, // 'percent' | 'fixed'
-        value: t.details.value,
-        active: t.details.active !== false, // default true
-        description: t.description
-    }));
+    const vouchers = transactions.filter(t => t.type === 'voucher').map(t => {
+        const usageCount = transactions.filter(tr =>
+            tr.type === 'sale' &&
+            tr.details?.voucherCode === t.details.code
+        ).length; // Rough count based on items or orders? Storefront splits items.
+        // Wait, storefront splits items into multiple transactions. Each has 'voucherCode'.
+        // So 'usageCount' would be number of items sold with this voucher.
+        // BUT usually usage limit is per ORDER.
+        // If we split implementation, we need a way to count distinct ORDERS.
+        // 'tr.details.orderId' is unique per order.
+        const uniqueOrders = new Set(
+            transactions
+                .filter(tr => tr.type === 'sale' && tr.details?.voucherCode === t.details.code)
+                .map(tr => tr.details.orderId)
+        ).size;
+
+        return {
+            id: t.id,
+            code: t.details.code,
+            discountType: t.details.discountType,
+            value: t.details.value,
+            usageLimit: t.details.usageLimit,
+            expiryDate: t.details.expiryDate,
+            usageCount: uniqueOrders,
+            active: t.details.active !== false,
+            description: t.description
+        };
+    });
 
     const filteredVouchers = vouchers.filter(v =>
         v.code.toLowerCase().includes(searchTerm.toLowerCase())
@@ -105,16 +125,41 @@ export default function VoucherManager({ transactions, onAddTransaction, onDelet
                         </div>
 
                         <div className="flex items-end justify-between">
-                            <div className="text-4xl font-bold text-white">
-                                {voucher.discountType === 'fixed' ? '₱' : ''}{voucher.value}{voucher.discountType === 'percent' ? '%' : ''}
-                                <span className="text-base font-normal text-slate-500 ml-1">OFF</span>
+                            <div>
+                                <div className="text-4xl font-bold text-white mb-2">
+                                    {voucher.discountType === 'fixed' ? '₱' : ''}{voucher.value}{voucher.discountType === 'percent' ? '%' : ''}
+                                    <span className="text-base font-normal text-slate-500 ml-1">OFF</span>
+                                </div>
+                                <div className="space-y-1">
+                                    {voucher.expiryDate && (
+                                        <p className="text-xs text-slate-400 flex items-center gap-1">
+                                            <span className="text-slate-500">Expires:</span>
+                                            <span className={new Date(voucher.expiryDate) < new Date() ? 'text-red-400 font-bold' : 'text-slate-300'}>
+                                                {new Date(voucher.expiryDate).toLocaleDateString()}
+                                            </span>
+                                        </p>
+                                    )}
+                                    {voucher.usageLimit && (
+                                        <div className="text-xs text-slate-400">
+                                            <div className="flex justify-between mb-0.5">
+                                                <span>Used: {voucher.usageCount} / {voucher.usageLimit}</span>
+                                            </div>
+                                            <div className="w-full h-1 bg-white/10 rounded-full overflow-hidden">
+                                                <div
+                                                    className="h-full bg-primary"
+                                                    style={{ width: `${Math.min((voucher.usageCount / voucher.usageLimit) * 100, 100)}%` }}
+                                                />
+                                            </div>
+                                        </div>
+                                    )}
+                                </div>
                             </div>
 
                             <button
                                 onClick={() => toggleStatus(voucher)}
                                 className={`flex items-center gap-2 px-3 py-1.5 rounded-full text-xs font-bold transition-all ${voucher.active
-                                        ? 'bg-green-500/10 text-green-400 border border-green-500/20'
-                                        : 'bg-slate-700 text-slate-400'
+                                    ? 'bg-green-500/10 text-green-400 border border-green-500/20'
+                                    : 'bg-slate-700 text-slate-400'
                                     }`}
                             >
                                 {voucher.active ? <ToggleRight size={16} /> : <ToggleLeft size={16} />}
@@ -142,11 +187,14 @@ export default function VoucherManager({ transactions, onAddTransaction, onDelet
                                 date: new Date().toISOString(),
                                 amount: 0,
                                 type: 'voucher',
+                                category: 'voucher',
                                 description: `Voucher: ${voucher.code}`,
                                 details: {
                                     code: voucher.code,
                                     discountType: voucher.discountType,
                                     value: Number(voucher.value),
+                                    usageLimit: voucher.usageLimit,
+                                    expiryDate: voucher.expiryDate,
                                     active: true
                                 }
                             });
@@ -162,13 +210,21 @@ export default function VoucherManager({ transactions, onAddTransaction, onDelet
 
 function AddVoucherModal({ onClose, onSave }) {
     const [code, setCode] = useState('');
-    const [type, setType] = useState('percent'); // percent, fixed
+    const [type, setType] = useState('percent');
     const [value, setValue] = useState('');
+    const [limit, setLimit] = useState('');
+    const [expiry, setExpiry] = useState('');
 
     const handleSubmit = (e) => {
         e.preventDefault();
         if (!code || !value) return;
-        onSave({ code: code.toUpperCase(), discountType: type, value });
+        onSave({
+            code: code.toUpperCase(),
+            discountType: type,
+            value,
+            usageLimit: limit ? Number(limit) : null,
+            expiryDate: expiry || null
+        });
     };
 
     return (
@@ -228,6 +284,28 @@ function AddVoucherModal({ onClose, onSave }) {
                                 value={value}
                                 onChange={e => setValue(e.target.value)}
                                 placeholder={type === 'percent' ? '10' : '100'}
+                                className="glass-input w-full"
+                            />
+                        </div>
+                    </div>
+
+                    <div className="grid grid-cols-2 gap-4">
+                        <div>
+                            <label className="text-xs font-bold text-slate-500 uppercase block mb-2">Usage Limit</label>
+                            <input
+                                type="number"
+                                value={limit}
+                                onChange={e => setLimit(e.target.value)}
+                                placeholder="∞"
+                                className="glass-input w-full"
+                            />
+                        </div>
+                        <div>
+                            <label className="text-xs font-bold text-slate-500 uppercase block mb-2">Expiry Date</label>
+                            <input
+                                type="date"
+                                value={expiry}
+                                onChange={e => setExpiry(e.target.value)}
                                 className="glass-input w-full"
                             />
                         </div>
