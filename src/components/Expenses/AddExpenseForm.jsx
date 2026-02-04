@@ -24,6 +24,7 @@ export default function AddExpenseForm({ onAddTransaction, onUpdateTransaction, 
     const [category, setCategory] = useState('Rent');
     const [customCategory, setCustomCategory] = useState('');
     const [date, setDate] = useState(new Date().toISOString().split('T')[0]);
+    const [time, setTime] = useState(new Date().toTimeString().slice(0, 5)); // HH:MM
 
     useEffect(() => {
         if (initialData) {
@@ -50,7 +51,9 @@ export default function AddExpenseForm({ onAddTransaction, onUpdateTransaction, 
             }
 
             if (initialData.date) {
-                setDate(new Date(initialData.date).toISOString().split('T')[0]);
+                const d = new Date(initialData.date);
+                setDate(d.toISOString().split('T')[0]);
+                setTime(d.toTimeString().slice(0, 5));
             }
         }
     }, [initialData]);
@@ -65,9 +68,7 @@ export default function AddExpenseForm({ onAddTransaction, onUpdateTransaction, 
             // Combine selected date with current time (or keep original time if editing?)
             // If editing, try to keep time? No, let's just use current time for simplicity or 00:00
             // but for expenses, time isn't critical.
-            const now = new Date();
-            const timeString = now.toTimeString().split(' ')[0]; // HH:MM:SS
-            const dateTimeString = `${date}T${timeString}`;
+            const dateTimeString = `${date}T${time}:00`;
 
             // Check if user is logged in
             const { data: { user } } = await supabase.auth.getUser();
@@ -190,30 +191,39 @@ export default function AddExpenseForm({ onAddTransaction, onUpdateTransaction, 
                         />
                     </div>
 
-                    <div className="space-y-2">
-                        <label className="text-sm text-slate-400">Date</label>
-                        <input
-                            type="date"
-                            value={date}
-                            onChange={(e) => setDate(e.target.value)}
-                            className="glass-input appearance-none"
-                            required
-                        />
-                    </div>
-
-                    <div className="pt-2">
-                        <button
-                            type="submit"
-                            disabled={loading}
-                            className="btn-primary w-full py-3 shadow-lg shadow-indigo-500/20"
-                        >
-                            {loading ? <Loader2 className="animate-spin" /> : (initialData ? <Save size={18} /> : <Plus size={18} />)}
-                            {loading ? 'Saving...' : (initialData ? 'Update Expense' : 'Record Expense')}
-                        </button>
-                    </div>
-
-                </form>
+                    <input
+                        type="date"
+                        value={date}
+                        onChange={(e) => setDate(e.target.value)}
+                        className="glass-input appearance-none w-full"
+                        required
+                    />
             </div>
-        </div>
+
+            <div className="space-y-2">
+                <label className="text-sm text-slate-400">Time</label>
+                <input
+                    type="time"
+                    value={time}
+                    onChange={(e) => setTime(e.target.value)}
+                    className="glass-input appearance-none w-full"
+                    required
+                />
+            </div>
+
+            <div className="pt-2">
+                <button
+                    type="submit"
+                    disabled={loading}
+                    className="btn-primary w-full py-3 shadow-lg shadow-indigo-500/20"
+                >
+                    {loading ? <Loader2 className="animate-spin" /> : (initialData ? <Save size={18} /> : <Plus size={18} />)}
+                    {loading ? 'Saving...' : (initialData ? 'Update Expense' : 'Record Expense')}
+                </button>
+            </div>
+
+        </form>
+            </div >
+        </div >
     );
 }
