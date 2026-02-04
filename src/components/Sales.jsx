@@ -18,7 +18,7 @@ const EditSaleModal = ({ transaction, onUpdate, onClose }) => {
         setLoading(true);
         try {
             await onUpdate(transaction.id, {
-                date: new Date(`${date}T12:00:00`).toISOString(),
+                date: new Date(`${date}T${new Date().toTimeString().split(' ')[0]}`).toISOString(),
                 amount: parseFloat(amount),
                 description
             });

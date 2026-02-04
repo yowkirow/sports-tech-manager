@@ -78,7 +78,7 @@ export default function AddExpenseForm({ onAddTransaction, onUpdateTransaction, 
                     amount: parseFloat(amount),
                     description: description || `Expense: ${finalCategory}`,
                     category: 'general', // Schema uses general? Or the actual category? Existing code uses 'general' and details.subCategory
-                    date: new Date(`${date}T12:00:00`).toISOString(),
+                    date: new Date(dateTimeString).toISOString(),
                     details: {
                         ...initialData.details,
                         subCategory: finalCategory,
