@@ -462,7 +462,7 @@ export default function POSInterface({ transactions, onAddTransaction, onDeleteT
                                     layout
                                     initial={{ opacity: 0, scale: 0.9 }}
                                     animate={{ opacity: 1, scale: 1 }}
-                                    className={`glass-card p-0 overflow-hidden cursor-pointer group flex flex-col h-full relative ${selectedProducts.has(product.name) ? 'ring-2 ring-primary bg-primary/10' : ''}`}
+                                    className={`glass-card p-0 overflow-hidden cursor-pointer group flex flex-col min-h-[180px] sm:min-h-[220px] relative ${selectedProducts.has(product.name) ? 'ring-2 ring-primary bg-primary/10' : ''}`}
                                     onClick={() => {
                                         if (isSelectionMode) toggleSelection(product.name);
                                         else setActiveProduct(product);
@@ -494,7 +494,8 @@ export default function POSInterface({ transactions, onAddTransaction, onDeleteT
                                         </div>
                                     </div>
 
-                                    <div className="relative w-full overflow-hidden bg-slate-800" style={{ paddingBottom: '140%' }}>
+                                    {/* Robust Aspect Ratio Wrapper (Image Area ONLY) */}
+                                    <div className="relative w-full overflow-hidden bg-slate-800" style={{ paddingBottom: '120%' }}>
                                         <div className="absolute inset-0 flex flex-col">
                                             {product.imageUrl ? (
                                                 <img
@@ -510,7 +511,7 @@ export default function POSInterface({ transactions, onAddTransaction, onDeleteT
                                                     }}
                                                 />
                                             ) : (
-                                                <div className="w-full h-full flex flex-col items-center justify-center transition-colors"
+                                                <div className="w-full h-full flex flex-col items-center justify-center"
                                                     style={product.linkedColor ? {
                                                         backgroundColor:
                                                             product.linkedColor === 'White' ? '#f1f5f9' :
@@ -533,16 +534,7 @@ export default function POSInterface({ transactions, onAddTransaction, onDeleteT
                                             )}
 
                                             {/* Hidden Fallback for Error Case */}
-                                            <div className="fallback-placeholder hidden w-full h-full absolute inset-0 flex-col items-center justify-center transition-colors"
-                                                style={product.linkedColor ? {
-                                                    backgroundColor:
-                                                        product.linkedColor === 'White' ? '#f1f5f9' :
-                                                            product.linkedColor === 'Black' ? '#1e293b' :
-                                                                product.linkedColor === 'Kiwi' ? '#bef264' :
-                                                                    product.linkedColor === 'Cream' ? '#fef3c7' :
-                                                                        product.linkedColor === 'Baby Blue' ? '#bae6fd' : '#334155'
-                                                } : {}}
-                                            >
+                                            <div className="fallback-placeholder hidden w-full h-full absolute inset-0 flex-col items-center justify-center bg-slate-800">
                                                 <div className="flex flex-col items-center gap-2">
                                                     <Package size={24} className="opacity-50 text-slate-500" />
                                                     <span className="text-[10px] uppercase font-bold tracking-wider text-slate-500">Image Error</span>
@@ -551,14 +543,15 @@ export default function POSInterface({ transactions, onAddTransaction, onDeleteT
                                                     Uses: {product.linkedColor}
                                                 </div>
                                             </div>
-                                            {/* Fixed-height Info block at bottom of card */}
-                                            <div className="p-3 bg-white/5 border-t border-white/5 flex flex-col justify-center h-[70px] sm:h-[80px]">
-                                                <h3 className="font-semibold text-white leading-tight mb-1 line-clamp-1 text-xs sm:text-sm">{product.name}</h3>
-                                                <div className="flex justify-between items-center">
-                                                    <span className="text-primary font-bold text-xs sm:text-sm">₱{product.price}</span>
-                                                    <ArrowRightIcon className="text-white/20 group-hover:text-white transition-colors" size={14} />
-                                                </div>
-                                            </div>
+                                        </div>
+                                    </div>
+
+                                    {/* Info block (Outside Aspect Div = Intrinsic Height) */}
+                                    <div className="p-3 sm:p-4 flex flex-col flex-1 bg-white/5">
+                                        <h3 className="font-semibold text-white leading-tight mb-1 line-clamp-2 text-sm sm:text-base">{product.name}</h3>
+                                        <div className="mt-auto flex justify-between items-center pt-1">
+                                            <span className="text-primary font-bold text-sm sm:text-base">₱{product.price}</span>
+                                            <ArrowRightIcon className="text-white/20 group-hover:text-white transition-colors" size={14} />
                                         </div>
                                     </div>
 
