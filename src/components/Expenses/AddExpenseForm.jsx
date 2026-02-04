@@ -191,12 +191,15 @@ export default function AddExpenseForm({ onAddTransaction, onUpdateTransaction, 
                         />
                     </div>
 
-                                value={date}
-                                onChange={(e) => setDate(e.target.value)}
-                                className="glass-input appearance-none w-full"
-                                required
-                            />
-                        </div>
+                    <div className="space-y-2">
+                        <label className="text-sm text-slate-400">Date</label>
+                        <input
+                            type="date"
+                            value={date}
+                            onChange={(e) => setDate(e.target.value)}
+                            className="glass-input appearance-none w-full"
+                            required
+                        />
                     </div>
 
                     <div className="pt-2">
