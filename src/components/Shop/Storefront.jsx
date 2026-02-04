@@ -1,6 +1,6 @@
 import React, { useState, useMemo } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
-import { Component, Loader2, Upload, ShoppingCart, X, Plus, Minus, CheckCircle, Store, Search, Package } from 'lucide-react';
+import { Component, Loader2, Upload, ShoppingCart, X, Plus, Minus, CheckCircle, Store, Search, Package, Clock } from 'lucide-react';
 import { supabase } from '../../lib/supabaseClient';
 import { useProducts, useRawInventory } from '../../hooks/useInventory';
 import { useToast } from '../ui/Toast';
@@ -389,19 +389,28 @@ export default function Storefront({ transactions, onPlaceOrder }) {
                                         <input className="glass-input w-full py-3" placeholder="Street Address *" value={shippingAddress} onChange={e => setShippingAddress(e.target.value)} />
 
                                         {/* Region & City Selection */}
-                                        <div className="bg-white/5 p-3 rounded-xl border border-white/10 space-y-3">
-                                            <label className="text-xs text-slate-400 font-bold block">Shipping Area</label>
-                                            <div className="grid grid-cols-2 gap-2">
+                                        <div className="bg-white/5 p-4 rounded-xl border border-white/10 space-y-4">
+                                            <label className="text-xs text-slate-400 font-bold block uppercase tracking-wider">Shipping Area</label>
+
+                                            <div className="flex gap-3">
                                                 <button
                                                     onClick={() => { setCity(''); setShippingRegion('MM'); }}
-                                                    className={`py-2 px-3 rounded-lg text-sm font-bold transition-all ${shippingRegion === 'MM' ? 'bg-primary text-black' : 'bg-black/20 text-slate-400 hover:bg-white/10'}`}
+                                                    className={`flex-1 py-4 px-3 rounded-xl text-sm font-bold transition-all border-2 flex flex-col items-center gap-2 ${shippingRegion === 'MM'
+                                                            ? 'bg-primary/20 border-primary text-primary'
+                                                            : 'bg-black/40 border-white/5 text-slate-400 hover:border-white/20 hover:bg-white/5'
+                                                        }`}
                                                 >
+                                                    <span className="text-lg">🏙️</span>
                                                     Metro Manila
                                                 </button>
                                                 <button
                                                     onClick={() => { setCity(''); setShippingRegion('Provincial'); }}
-                                                    className={`py-2 px-3 rounded-lg text-sm font-bold transition-all ${shippingRegion === 'Provincial' ? 'bg-primary text-black' : 'bg-black/20 text-slate-400 hover:bg-white/10'}`}
+                                                    className={`flex-1 py-4 px-3 rounded-xl text-sm font-bold transition-all border-2 flex flex-col items-center gap-2 ${shippingRegion === 'Provincial'
+                                                            ? 'bg-amber-500/20 border-amber-500 text-amber-500'
+                                                            : 'bg-black/40 border-white/5 text-slate-400 hover:border-white/20 hover:bg-white/5'
+                                                        }`}
                                                 >
+                                                    <span className="text-lg">🏝️</span>
                                                     Outside MM
                                                 </button>
                                             </div>
@@ -415,13 +424,28 @@ export default function Storefront({ transactions, onPlaceOrder }) {
                                                 <input className="glass-input w-full py-3" placeholder="City / Municipality *" value={city} onChange={e => setCity(e.target.value)} />
                                             )}
 
-                                            <div className="flex items-start gap-2 text-xs text-slate-400 bg-black/20 p-2 rounded border border-white/5">
-                                                <Store size={14} className="shrink-0 mt-0.5" />
-                                                <p>
-                                                    {shippingRegion === 'MM'
-                                                        ? "Shipping via LBC or Lalamove: ₱100 (Shouldered by Buyer)"
-                                                        : "Shipping via LBC: ₱200 (Shouldered by Buyer)"}
-                                                </p>
+                                            <div className="space-y-3">
+                                                <div className="flex items-start gap-2 text-xs text-slate-300 bg-black/20 p-3 rounded-lg border border-white/5">
+                                                    <Store size={14} className="shrink-0 mt-0.5 text-primary" />
+                                                    <div>
+                                                        <p className="font-bold text-white mb-1">Standard Shipping: LBC</p>
+                                                        <p className="opacity-80">
+                                                            {shippingRegion === 'MM' ? "₱100 Fixed Rate" : "₱200 Fixed Rate"}
+                                                        </p>
+                                                        <p className="mt-1 text-[10px] text-slate-500 italic">
+                                                            *For other couriers (J&T, Lalamove), buyer shoulders the cost.
+                                                        </p>
+                                                    </div>
+                                                </div>
+
+                                                <div className="flex items-start gap-2 text-xs text-amber-200 bg-amber-500/10 p-3 rounded-lg border border-amber-500/20">
+                                                    <Clock size={14} className="shrink-0 mt-0.5" />
+                                                    <div>
+                                                        <p className="font-bold text-amber-400 mb-1">Shipping Schedule</p>
+                                                        <p>Cutoff: Every <span className="font-bold underline">Friday</span></p>
+                                                        <p>Shipping Day: Every <span className="font-bold underline">Saturday</span></p>
+                                                    </div>
+                                                </div>
                                             </div>
                                         </div>
 
