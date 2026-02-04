@@ -4,9 +4,9 @@ import { Component, Loader2, Upload, ShoppingCart, X, Plus, Minus, CheckCircle, 
 import { supabase } from '../../lib/supabaseClient';
 import { useProducts, useRawInventory } from '../../hooks/useInventory';
 import { useToast } from '../ui/Toast';
+import { getMMCities, getAllProvinces, getCitiesByProvince, getBarangays } from '../../lib/phLocations';
 
 const SIZES = ['XS', 'S', 'M', 'L', 'XL', '2XL', '3XL'];
-const MM_CITIES = ['Caloocan', 'Las Piñas', 'Makati', 'Malabon', 'Mandaluyong', 'Manila', 'Marikina', 'Muntinlupa', 'Navotas', 'Parañaque', 'Pasay', 'Pasig', 'Pateros', 'Quezon City', 'San Juan', 'Taguig', 'Valenzuela'];
 
 export default function Storefront({ transactions, onPlaceOrder }) {
     const { showToast } = useToast();
@@ -21,17 +21,79 @@ export default function Storefront({ transactions, onPlaceOrder }) {
     // Checkout State
     const [customerName, setCustomerName] = useState('');
     const [contactNumber, setContactNumber] = useState('');
-    const [shippingAddress, setShippingAddress] = useState('');
-    const [city, setCity] = useState('');
-    const [province, setProvince] = useState('');
-    const [zipCode, setZipCode] = useState('');
+    const [shippingAddress, setShippingAddress] = useState(''); // Street
+
+    // Address Selection State
     const [shippingRegion, setShippingRegion] = useState('MM');
+    const [province, setProvince] = useState(''); // Name
+    const [city, setCity] = useState(''); // Name
+    const [barangay, setBarangay] = useState(''); // Name
+
+    // Codes for fetching
+    const [provinceCode, setProvinceCode] = useState('');
+    const [cityCode, setCityCode] = useState('');
+
+    // Data Lists
+    const [provincesList, setProvincesList] = useState([]);
+    const [citiesList, setCitiesList] = useState([]);
+    const [barangaysList, setBarangaysList] = useState([]);
+
     const [paymentMode, setPaymentMode] = useState('COD');
     const [proofFile, setProofFile] = useState(null);
     const [proofUrl, setProofUrl] = useState('');
     const [uploadingProof, setUploadingProof] = useState(false);
     const [checkoutLoading, setCheckoutLoading] = useState(false);
     const [orderComplete, setOrderComplete] = useState(false);
+
+    // Initial Fetch for Provinces & MM Cities
+    React.useEffect(() => {
+        const loadInitialData = async () => {
+            if (shippingRegion === 'MM') {
+                const mmCities = await getMMCities();
+                setCitiesList(mmCities);
+                setProvincesList([]);
+                setProvince('Metro Manila');
+            } else {
+                const provs = await getAllProvinces();
+                setProvincesList(provs);
+                setCitiesList([]);
+                setProvince('');
+            }
+            // Reset lower fields
+            setCity('');
+            setCityCode('');
+            setBarangay('');
+            setBarangaysList([]);
+        };
+        loadInitialData();
+    }, [shippingRegion]);
+
+    // Fetch Cities when Province Changes (Provincial only)
+    React.useEffect(() => {
+        if (shippingRegion === 'Provincial' && provinceCode) {
+            const loadCities = async () => {
+                const cities = await getCitiesByProvince(provinceCode);
+                setCitiesList(cities);
+                setCity('');
+                setCityCode('');
+                setBarangay('');
+                setBarangaysList([]);
+            };
+            loadCities();
+        }
+    }, [provinceCode, shippingRegion]);
+
+    // Fetch Barangays when City Changes
+    React.useEffect(() => {
+        if (cityCode) {
+            const loadBarangays = async () => {
+                const bgs = await getBarangays(cityCode);
+                setBarangaysList(bgs);
+                setBarangay('');
+            };
+            loadBarangays();
+        }
+    }, [cityCode]);
 
     const filteredProducts = products.filter(p => p.name.toLowerCase().includes(searchTerm.toLowerCase()));
 
@@ -95,7 +157,7 @@ export default function Storefront({ transactions, onPlaceOrder }) {
 
     const handleCheckout = async () => {
         if (!customerName) return showToast('Please enter your name', 'error');
-        if (!shippingAddress || !city || !province || !contactNumber) return showToast('Please complete shipping details', 'error');
+        if (!shippingAddress || !city || (shippingRegion === 'Provincial' && !province) || !barangay || !contactNumber) return showToast('Please complete shipping details', 'error');
 
         // Payment Validation
         const requiresProof = ['Gcash', 'Bank Transfer'].includes(paymentMode);
@@ -133,7 +195,8 @@ export default function Storefront({ transactions, onPlaceOrder }) {
                         address: shippingAddress,
                         city,
                         province,
-                        zipCode,
+                        barangay,
+                        // zipCode, // Removed
                         contactNumber,
                         region: shippingRegion,
                         shippingFee
@@ -394,20 +457,20 @@ export default function Storefront({ transactions, onPlaceOrder }) {
 
                                             <div className="flex gap-3">
                                                 <button
-                                                    onClick={() => { setCity(''); setShippingRegion('MM'); }}
+                                                    onClick={() => setShippingRegion('MM')}
                                                     className={`flex-1 py-4 px-3 rounded-xl text-sm font-bold transition-all border-2 flex flex-col items-center gap-2 ${shippingRegion === 'MM'
-                                                            ? 'bg-primary/20 border-primary text-primary'
-                                                            : 'bg-black/40 border-white/5 text-slate-400 hover:border-white/20 hover:bg-white/5'
+                                                        ? 'bg-primary/20 border-primary text-primary'
+                                                        : 'bg-black/40 border-white/5 text-slate-400 hover:border-white/20 hover:bg-white/5'
                                                         }`}
                                                 >
                                                     <span className="text-lg">🏙️</span>
                                                     Metro Manila
                                                 </button>
                                                 <button
-                                                    onClick={() => { setCity(''); setShippingRegion('Provincial'); }}
+                                                    onClick={() => setShippingRegion('Provincial')}
                                                     className={`flex-1 py-4 px-3 rounded-xl text-sm font-bold transition-all border-2 flex flex-col items-center gap-2 ${shippingRegion === 'Provincial'
-                                                            ? 'bg-amber-500/20 border-amber-500 text-amber-500'
-                                                            : 'bg-black/40 border-white/5 text-slate-400 hover:border-white/20 hover:bg-white/5'
+                                                        ? 'bg-amber-500/20 border-amber-500 text-amber-500'
+                                                        : 'bg-black/40 border-white/5 text-slate-400 hover:border-white/20 hover:bg-white/5'
                                                         }`}
                                                 >
                                                     <span className="text-lg">🏝️</span>
@@ -415,14 +478,58 @@ export default function Storefront({ transactions, onPlaceOrder }) {
                                                 </button>
                                             </div>
 
-                                            {shippingRegion === 'MM' ? (
-                                                <select className="glass-input w-full py-3" value={city} onChange={e => setCity(e.target.value)}>
-                                                    <option value="" disabled>Select City *</option>
-                                                    {MM_CITIES.map(c => <option key={c} value={c} className="bg-slate-900">{c}</option>)}
-                                                </select>
-                                            ) : (
-                                                <input className="glass-input w-full py-3" placeholder="City / Municipality *" value={city} onChange={e => setCity(e.target.value)} />
-                                            )}
+                                            {/* Dynamic Address Selectors */}
+                                            <div className="space-y-3">
+                                                {shippingRegion === 'Provincial' && (
+                                                    <div className="space-y-1">
+                                                        <label className="text-xs text-slate-500 ml-1">Province</label>
+                                                        <select
+                                                            className="glass-input w-full py-3"
+                                                            value={provinceCode}
+                                                            onChange={e => {
+                                                                const code = e.target.value;
+                                                                const name = e.target.options[e.target.selectedIndex].text;
+                                                                setProvinceCode(code);
+                                                                setProvince(name);
+                                                            }}
+                                                        >
+                                                            <option value="" disabled>Select Province *</option>
+                                                            {provincesList.map(p => <option key={p.code} value={p.code} className="bg-slate-900">{p.name}</option>)}
+                                                        </select>
+                                                    </div>
+                                                )}
+
+                                                <div className="space-y-1">
+                                                    <label className="text-xs text-slate-500 ml-1">City / Municipality</label>
+                                                    <select
+                                                        className="glass-input w-full py-3"
+                                                        value={cityCode}
+                                                        onChange={e => {
+                                                            const code = e.target.value;
+                                                            const name = e.target.options[e.target.selectedIndex].text;
+                                                            setCityCode(code);
+                                                            setCity(name);
+                                                        }}
+                                                        disabled={!citiesList.length}
+                                                    >
+                                                        <option value="" disabled>Select City *</option>
+                                                        {citiesList.map(c => <option key={c.code} value={c.code} className="bg-slate-900">{c.name}</option>)}
+                                                    </select>
+                                                </div>
+
+                                                <div className="space-y-1">
+                                                    <label className="text-xs text-slate-500 ml-1">Barangay</label>
+                                                    <select
+                                                        className="glass-input w-full py-3"
+                                                        value={barangay}
+                                                        onChange={e => setBarangay(e.target.value)}
+                                                        disabled={!barangaysList.length}
+                                                    >
+                                                        <option value="" disabled>Select Barangay *</option>
+                                                        {barangaysList.map(b => <option key={b.code} value={b.name} className="bg-slate-900">{b.name}</option>)}
+                                                    </select>
+                                                </div>
+                                            </div>
 
                                             <div className="space-y-3">
                                                 <div className="flex items-start gap-2 text-xs text-slate-300 bg-black/20 p-3 rounded-lg border border-white/5">
@@ -447,11 +554,6 @@ export default function Storefront({ transactions, onPlaceOrder }) {
                                                     </div>
                                                 </div>
                                             </div>
-                                        </div>
-
-                                        <div className="grid grid-cols-2 gap-3">
-                                            <input className="glass-input w-full py-3" placeholder="Province *" value={province} onChange={e => setProvince(e.target.value)} />
-                                            <input className="glass-input w-full py-3" placeholder="Zip Code" value={zipCode} onChange={e => setZipCode(e.target.value)} />
                                         </div>
 
                                         <h3 className="text-sm font-bold text-slate-400 uppercase tracking-wider mb-2 mt-4">Payment</h3>
