@@ -128,6 +128,13 @@ export default function OrderManagement({ transactions, onAddTransaction, onDele
             const order = groupedOrders.find(o => o.id === orderId);
             if (!order) throw new Error("Order not found");
 
+            const [y, m, d] = editForm.date.split('-').map(Number);
+            const newDate = new Date();
+            newDate.setFullYear(y);
+            newDate.setMonth(m - 1);
+            newDate.setDate(d);
+            const isoDate = newDate.toISOString();
+
             const updates = order.items.map(async (t) => {
                 const updatedDetails = {
                     ...t.details,
@@ -146,7 +153,7 @@ export default function OrderManagement({ transactions, onAddTransaction, onDele
                     .update({
                         details: updatedDetails,
                         description: t.description.replace(t.details.customerName, editForm.customerName),
-                        date: new Date(`${editForm.date}T${new Date().toTimeString().split(' ')[0]}`).toISOString() // Explicit Time (Now)
+                        date: isoDate // Explicit Time (Now)
                     })
                     .eq('id', t.id);
                 if (error) throw error;

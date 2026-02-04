@@ -63,10 +63,12 @@ export default function AddExpenseForm({ onAddTransaction, onUpdateTransaction, 
         try {
             const finalCategory = category === 'Other' ? customCategory : category;
 
-            // Combine selected date with current time
-            const now = new Date();
-            const timeString = now.toTimeString().split(' ')[0]; // HH:MM:SS
-            const dateTimeString = `${date}T${timeString}`;
+            // Combine selected date with current time (Robust Method)
+            const [y, m, d] = date.split('-').map(Number);
+            const newDate = new Date(); // Current time capture
+            newDate.setFullYear(y);
+            newDate.setMonth(m - 1);
+            newDate.setDate(d);
 
             // Check if user is logged in
             const { data: { user } } = await supabase.auth.getUser();
@@ -77,7 +79,7 @@ export default function AddExpenseForm({ onAddTransaction, onUpdateTransaction, 
                     amount: parseFloat(amount),
                     description: description || `Expense: ${finalCategory}`,
                     category: 'general', // Schema uses general? Or the actual category? Existing code uses 'general' and details.subCategory
-                    date: new Date(dateTimeString).toISOString(),
+                    date: newDate.toISOString(),
                     details: {
                         ...initialData.details,
                         subCategory: finalCategory,
@@ -97,7 +99,7 @@ export default function AddExpenseForm({ onAddTransaction, onUpdateTransaction, 
                     amount: parseFloat(amount),
                     description: description || `Expense: ${finalCategory}`,
                     category: 'general',
-                    date: new Date(dateTimeString).toISOString(),
+                    date: newDate.toISOString(),
                     details: {
                         subCategory: finalCategory,
                         isGeneral: true,

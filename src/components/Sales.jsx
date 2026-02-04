@@ -17,8 +17,14 @@ const EditSaleModal = ({ transaction, onUpdate, onClose }) => {
         e.preventDefault();
         setLoading(true);
         try {
+            const [y, m, d] = date.split('-').map(Number);
+            const newDate = new Date();
+            newDate.setFullYear(y);
+            newDate.setMonth(m - 1);
+            newDate.setDate(d);
+
             await onUpdate(transaction.id, {
-                date: new Date(`${date}T${new Date().toTimeString().split(' ')[0]}`).toISOString(),
+                date: newDate.toISOString(),
                 amount: parseFloat(amount),
                 description
             });
