@@ -4,11 +4,7 @@ import { motion, AnimatePresence } from 'framer-motion';
 import { Lock, Loader2, User, Delete, KeyRound, ArrowLeft, LogOut } from 'lucide-react';
 import { useToast } from '../ui/Toast';
 
-const ADMIN_ACCOUNTS = [
-    { name: 'Manager', email: 'manager@sportstech.com' },
-    { name: 'Admin 2', email: 'admin2@sportstech.com' },
-    { name: 'Pia', email: 'pia.justine@gmail.com' }
-];
+import { ADMIN_ACCOUNTS } from '../../config/admins';
 
 export default function Login({ unlockMode = false, user = null, onUnlock, onLogout }) {
     const { showToast } = useToast();
