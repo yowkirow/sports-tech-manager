@@ -4,7 +4,10 @@ import { motion } from 'framer-motion';
 import { Lock, Loader2, User, ChevronRight, Delete } from 'lucide-react';
 import { useToast } from '../ui/Toast';
 
-const SYSTEM_EMAIL = 'manager@sportstech.com'; // Fixed system email
+const ADMIN_EMAILS = [
+    'manager@sportstech.com',
+    'admin2@sportstech.com'
+];
 
 export default function Login() {
     const { showToast } = useToast();
@@ -27,11 +30,22 @@ export default function Login() {
 
         setLoading(true);
         try {
-            const { error } = await supabase.auth.signInWithPassword({
-                email: SYSTEM_EMAIL,
-                password: pin,
-            });
-            if (error) throw error;
+            // Try each admin email with the provided PIN
+            let success = false;
+            for (const email of ADMIN_EMAILS) {
+                const { error } = await supabase.auth.signInWithPassword({
+                    email,
+                    password: pin, // PIN acts as password
+                });
+
+                if (!error) {
+                    success = true;
+                    break;
+                }
+            }
+
+            if (!success) throw new Error('Invalid PIN');
+
             showToast('Welcome back!', 'success');
         } catch (error) {
             console.error(error);
@@ -130,8 +144,8 @@ export default function Login() {
                     </div>
                 )}
 
-                <p className="text-xs text-slate-500 mt-4 text-center">
-                    Using system account: <br /> manager@sportstech.com
+                <p className="text-xs text-slate-500 mt-4 text-center opacity-0 hover:opacity-100 transition-opacity">
+                    System Accounts: <br /> manager@sportstech.com<br />admin2@sportstech.com
                 </p>
 
             </motion.div>
