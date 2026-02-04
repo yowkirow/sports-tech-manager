@@ -150,6 +150,8 @@ function App() {
                     <NavItem id="inventory" label="Inventory" icon={ShoppingBag} />
                     <NavItem id="vouchers" label="Vouchers" icon={Ticket} />
                     <NavItem id="dashboard" label="Dashboard" icon={LayoutDashboard} />
+                    <div className="border-t border-white/5 my-2 mx-4"></div>
+                    <NavItem id="settings" label="Settings" icon={SettingsIcon} />
                 </nav>
 
                 <div className="p-4 border-t border-white/5 space-y-2">
