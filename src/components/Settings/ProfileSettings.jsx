@@ -139,17 +139,44 @@ export default function ProfileSettings({ user, onLogout }) {
                                 />
                             </div>
                         </div>
+
+                        {/* Sync Checkbox */}
+                        <div className="flex items-start gap-2 p-3 rounded-lg bg-orange-500/10 border border-orange-500/20">
+                            <input
+                                type="checkbox"
+                                id="syncPassword"
+                                className="mt-1"
+                                defaultChecked={true}
+                                onChange={(e) => {
+                                    // Make this accessible to the save handler
+                                    window.syncPassword = e.target.checked;
+                                }}
+                            />
+                            <label htmlFor="syncPassword" className="text-sm text-orange-200 cursor-pointer">
+                                <strong>Also use as Login Password</strong>
+                                <p className="text-xs text-orange-200/70 mt-0.5">Check this if you want to use this PIN to log in from the main screen.</p>
+                            </label>
+                        </div>
+
                         <div className="pt-2">
                             <button
                                 onClick={async () => {
                                     if (newPin.length < 4) return showToast('PIN must be at least 4 digits', 'error');
                                     setLoading(true);
                                     try {
-                                        const { error } = await supabase.auth.updateUser({
+                                        const updates = {
                                             data: { pos_pin: newPin }
-                                        });
+                                        };
+                                        const sync = document.getElementById('syncPassword')?.checked;
+
+                                        if (sync) {
+                                            updates.password = newPin;
+                                        }
+
+                                        const { error } = await supabase.auth.updateUser(updates);
+
                                         if (error) throw error;
-                                        showToast('Quick PIN updated!', 'success');
+                                        showToast(sync ? 'PIN & Password updated!' : 'Quick PIN updated!', 'success');
                                         setNewPin('');
                                     } catch (err) {
                                         console.error(err);
@@ -161,7 +188,7 @@ export default function ProfileSettings({ user, onLogout }) {
                                 disabled={loading}
                                 className="btn-primary w-full bg-gradient-to-r from-purple-600 to-indigo-600"
                             >
-                                <Save size={18} /> Save Quick PIN
+                                <Save size={18} /> Save PIN
                             </button>
                         </div>
                     </div>
