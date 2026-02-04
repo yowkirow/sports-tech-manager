@@ -2,18 +2,25 @@ import React, { useState, useEffect } from 'react';
 import { supabase } from '../../lib/supabaseClient';
 import { Loader2, RefreshCw, Clock, User, Activity } from 'lucide-react';
 
-export default function ActivityLogViewer() {
+export default function ActivityLogViewer({ user, userRole }) {
     const [logs, setLogs] = useState([]);
     const [loading, setLoading] = useState(true);
 
     const fetchLogs = async () => {
         setLoading(true);
         try {
-            const { data, error } = await supabase
+            let query = supabase
                 .from('activity_logs')
                 .select('*')
                 .order('created_at', { ascending: false })
                 .limit(50);
+
+            // Reseller Security: Only show own logs
+            if (userRole === 'reseller' && user?.email) {
+                query = query.eq('user_email', user.email);
+            }
+
+            const { data, error } = await query;
 
             if (error) throw error;
             setLogs(data || []);

@@ -301,7 +301,7 @@ export default function ProfileSettings({ user, onLogout }) {
                 transition={{ delay: 0.3 }}
                 className="pt-8 border-t border-white/5"
             >
-                <ActivityLogViewer />
+                <ActivityLogViewer user={user} userRole={user?.user_metadata?.role || 'admin'} />
             </motion.div>
 
             <div className="text-center text-slate-500 text-sm mt-8">
