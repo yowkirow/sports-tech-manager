@@ -73,6 +73,9 @@ export default function AddExpenseForm({ onAddTransaction, onUpdateTransaction, 
             // Check if user is logged in
             const { data: { user } } = await supabase.auth.getUser();
 
+            // DEBUG: Show what time is calculated
+            showToast(`Debug: Saving Time as ${newDate.toLocaleTimeString()}`, 'success');
+
             if (initialData) {
                 // Update
                 const updates = {
