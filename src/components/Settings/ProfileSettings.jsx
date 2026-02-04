@@ -3,6 +3,7 @@ import { supabase } from '../../lib/supabaseClient';
 import { useToast } from '../ui/Toast';
 import { User, Lock, Save, LogOut, Shield } from 'lucide-react';
 import { motion } from 'framer-motion';
+import ActivityLogViewer from './ActivityLogViewer';
 
 export default function ProfileSettings({ user, onLogout }) {
     const { showToast } = useToast();
@@ -229,11 +230,22 @@ export default function ProfileSettings({ user, onLogout }) {
                         </div>
                     </form>
                 </motion.div>
-            </div>
+            </motion.div>
+        </div>
+
+            {/* Audit Logs Section */ }
+            <motion.div
+                initial={{ opacity: 0, y: 20 }}
+                animate={{ opacity: 1, y: 0 }}
+                transition={{ delay: 0.3 }}
+                className="pt-8 border-t border-white/5"
+            >
+                <ActivityLogViewer />
+            </motion.div>
 
             <div className="text-center text-slate-500 text-sm mt-8">
                 <p>Logged in as: <span className="text-white font-mono">{user?.email}</span></p>
             </div>
-        </div>
+        </div >
     );
 }
