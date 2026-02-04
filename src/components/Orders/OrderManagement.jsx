@@ -416,7 +416,7 @@ export default function OrderManagement({ transactions, onAddTransaction, onDele
                                     </div>
 
                                     <div className="flex items-center gap-3 text-slate-400 text-xs">
-                                        <span>{new Date(order.date).toLocaleDateString()}</span>
+                                        <span>{new Date(order.date).toLocaleString('en-US', { month: 'short', day: 'numeric', year: 'numeric', hour: '2-digit', minute: '2-digit' })}</span>
                                         <span>•</span>
                                         <span>{order.items.length} Items</span>
                                         <span>•</span>
