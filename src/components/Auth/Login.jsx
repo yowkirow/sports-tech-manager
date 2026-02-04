@@ -152,8 +152,8 @@ export default function Login({ unlockMode = false, user = null, onUnlock, onLog
                                 {ADMIN_ACCOUNTS.map(acc => (
                                     <button
                                         key={acc.email}
-                                        onClick={() => setSelectedEmail(acc.email)}
-                                        className={`p-3 rounded-xl border text-sm font-medium transition-all ${selectedEmail === acc.email
+                                        onClick={() => setEmail(acc.email)}
+                                        className={`p-3 rounded-xl border text-sm font-medium transition-all ${email === acc.email
                                             ? 'bg-primary text-white border-primary shadow-lg shadow-primary/20'
                                             : 'bg-white/5 text-slate-400 border-white/10 hover:bg-white/10'
                                             }`}
@@ -165,6 +165,20 @@ export default function Login({ unlockMode = false, user = null, onUnlock, onLog
 
                             <form onSubmit={handlePasswordLogin} className="space-y-4">
                                 <div>
+                                    <label className="text-xs font-bold text-slate-500 uppercase block mb-1.5">Email Address</label>
+                                    <div className="relative">
+                                        <User className="absolute left-3 top-1/2 -translate-y-1/2 text-slate-500" size={18} />
+                                        <input
+                                            type="email"
+                                            value={email}
+                                            onChange={e => setEmail(e.target.value)}
+                                            className="glass-input pl-10 w-full"
+                                            placeholder="admin@sportstech.com"
+                                            autoFocus
+                                        />
+                                    </div>
+                                </div>
+                                <div>
                                     <label className="text-xs font-bold text-slate-500 uppercase block mb-1.5">Password</label>
                                     <div className="relative">
                                         <Lock className="absolute left-3 top-1/2 -translate-y-1/2 text-slate-500" size={18} />
@@ -174,7 +188,6 @@ export default function Login({ unlockMode = false, user = null, onUnlock, onLog
                                             onChange={e => setPassword(e.target.value)}
                                             className="glass-input pl-10 w-full"
                                             placeholder="••••••••"
-                                            autoFocus
                                         />
                                     </div>
                                 </div>
