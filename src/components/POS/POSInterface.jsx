@@ -494,7 +494,7 @@ export default function POSInterface({ transactions, onAddTransaction, onDeleteT
                                         </div>
                                     </div>
 
-                                    <div className="aspect-[4/5] bg-black/20 relative w-full overflow-hidden">
+                                    <div className="aspect-[4/5] bg-slate-800 relative w-full overflow-hidden" style={{ aspectRatio: '0.8' }}>
                                         {product.imageUrl ? (
                                             <img
                                                 src={product.imageUrl}
@@ -508,10 +508,32 @@ export default function POSInterface({ transactions, onAddTransaction, onDeleteT
                                                 }}
                                             />
                                         ) : null}
-                                        {/* Fallback - RED if error (url exists), GRAY if no url */}
-                                        <div className={`w-full h-full flex items-center justify-center ${product.imageUrl ? 'text-red-500 bg-red-500/10' : 'text-slate-600'} ${product.imageUrl ? 'hidden' : 'flex'}`}>
-                                            <Package size={32} />
-                                            {product.imageUrl && <span className="text-[10px] absolute bottom-8">Failed Load</span>}
+
+                                        {/* Fallback / Placeholder */}
+                                        <div className={`w-full h-full flex flex-col items-center justify-center transition-colors ${product.imageUrl ? 'hidden bg-red-500/10 text-red-400' : 'flex'}`}
+                                            style={!product.imageUrl && product.linkedColor ? {
+                                                backgroundColor:
+                                                    product.linkedColor === 'White' ? '#f1f5f9' :
+                                                        product.linkedColor === 'Black' ? '#1e293b' :
+                                                            product.linkedColor === 'Kiwi' ? '#bef264' :
+                                                                product.linkedColor === 'Cream' ? '#fef3c7' :
+                                                                    product.linkedColor === 'Baby Blue' ? '#bae6fd' : '#334155'
+                                            } : {}}
+                                        >
+                                            {!product.imageUrl && product.linkedColor ? (
+                                                // Shirt Placeholder
+                                                <div className="opacity-50 transform group-hover:scale-110 transition-transform duration-500">
+                                                    <svg width="80" height="80" viewBox="0 0 24 24" fill={product.linkedColor === 'Black' ? 'rgba(255,255,255,0.2)' : 'rgba(0,0,0,0.2)'} xmlns="http://www.w3.org/2000/svg">
+                                                        <path d="M20.38 3.46L16 2L13 3L12 3L11 3L8 2L3.62 3.46C3.2 3.6 2.93 4.02 2.98 4.45L3.81 11.36C3.86 11.41 3.91 11.45 3.97 11.5L6.61 13.56C7.03 13.96 7.74 13.91 8.1 13.43L9.17 12H9.27C9.27 12 14.83 12 14.83 12H14.93L16 13.43C16.36 13.91 17.07 13.95 17.49 13.56L20.13 11.5C20.19 11.45 20.24 11.41 20.29 11.36L21.12 4.45C21.17 4.02 20.9 3.6 20.48 3.46H20.38ZM17 11L14 11V21C14 21.55 13.55 22 13 22H11C10.45 22 10 21.55 10 21V11L7 11L6.72 5L9 5L12 5L15 5L17.28 5L17 11Z" />
+                                                    </svg>
+                                                </div>
+                                            ) : (
+                                                // Generic Error/Empty
+                                                <div className="flex flex-col items-center gap-2">
+                                                    <Package size={32} className="opacity-50" />
+                                                    {product.imageUrl && <span className="text-[10px] uppercase font-bold tracking-wider">Failed Load</span>}
+                                                </div>
+                                            )}
                                         </div>
 
                                         <div className="absolute bottom-2 left-2 bg-black/60 px-2 py-1 rounded text-[10px] text-white backdrop-blur-md">
@@ -828,34 +850,32 @@ const CartContent = ({
                         ))}
                     </select>
                 </div>
-                <div className="grid grid-cols-2 gap-4">
-                    <div>
-                        <label className="text-xs text-slate-500 mb-1 block">Payment Status</label>
+                <div>
+                    <label className="text-xs text-slate-500 mb-1 block">Payment Status</label>
+                    <select
+                        className="glass-input py-2 text-sm w-full capitalize"
+                        value={paymentStatus}
+                        onChange={e => setPaymentStatus(e.target.value)}
+                    >
+                        {['unpaid', 'paid'].map(s => (
+                            <option key={s} value={s} className="bg-slate-900">{s}</option>
+                        ))}
+                    </select>
+                </div>
+                {!isReseller && (
+                    <div className="col-span-2">
+                        <label className="text-xs text-slate-500 mb-1 block">Fulfillment</label>
                         <select
                             className="glass-input py-2 text-sm w-full capitalize"
-                            value={paymentStatus}
-                            onChange={e => setPaymentStatus(e.target.value)}
+                            value={fulfillmentStatus}
+                            onChange={e => setFulfillmentStatus(e.target.value)}
                         >
-                            {['unpaid', 'paid'].map(s => (
-                                <option key={s} value={s} className="bg-slate-900">{s}</option>
+                            {['pending', 'in_progress', 'ready', 'shipped'].map(s => (
+                                <option key={s} value={s} className="bg-slate-900">{s.replace('_', ' ')}</option>
                             ))}
                         </select>
                     </div>
-                    {!isReseller && (
-                        <div>
-                            <label className="text-xs text-slate-500 mb-1 block">Fulfillment</label>
-                            <select
-                                className="glass-input py-2 text-sm w-full capitalize"
-                                value={fulfillmentStatus}
-                                onChange={e => setFulfillmentStatus(e.target.value)}
-                            >
-                                {['pending', 'in_progress', 'ready', 'shipped'].map(s => (
-                                    <option key={s} value={s} className="bg-slate-900">{s.replace('_', ' ')}</option>
-                                ))}
-                            </select>
-                        </div>
-                    )}
-                </div>
+                )}
             </div>
 
             <button onClick={handleCheckout} disabled={checkoutLoading || cart.length === 0} className="btn-primary w-full py-4 text-lg">
