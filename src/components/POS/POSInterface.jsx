@@ -153,6 +153,8 @@ export default function POSInterface({ transactions, onAddTransaction, onDeleteT
             const orderId = crypto.randomUUID();
             const totalAmount = cart.reduce((sum, item) => sum + (item.price * item.quantity), 0);
 
+            const { data: { user } } = await supabase.auth.getUser();
+
             for (const item of cart) {
                 const isShirt = !!item.linkedColor;
                 const transaction = {
@@ -169,6 +171,7 @@ export default function POSInterface({ transactions, onAddTransaction, onDeleteT
                         paymentStatus,
                         status: fulfillmentStatus, // Legacy support
                         paymentMode,
+                        createdBy: user?.email || 'Unknown',
                         quantity: item.quantity,
                         itemName: item.name,
                         price: item.price,

@@ -1,5 +1,5 @@
 import React, { useState, useMemo } from 'react';
-import { Search, Trash2, Calendar, DollarSign, Filter, Plus } from 'lucide-react';
+import { Search, Trash2, Calendar, DollarSign, Filter, Plus, User } from 'lucide-react';
 import clsx from 'clsx';
 import { createPortal } from 'react-dom';
 import AddExpenseForm from './Expenses/AddExpenseForm';
@@ -104,7 +104,14 @@ const Expenses = ({ transactions, onDeleteTransaction, onAddTransaction }) => {
                                     <tr key={t.id} className="border-b border-white/5 hover:bg-white/5 transition-colors group">
                                         <td className="p-4 text-slate-200 font-medium">
                                             {t.description}
-                                            {t.details?.quantity && <span className="text-xs text-slate-500 block">QTY: {t.details.quantity}</span>}
+                                            <div className="flex items-center gap-2 mt-1">
+                                                {t.details?.quantity && <span className="text-xs text-slate-500">QTY: {t.details.quantity}</span>}
+                                                {t.details?.createdBy && (
+                                                    <span className="text-[10px] bg-white/10 px-1.5 py-0.5 rounded text-slate-400 flex items-center gap-1">
+                                                        <User size={10} /> {t.details.createdBy.split('@')[0]}
+                                                    </span>
+                                                )}
+                                            </div>
                                         </td>
                                         <td className="p-4">
                                             <span className={clsx(

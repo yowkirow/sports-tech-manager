@@ -4,6 +4,7 @@ import { Plus, Loader2, X } from 'lucide-react';
 import { motion, AnimatePresence } from 'framer-motion';
 
 import { useActivityLog } from '../../hooks/useActivityLog';
+import { supabase } from '../../lib/supabaseClient';
 
 const SIZES = ['XS', 'S', 'M', 'L', 'XL', '2XL', '3XL'];
 const COLORS = ['White', 'Black', 'Kiwi', 'Cream', 'Baby Blue'];
@@ -41,10 +42,12 @@ export default function AddStockForm({ onAddTransaction, onClose }) {
 
         try {
             const finalCost = parseFloat(cost) || 0; // Allow 0 cost
+            const { data: { user } } = await supabase.auth.getUser();
 
             // 1. Construct Details
             let details = {
-                quantity: parseInt(quantity)
+                quantity: parseInt(quantity),
+                createdBy: user?.email || 'Unknown'
             };
 
             if (category === 'blanks') {

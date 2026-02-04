@@ -423,6 +423,14 @@ export default function OrderManagement({ transactions, onAddTransaction, onDele
                                         <span className="text-primary flex items-center gap-1">
                                             <Banknote size={12} /> {order.paymentMode}
                                         </span>
+                                        {order.items[0]?.details?.createdBy && (
+                                            <>
+                                                <span>•</span>
+                                                <span className="flex items-center gap-1 text-slate-500">
+                                                    <User size={12} /> {order.items[0].details.createdBy.split('@')[0]}
+                                                </span>
+                                            </>
+                                        )}
                                     </div>
                                 </div>
 

@@ -1,4 +1,18 @@
+import React, { useState } from 'react';
+import { useToast } from '../ui/Toast';
+import { Plus, Loader2, X } from 'lucide-react';
 import { useActivityLog } from '../../hooks/useActivityLog';
+import { supabase } from '../../lib/supabaseClient';
+
+const EXPENSE_CATEGORIES = [
+    'Rent',
+    'Utilities',
+    'Marketing/Ads',
+    'Packaging',
+    'Software/Subscriptions',
+    'Transportation',
+    'Other'
+];
 
 export default function AddExpenseForm({ onAddTransaction, onClose }) {
     const { showToast } = useToast();
@@ -23,6 +37,8 @@ export default function AddExpenseForm({ onAddTransaction, onClose }) {
             const timeString = now.toTimeString().split(' ')[0]; // HH:MM:SS
             const dateTimeString = `${date}T${timeString}`;
 
+            const { data: { user } } = await supabase.auth.getUser();
+
             const newTransaction = {
                 id: crypto.randomUUID(),
                 type: 'expense',
@@ -32,7 +48,8 @@ export default function AddExpenseForm({ onAddTransaction, onClose }) {
                 date: new Date(dateTimeString).toISOString(),
                 details: {
                     subCategory: finalCategory,
-                    isGeneral: true
+                    isGeneral: true,
+                    createdBy: user?.email || 'Unknown'
                 }
             };
 
