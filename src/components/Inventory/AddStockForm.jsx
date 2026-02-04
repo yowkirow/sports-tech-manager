@@ -3,11 +3,14 @@ import { useToast } from '../ui/Toast';
 import { Plus, Loader2, X } from 'lucide-react';
 import { motion, AnimatePresence } from 'framer-motion';
 
+import { useActivityLog } from '../../hooks/useActivityLog';
+
 const SIZES = ['XS', 'S', 'M', 'L', 'XL', '2XL', '3XL'];
 const COLORS = ['White', 'Black', 'Kiwi', 'Cream', 'Baby Blue'];
 
 export default function AddStockForm({ onAddTransaction, onClose }) {
     const { showToast } = useToast();
+    const { logActivity } = useActivityLog();
 
     const [loading, setLoading] = useState(false);
 
@@ -62,6 +65,13 @@ export default function AddStockForm({ onAddTransaction, onClose }) {
             };
 
             await onAddTransaction(newTransaction);
+
+            // Log Activity
+            await logActivity('Add Inventory', {
+                item: newTransaction.description,
+                quantity: details.quantity,
+                cost: finalCost
+            }, newTransaction.id);
 
             // Reset Form or Close
             // If we want to keep adding, we reset. But closing is also fine. 

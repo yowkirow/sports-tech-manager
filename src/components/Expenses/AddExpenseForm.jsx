@@ -1,19 +1,8 @@
-import React, { useState } from 'react';
-import { useToast } from '../ui/Toast';
-import { Plus, Loader2, X } from 'lucide-react';
-
-const EXPENSE_CATEGORIES = [
-    'Rent',
-    'Utilities',
-    'Marketing/Ads',
-    'Packaging',
-    'Software/Subscriptions',
-    'Transportation',
-    'Other'
-];
+import { useActivityLog } from '../../hooks/useActivityLog';
 
 export default function AddExpenseForm({ onAddTransaction, onClose }) {
     const { showToast } = useToast();
+    const { logActivity } = useActivityLog();
     const [loading, setLoading] = useState(false);
 
     const [description, setDescription] = useState('');
@@ -48,6 +37,14 @@ export default function AddExpenseForm({ onAddTransaction, onClose }) {
             };
 
             await onAddTransaction(newTransaction);
+
+            // Log Activity
+            await logActivity('Add Expense', {
+                amount: newTransaction.amount,
+                category: finalCategory,
+                description: newTransaction.description
+            }, newTransaction.id);
+
             showToast('Expense recorded', 'success');
             onClose();
 

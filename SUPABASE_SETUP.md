@@ -76,3 +76,27 @@ INSERT INTO admin_directory (email, name) VALUES
 ('admin2@sportstech.com', 'Admin 2'),
 ('pia.justine@gmail.com', 'Pia');
 ```
+
+## Create the Activity Logs Table
+
+To track user actions (Audit Trail), run this SQL:
+
+```sql
+CREATE TABLE activity_logs (
+  id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+  created_at TIMESTAMP WITH TIME ZONE DEFAULT NOW(),
+  user_email TEXT NOT NULL,
+  action TEXT NOT NULL,
+  details TEXT, -- Optional description or JSON
+  entity_id TEXT -- Optional specific ID involved (e.g. Order ID)
+);
+
+-- Enable RLS
+ALTER TABLE activity_logs ENABLE ROW LEVEL SECURITY;
+
+-- Allow public read (for admins to see logs)
+CREATE POLICY "Allow public read" ON activity_logs FOR SELECT USING (true);
+
+-- Allow authenticated users to insert logs
+CREATE POLICY "Allow insert" ON activity_logs FOR INSERT WITH CHECK (auth.role() = 'authenticated');
+```

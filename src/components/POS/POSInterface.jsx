@@ -10,8 +10,11 @@ const COLORS = ['White', 'Black', 'Kiwi', 'Cream', 'Baby Blue'];
 
 
 
+import { useActivityLog } from '../../hooks/useActivityLog';
+
 export default function POSInterface({ transactions, onAddTransaction, onDeleteTransaction }) {
     const { showToast } = useToast();
+    const { logActivity } = useActivityLog();
 
     // State
     const [cart, setCart] = useState([]);
@@ -88,6 +91,7 @@ export default function POSInterface({ transactions, onAddTransaction, onDeleteT
                     details: { name }
                 });
             }
+            await logActivity('Bulk Delete Products', { count: selectedProducts.size, currentProducts: Array.from(selectedProducts) });
             showToast(`Deleted ${selectedProducts.size} products`, 'success');
             setIsSelectionMode(false);
             setSelectedProducts(new Set());
@@ -147,6 +151,7 @@ export default function POSInterface({ transactions, onAddTransaction, onDeleteT
         try {
             // Generate a unique Order ID for this entire cart
             const orderId = crypto.randomUUID();
+            const totalAmount = cart.reduce((sum, item) => sum + (item.price * item.quantity), 0);
 
             for (const item of cart) {
                 const isShirt = !!item.linkedColor;
@@ -180,6 +185,14 @@ export default function POSInterface({ transactions, onAddTransaction, onDeleteT
                 };
                 await onAddTransaction(transaction);
             }
+
+            await logActivity('POS Checkout', {
+                customer: customerName,
+                itemCount: cart.length,
+                total: totalAmount,
+                paymentMode
+            }, orderId);
+
             showToast('Order Processed!', 'success');
             setCart([]);
             setCustomerName('');
@@ -223,6 +236,7 @@ export default function POSInterface({ transactions, onAddTransaction, onDeleteT
                     }
                 });
             }
+            await logActivity('Reordered Products', { count: localOrderedProducts.length });
             showToast('Order Saved!', 'success');
             setIsReorderMode(false);
         } catch (err) {
