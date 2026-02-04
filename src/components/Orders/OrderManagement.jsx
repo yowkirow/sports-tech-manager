@@ -501,13 +501,15 @@ export default function OrderManagement({ transactions, onAddTransaction, onDele
                                                     />
                                                 </div>
 
-                                                <select
-                                                    value={editForm.fulfillmentStatus}
-                                                    onChange={e => setEditForm({ ...editForm, fulfillmentStatus: e.target.value })}
-                                                    className="glass-input py-1 px-2 text-xs capitalize"
-                                                >
-                                                    {FULFILLMENT_STATUSES.map(s => <option key={s} value={s} className="bg-slate-900">{s.replace('_', ' ')}</option>)}
-                                                </select>
+                                                {!isReseller && (
+                                                    <select
+                                                        value={editForm.fulfillmentStatus}
+                                                        onChange={e => setEditForm({ ...editForm, fulfillmentStatus: e.target.value })}
+                                                        className="glass-input py-1 px-2 text-xs capitalize"
+                                                    >
+                                                        {FULFILLMENT_STATUSES.map(s => <option key={s} value={s} className="bg-slate-900">{s.replace('_', ' ')}</option>)}
+                                                    </select>
+                                                )}
                                                 <select
                                                     value={editForm.paymentStatus}
                                                     onChange={e => setEditForm({ ...editForm, paymentStatus: e.target.value })}
@@ -680,14 +682,18 @@ export default function OrderManagement({ transactions, onAddTransaction, onDele
 
                             <div className="space-y-4">
                                 <div>
-                                    <label className="text-xs font-bold text-slate-500 uppercase">Fulfillment Status</label>
-                                    <div className="flex flex-wrap gap-2 mt-2">
-                                        {FULFILLMENT_STATUSES.map(s => (
-                                            <button key={s} onClick={() => handleBulkUpdate({ fulfillmentStatus: s })} className="px-3 py-1 bg-white/5 hover:bg-primary hover:text-white rounded-lg text-xs capitalize transition-colors border border-white/5">
-                                                {s.replace('_', ' ')}
-                                            </button>
-                                        ))}
-                                    </div>
+                                    {!isReseller && (
+                                        <>
+                                            <label className="text-xs font-bold text-slate-500 uppercase">Fulfillment Status</label>
+                                            <div className="flex flex-wrap gap-2 mt-2">
+                                                {FULFILLMENT_STATUSES.map(s => (
+                                                    <button key={s} onClick={() => handleBulkUpdate({ fulfillmentStatus: s })} className="px-3 py-1 bg-white/5 hover:bg-primary hover:text-white rounded-lg text-xs capitalize transition-colors border border-white/5">
+                                                        {s.replace('_', ' ')}
+                                                    </button>
+                                                ))}
+                                            </div>
+                                        </>
+                                    )}
                                 </div>
                                 <div>
                                     <label className="text-xs font-bold text-slate-500 uppercase">Payment Status</label>

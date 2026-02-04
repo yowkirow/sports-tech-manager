@@ -841,8 +841,6 @@ const CartContent = ({
                             ))}
                         </select>
                     </div>
-                        </select>
-                    </div>
                     {!isReseller && (
                         <div>
                             <label className="text-xs text-slate-500 mb-1 block">Fulfillment</label>
