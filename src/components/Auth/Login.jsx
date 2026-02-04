@@ -147,21 +147,7 @@ export default function Login({ unlockMode = false, user = null, onUnlock, onLog
                             exit={{ opacity: 0, x: -20 }}
                             className="w-full space-y-4"
                         >
-                            {/* User Selector */}
-                            <div className="grid grid-cols-2 gap-2 mb-4">
-                                {ADMIN_ACCOUNTS.map(acc => (
-                                    <button
-                                        key={acc.email}
-                                        onClick={() => setEmail(acc.email)}
-                                        className={`p-3 rounded-xl border text-sm font-medium transition-all ${email === acc.email
-                                            ? 'bg-primary text-white border-primary shadow-lg shadow-primary/20'
-                                            : 'bg-white/5 text-slate-400 border-white/10 hover:bg-white/10'
-                                            }`}
-                                    >
-                                        {acc.name}
-                                    </button>
-                                ))}
-                            </div>
+
 
                             <form onSubmit={handlePasswordLogin} className="space-y-4">
                                 <div>
