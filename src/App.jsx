@@ -36,12 +36,14 @@ function App() {
     const [isSidebarOpen, setIsSidebarOpen] = useState(false);
     const [session, setSession] = useState(null);
     const [user, setUser] = useState(null);
+    const [dbRole, setDbRole] = useState(null); // Role from DB
 
     // Lock Screen State
     const [isLocked, setIsLocked] = useState(false);
 
     // Reseller Logic
-    const userRole = session?.user?.user_metadata?.role || 'admin'; // 'admin' | 'reseller'
+    // Priority: DB Role > Metadata Role > Default 'admin'
+    const userRole = dbRole || session?.user?.user_metadata?.role || 'admin';
     const isReseller = userRole === 'reseller';
 
     // Transactions Filtering (Security: Client Side)
@@ -72,16 +74,29 @@ function App() {
 
     const { showToast } = useToast();
 
-    // Auth Listener
+    // Auth Listener & Role Fetcher
     React.useEffect(() => {
+        const fetchRole = async (email) => {
+            if (!email) return;
+            const { data } = await supabase
+                .from('admin_directory')
+                .select('role')
+                .eq('email', email)
+                .single();
+            if (data?.role) setDbRole(data.role);
+        };
+
         supabase.auth.getSession().then(({ data: { session } }) => {
             setSession(session);
+            if (session?.user?.email) fetchRole(session.user.email);
         });
 
         const {
             data: { subscription },
         } = supabase.auth.onAuthStateChange((_event, session) => {
             setSession(session);
+            if (session?.user?.email) fetchRole(session.user.email);
+            else setDbRole(null);
         });
 
         return () => subscription.unsubscribe();
