@@ -230,10 +230,9 @@ export default function ProfileSettings({ user, onLogout }) {
                         </div>
                     </form>
                 </motion.div>
-            </motion.div>
-        </div>
+            </div>
 
-            {/* Audit Logs Section */ }
+            {/* Audit Logs Section */}
             <motion.div
                 initial={{ opacity: 0, y: 20 }}
                 animate={{ opacity: 1, y: 0 }}
