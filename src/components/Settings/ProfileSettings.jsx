@@ -248,47 +248,46 @@ export default function ProfileSettings({ user, onLogout }) {
                 <h3 className="text-xl font-bold text-white">Twilio Integration Test</h3>
                 <p className="text-xs text-slate-400">Send a test SMS to verify your configuration</p>
             </div>
-        </div>
 
-        <div className="flex gap-4 items-end">
-            <div className="flex-1">
-                <label className="text-xs font-bold text-slate-500 uppercase block mb-2">Target Phone Number</label>
-                <input
-                    type="text"
-                    id="testPhoneInput"
-                    placeholder="+639..."
-                    className="glass-input w-full"
-                />
+            <div className="flex gap-4 items-end">
+                <div className="flex-1">
+                    <label className="text-xs font-bold text-slate-500 uppercase block mb-2">Target Phone Number</label>
+                    <input
+                        type="text"
+                        id="testPhoneInput"
+                        placeholder="+639..."
+                        className="glass-input w-full"
+                    />
+                </div>
+                <button
+                    onClick={async () => {
+                        const phone = document.getElementById('testPhoneInput').value;
+                        if (!phone) return showToast('Enter a phone number', 'error');
+                        setLoading(true);
+                        try {
+                            const { error } = await supabase.functions.invoke('send-tracking-sms', {
+                                body: {
+                                    phoneNumber: phone,
+                                    customerName: 'Test User',
+                                    trackingNumber: 'TEST-12345',
+                                    orderItems: '1x Test Shirt'
+                                }
+                            });
+                            if (error) throw error;
+                            showToast('Test SMS Sent!', 'success');
+                        } catch (err) {
+                            console.error(err);
+                            showToast('Failed to send SMS', 'error');
+                        } finally {
+                            setLoading(false);
+                        }
+                    }}
+                    disabled={loading}
+                    className="btn-primary bg-indigo-600 hover:bg-indigo-500 mb-0.5"
+                >
+                    Send Test SMS
+                </button>
             </div>
-            <button
-                onClick={async () => {
-                    const phone = document.getElementById('testPhoneInput').value;
-                    if (!phone) return showToast('Enter a phone number', 'error');
-                    setLoading(true);
-                    try {
-                        const { error } = await supabase.functions.invoke('send-tracking-sms', {
-                            body: {
-                                phoneNumber: phone,
-                                customerName: 'Test User',
-                                trackingNumber: 'TEST-12345',
-                                orderItems: '1x Test Shirt'
-                            }
-                        });
-                        if (error) throw error;
-                        showToast('Test SMS Sent!', 'success');
-                    } catch (err) {
-                        console.error(err);
-                        showToast('Failed to send SMS', 'error');
-                    } finally {
-                        setLoading(false);
-                    }
-                }}
-                disabled={loading}
-                className="btn-primary bg-indigo-600 hover:bg-indigo-500 mb-0.5"
-            >
-                Send Test SMS
-            </button>
-        </div>
     </motion.div>
 
     {/* Audit Logs Section */ }
