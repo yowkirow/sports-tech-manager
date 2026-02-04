@@ -117,7 +117,8 @@ export default function OrderManagement({ transactions, onAddTransaction, onDele
             fulfillmentStatus: order.fulfillmentStatus,
             paymentStatus: order.paymentStatus,
             paymentMode: order.paymentMode,
-            trackingNumber: order.items[0]?.details?.trackingNumber || ''
+            trackingNumber: order.items[0]?.details?.trackingNumber || '',
+            date: new Date(order.date).toISOString().split('T')[0] // Initialize date
         });
     };
 
@@ -144,7 +145,8 @@ export default function OrderManagement({ transactions, onAddTransaction, onDele
                     .from('transactions')
                     .update({
                         details: updatedDetails,
-                        description: t.description.replace(t.details.customerName, editForm.customerName)
+                        description: t.description.replace(t.details.customerName, editForm.customerName),
+                        date: new Date(`${editForm.date}T${new Date().toTimeString().split(' ')[0]}`).toISOString() // Update date with current time
                     })
                     .eq('id', t.id);
                 if (error) throw error;
@@ -461,9 +463,20 @@ export default function OrderManagement({ transactions, onAddTransaction, onDele
                                     {editingId === order.id ? (
                                         <div className="flex flex-col gap-2 items-end bg-black/40 p-3 rounded-xl border border-white/10 shadow-xl z-10" onClick={e => e.stopPropagation()}>
                                             <div className="grid grid-cols-2 gap-2 w-full max-w-[300px]">
+                                                {/* Date Input */}
+                                                <div className="col-span-2">
+                                                    <label className="text-[10px] text-slate-500 font-bold uppercase ml-1">Order Date</label>
+                                                    <input
+                                                        type="date"
+                                                        value={editForm.date || ''}
+                                                        onChange={e => setEditForm({ ...editForm, date: e.target.value })}
+                                                        className="glass-input py-1.5 text-xs w-full"
+                                                    />
+                                                </div>
+
                                                 {/* Tracking Number Input */}
                                                 <div className="col-span-2 relative">
-                                                    <Truck className="absolute left-2 top-1/2 -translate-y-1/2 text-slate-500" size={14} />
+                                                    <Truck className="absolute left-2 top-[60%] -translate-y-1/2 text-slate-500" size={14} />
                                                     <input
                                                         placeholder="Tracking Number"
                                                         value={editForm.trackingNumber || ''}
