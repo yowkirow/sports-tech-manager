@@ -185,7 +185,7 @@ export default function OrderManagement({ transactions, onAddTransaction, onDele
 
             // Send SMS via Edge Function
             if (trackingNumber && order.items[0]?.details?.contactNumber) {
-                const { error: smsError } = await supabase.functions.invoke('send-tracking-sms', {
+                const { data, error: smsError } = await supabase.functions.invoke('send-tracking-sms', {
                     body: {
                         phoneNumber: order.items[0].details.contactNumber,
                         customerName: order.customerName,
@@ -194,9 +194,9 @@ export default function OrderManagement({ transactions, onAddTransaction, onDele
                     }
                 });
 
-                if (smsError) {
-                    console.error('SMS Failed:', smsError);
-                    showToast('Tracking saved, but SMS failed', 'warning');
+                if (smsError || (data && !data.success)) {
+                    console.error('SMS Failed:', smsError || data?.error);
+                    showToast(`Tracking saved, but SMS failed: ${data?.error || 'Network Error'}`, 'warning');
                 } else {
                     showToast('Tracking saved & SMS sent!', 'success');
                 }

@@ -265,7 +265,7 @@ export default function ProfileSettings({ user, onLogout }) {
                             if (!phone) return showToast('Enter a phone number', 'error');
                             setLoading(true);
                             try {
-                                const { error } = await supabase.functions.invoke('send-tracking-sms', {
+                                const { data, error } = await supabase.functions.invoke('send-tracking-sms', {
                                     body: {
                                         phoneNumber: phone,
                                         customerName: 'Test User',
@@ -273,12 +273,14 @@ export default function ProfileSettings({ user, onLogout }) {
                                         orderItems: '1x Test Shirt'
                                     }
                                 });
+
                                 if (error) throw error;
+                                if (data && !data.success) throw new Error(data.error);
+
                                 showToast('Test SMS Sent!', 'success');
                             } catch (err) {
                                 console.error(err);
-                                // Show actual error message (e.g. from Twilio)
-                                const msg = err.context?.json?.error || err.message || 'Failed to send SMS';
+                                const msg = err.message || 'Failed to send SMS';
                                 showToast(`Error: ${msg}`, 'error');
                             } finally {
                                 setLoading(false);

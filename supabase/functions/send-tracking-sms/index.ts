@@ -1,17 +1,16 @@
-import { serve } from "https://deno.land/std@0.168.0/http/server.ts"
-
 // Initialize Twilio
 // You should set these secrets in your Supabase Dashboard:
 // supabase secrets set TWILIO_ACCOUNT_SID=your_sid
 // supabase secrets set TWILIO_AUTH_TOKEN=your_token
 // supabase secrets set TWILIO_PHONE_NUMBER=your_twilio_number
 
+// Setup CORS
 const corsHeaders = {
     'Access-Control-Allow-Origin': '*',
     'Access-Control-Allow-Headers': 'authorization, x-client-info, apikey, content-type',
 }
 
-serve(async (req) => {
+Deno.serve(async (req) => {
     // Handle CORS
     if (req.method === 'OPTIONS') {
         return new Response('ok', { headers: corsHeaders })
@@ -62,8 +61,12 @@ Thank you for your purchase!
         const data = await resp.json()
 
         if (!resp.ok) {
-            console.error("Twilio Error:", data)
-            throw new Error(`Twilio API Error: ${data.message || resp.statusText}`)
+            console.error("Twilio Command Error:", data)
+            // Return 200 but with error field so frontend reads it easily
+            return new Response(
+                JSON.stringify({ success: false, error: `Twilio: ${data.message || resp.statusText}`, details: data }),
+                { headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
+            )
         }
 
         return new Response(
@@ -72,10 +75,11 @@ Thank you for your purchase!
         )
 
     } catch (error) {
+        console.error("Function Error:", error)
         return new Response(
-            JSON.stringify({ error: error.message }),
+            JSON.stringify({ success: false, error: error.message }),
             {
-                status: 400,
+                status: 200, // Return 200 to ensure client receives the JSON body
                 headers: { ...corsHeaders, 'Content-Type': 'application/json' }
             }
         )
