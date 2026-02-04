@@ -277,7 +277,9 @@ export default function ProfileSettings({ user, onLogout }) {
                                 showToast('Test SMS Sent!', 'success');
                             } catch (err) {
                                 console.error(err);
-                                showToast('Failed to send SMS', 'error');
+                                // Show actual error message (e.g. from Twilio)
+                                const msg = err.context?.json?.error || err.message || 'Failed to send SMS';
+                                showToast(`Error: ${msg}`, 'error');
                             } finally {
                                 setLoading(false);
                             }
