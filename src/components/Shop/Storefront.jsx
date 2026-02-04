@@ -328,15 +328,9 @@ export default function Storefront({ transactions, onPlaceOrder }) {
     return (
         <div className="min-h-screen bg-slate-900 text-slate-100 flex flex-col font-sans selection:bg-primary/30">
             {/* Header */}
-            <header className="h-16 border-b border-white/5 bg-slate-900/80 backdrop-blur-md sticky top-0 z-30 px-4 md:px-8 flex items-center justify-between">
+            <header className="h-20 border-b border-white/5 bg-slate-900/80 backdrop-blur-md sticky top-0 z-30 px-4 md:px-8 flex items-center justify-between">
                 <div className="flex items-center gap-3">
-                    <div className="w-10 h-10 rounded-xl bg-gradient-to-br from-primary to-accent flex items-center justify-center text-white shadow-lg shadow-indigo-500/20">
-                        <span className="font-bold text-xl italic">S</span>
-                    </div>
-                    <div>
-                        <h1 className="font-bold text-lg leading-tight">SportsTech</h1>
-                        <p className="text-[10px] text-slate-500 uppercase tracking-widest">Official Store</p>
-                    </div>
+                    <img src="/logo.png" alt="SportsTech" className="h-12 w-auto object-contain" />
                 </div>
 
                 <div className="flex items-center gap-4">

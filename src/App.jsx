@@ -134,14 +134,8 @@ function App() {
                 isSidebarOpen ? "translate-x-0" : "-translate-x-full"
             )}>
                 <div className="p-6 flex justify-between items-center">
-                    <div className="flex items-center gap-3">
-                        <div className="w-10 h-10 rounded-xl bg-gradient-to-br from-primary to-accent flex items-center justify-center text-white shadow-lg shadow-indigo-500/20">
-                            <span className="font-bold text-xl italic">S</span>
-                        </div>
-                        <div>
-                            <h1 className="font-bold text-lg leading-tight">SportsTech</h1>
-                            <p className="text-xs text-slate-500">Manager Pro</p>
-                        </div>
+                    <div className="p-6 md:p-8 flex items-center gap-3">
+                        <img src="/logo.png" alt="SportsTech" className="h-12 w-auto object-contain" />
                     </div>
                     <button onClick={() => setIsSidebarOpen(false)} className="lg:hidden text-slate-400 hover:text-white">
                         <X size={24} />

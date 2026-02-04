@@ -61,9 +61,7 @@ export default function Login() {
                 className="glass-panel w-full max-w-sm p-8 relative z-10 flex flex-col items-center"
             >
                 <div className="mb-8 flex flex-col items-center">
-                    <div className="w-16 h-16 bg-gradient-to-br from-primary to-accent rounded-2xl flex items-center justify-center shadow-lg shadow-indigo-500/20 mb-4">
-                        <Lock className="text-white" size={32} />
-                    </div>
+                    <img src="/logo.png" alt="SportsTech" className="h-20 w-auto object-contain mb-4" />
                     <h1 className="text-2xl font-bold text-white">Manager Access</h1>
                     <p className="text-slate-400 text-sm mt-1">Enter access PIN</p>
                 </div>
