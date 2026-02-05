@@ -480,7 +480,7 @@ export default function POSInterface({ transactions, onAddTransaction, onDeleteT
                                     {!isSelectionMode && !isReseller && (
                                         <button
                                             onClick={(e) => { e.stopPropagation(); setEditingProduct(product); setShowProductModal(true); }}
-                                            className="absolute top-2 right-2 z-10 p-2 bg-black/60 hover:bg-primary rounded-lg text-white opacity-0 group-hover:opacity-100 transition-all focus:opacity-100 lg:opacity-0"
+                                            className="absolute top-2 right-2 z-30 p-2 bg-black/60 hover:bg-primary rounded-lg text-white opacity-0 group-hover:opacity-100 transition-all focus:opacity-100 lg:opacity-0"
                                         >
                                             <Edit size={14} />
                                         </button>
