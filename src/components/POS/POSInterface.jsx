@@ -57,7 +57,8 @@ export default function POSInterface({ transactions, onAddTransaction, onDeleteT
         const timer = setTimeout(async () => {
             if (showSuggestions && customerName.length > 1) {
                 const results = await searchCustomers(customerName);
-                setCustomerSuggestions(results);
+                if (results) setCustomerSuggestions(results);
+                else setCustomerSuggestions([]);
             }
         }, 300);
         return () => clearTimeout(timer);
