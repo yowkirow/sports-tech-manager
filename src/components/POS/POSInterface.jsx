@@ -570,7 +570,6 @@ export default function POSInterface({ transactions, onAddTransaction, onDeleteT
                             {filteredProducts.map(product => (
                                 <motion.div
                                     key={product.id}
-                                    layout
                                     initial={{ opacity: 0, scale: 0.9 }}
                                     animate={{ opacity: 1, scale: 1 }}
                                     className={`glass-card p-0 overflow-hidden cursor-pointer group flex flex-col min-h-[180px] sm:min-h-[220px] relative ${selectedProducts.has(product.name) ? 'ring-2 ring-primary bg-primary/10' : ''}`}

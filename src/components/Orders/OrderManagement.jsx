@@ -591,26 +591,36 @@ export default function OrderManagement({ transactions, onAddTransaction, onDele
                                                     </div>
                                                 </div>
                                             ))}
-                                            {order.items[0]?.details?.shippingDetails && (
+                                            {/* Shipping Information for POS and Online Orders */}
+                                            {(order.items[0]?.details?.shippingDetails || order.items[0]?.details?.customerProvince) && (
                                                 <div className="mt-4 p-3 bg-white/5 rounded-xl border border-white/5">
                                                     <p className="text-xs font-bold text-slate-500 uppercase mb-2 flex items-center gap-2"><Truck size={12} /> Shipping Information</p>
-                                                    <div className="grid grid-cols-2 gap-4 text-sm">
+                                                    <div className="grid grid-cols-1 md:grid-cols-2 gap-4 text-sm">
                                                         <div>
-                                                            <p className="text-slate-400 text-xs">Address</p>
-                                                            <p className="text-white">{order.items[0].details.shippingDetails.address}</p>
+                                                            <p className="text-slate-400 text-xs text-uppercase font-bold mb-1">Address</p>
+                                                            <p className="text-white">
+                                                                {order.items[0].details.shippingDetails?.address || order.items[0].details.customerAddress || 'No address provided'}
+                                                            </p>
                                                         </div>
                                                         <div>
-                                                            <p className="text-slate-400 text-xs">Contact</p>
-                                                            {/* Fallback to legacy or new location */}
-                                                            <p className="text-white">{order.items[0].details.shippingDetails.contactNumber || order.items[0].details.contactNumber}</p>
+                                                            <p className="text-slate-400 text-xs text-uppercase font-bold mb-1">Contact</p>
+                                                            <p className="text-white">
+                                                                {order.items[0].details.shippingDetails?.contactNumber || order.items[0].details.customerContact || order.items[0].details.contactNumber || 'N/A'}
+                                                            </p>
                                                         </div>
-                                                        <div>
-                                                            <p className="text-slate-400 text-xs">City/Province</p>
-                                                            <p className="text-white">{order.items[0].details.shippingDetails.city}, {order.items[0].details.shippingDetails.province} {order.items[0].details.shippingDetails.zipCode}</p>
+                                                        <div className="col-span-1 md:col-span-2">
+                                                            <p className="text-slate-400 text-xs text-uppercase font-bold mb-1">Details (Barangay, City, Province)</p>
+                                                            <p className="text-white">
+                                                                {order.items[0].details.shippingDetails ? (
+                                                                    `${order.items[0].details.shippingDetails.city}, ${order.items[0].details.shippingDetails.province} ${order.items[0].details.shippingDetails.zipCode || ''}`
+                                                                ) : (
+                                                                    `${order.items[0].details.customerBarangay ? order.items[0].details.customerBarangay + ', ' : ''}${order.items[0].details.customerCity ? order.items[0].details.customerCity + ', ' : ''}${order.items[0].details.customerProvince || ''}`
+                                                                )}
+                                                            </p>
                                                         </div>
                                                         {order.items[0].details.trackingNumber && (
-                                                            <div className="col-span-2 mt-2 pt-2 border-t border-white/5">
-                                                                <p className="text-slate-400 text-xs flex items-center gap-2"><Truck size={10} /> Tracking Number</p>
+                                                            <div className="col-span-1 md:col-span-2 mt-2 pt-2 border-t border-white/5">
+                                                                <p className="text-slate-400 text-xs flex items-center gap-2 mb-1"><Truck size={10} /> Tracking Number</p>
                                                                 <p className="text-primary font-mono font-bold tracking-wider">{order.items[0].details.trackingNumber}</p>
                                                             </div>
                                                         )}
