@@ -100,3 +100,28 @@ CREATE POLICY "Allow public read" ON activity_logs FOR SELECT USING (true);
 -- Allow authenticated users to insert logs
 CREATE POLICY "Allow insert" ON activity_logs FOR INSERT WITH CHECK (auth.role() = 'authenticated');
 ```
+
+## Create the Customers Table
+
+To store repeat customer details, run this SQL:
+
+```sql
+CREATE TABLE customers (
+  id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+  created_at TIMESTAMP WITH TIME ZONE DEFAULT NOW(),
+  name TEXT NOT NULL UNIQUE,
+  contact_number TEXT,
+  address TEXT,
+  notes TEXT,
+  total_spent NUMERIC DEFAULT 0
+);
+
+-- Enable RLS
+ALTER TABLE customers ENABLE ROW LEVEL SECURITY;
+
+-- Allow public read (for POS search)
+CREATE POLICY "Allow public read" ON customers FOR SELECT USING (true);
+
+-- Allow all access for now (or restrict to authenticated if you prefer)
+CREATE POLICY "Allow all access" ON customers FOR ALL USING (true) WITH CHECK (true);
+```

@@ -4,6 +4,7 @@ import { Search, ShoppingCart, Trash2, CheckCircle, Package, Plus, Loader2, Edit
 import { useToast } from '../ui/Toast';
 import { supabase } from '../../lib/supabaseClient';
 import { useRawInventory, useProducts } from '../../hooks/useInventory';
+import useSupabaseCustomers from '../../hooks/useSupabaseCustomers';
 
 const SIZES = ['XS', 'S', 'M', 'L', 'XL', '2XL', '3XL'];
 const COLORS = ['White', 'Black', 'Kiwi', 'Cream', 'Baby Blue'];
@@ -40,10 +41,34 @@ export default function POSInterface({ transactions, onAddTransaction, onDeleteT
 
     // Checkout Meta State
     const [customerName, setCustomerName] = useState('');
+    const [customerContact, setCustomerContact] = useState('');
+    const [customerAddress, setCustomerAddress] = useState('');
     const [fulfillmentStatus, setFulfillmentStatus] = useState('pending');
     const [paymentStatus, setPaymentStatus] = useState('paid');
     const [paymentMode, setPaymentMode] = useState('Cash');
+
+    // Customer Search State
     const [showSuggestions, setShowSuggestions] = useState(false);
+    const [customerSuggestions, setCustomerSuggestions] = useState([]);
+    const { searchCustomers, upsertCustomer } = useSupabaseCustomers();
+
+    // Debounced Search
+    React.useEffect(() => {
+        const timer = setTimeout(async () => {
+            if (showSuggestions && customerName.length > 1) {
+                const results = await searchCustomers(customerName);
+                setCustomerSuggestions(results);
+            }
+        }, 300);
+        return () => clearTimeout(timer);
+    }, [customerName, showSuggestions, searchCustomers]);
+
+    const handleSelectCustomer = (c) => {
+        setCustomerName(c.name);
+        setCustomerContact(c.contact_number || '');
+        setCustomerAddress(c.address || '');
+        setShowSuggestions(false);
+    };
 
     const PAYMENT_MODES = ['Cash', 'Gcash', 'Bank Transfer', 'COD'];
 
@@ -155,65 +180,74 @@ export default function POSInterface({ transactions, onAddTransaction, onDeleteT
     };
 
     const handleCheckout = async () => {
-        if (cart.length === 0 || !customerName.trim()) {
-            showToast(!customerName.trim() ? 'Enter customer name' : 'Cart is empty', 'error');
+        if (cart.length === 0) {
+            showToast('Cart is empty', 'error');
+            return;
+        }
+        if (!customerName.trim()) {
+            showToast('Enter customer name', 'error');
             return;
         }
 
         setCheckoutLoading(true);
         try {
-            // Generate a unique Order ID for this entire cart
-            const orderId = crypto.randomUUID();
-            const totalAmount = cart.reduce((sum, item) => sum + (item.price * item.quantity), 0);
-
             const { data: { user } } = await supabase.auth.getUser();
 
-            for (const item of cart) {
-                const isShirt = !!item.linkedColor;
-                const transaction = {
-                    id: crypto.randomUUID(),
-                    type: 'sale',
-                    amount: item.price * item.quantity,
-                    category: isShirt ? 'blanks' : 'accessories',
-                    date: new Date().toISOString(),
-                    description: `Sold ${item.name} (${item.size})`,
-                    details: {
-                        orderId, // Link all items to this order
-                        customerName,
-                        fulfillmentStatus,
-                        paymentStatus,
-                        status: fulfillmentStatus, // Legacy support
-                        paymentMode,
-                        createdBy: user?.email || 'Unknown',
-                        quantity: item.quantity,
-                        itemName: item.name,
-                        price: item.price,
-                        imageUrl: item.imageUrl,
-                        ...(isShirt && {
-                            size: item.size,
-                            color: item.linkedColor,
-                            linkedColor: item.linkedColor
-                        }),
-                        ...(!isShirt && {
-                            subCategory: item.name
-                        })
-                    }
-                };
-                await onAddTransaction(transaction);
+            const totalAmount = cart.reduce((a, b) => a + (b.price * b.quantity), 0);
+
+            // Upsert Customer (Save for next time)
+            if (customerName) {
+                await upsertCustomer({
+                    name: customerName,
+                    contact_number: customerContact,
+                    address: customerAddress,
+                    total_spent: totalAmount
+                });
             }
+
+            const transactionData = {
+                id: crypto.randomUUID(), // Unique ID for this transaction record
+                type: 'sale',
+                category: 'Sales',
+                amount: totalAmount,
+                date: new Date().toISOString(),
+                description: `POS Sale - ${customerName || 'Walk-in'}`,
+                details: {
+                    items: cart.map(item => ({ // Store simplified item details
+                        id: item.id,
+                        name: item.name,
+                        price: item.price,
+                        quantity: item.quantity,
+                        size: item.size,
+                        color: item.linkedColor,
+                        imageUrl: item.imageUrl
+                    })),
+                    customer: customerName,
+                    customerContact,
+                    customerAddress,
+                    paymentMode,
+                    paymentStatus,
+                    fulfillmentStatus,
+                    createdBy: user?.email || 'Unknown',
+                    userRole: userRole
+                }
+            };
+
+            await onAddTransaction(transactionData);
 
             await logActivity('POS Checkout', {
                 customer: customerName,
                 itemCount: cart.length,
                 total: totalAmount,
                 paymentMode
-            }, orderId);
+            }, transactionData.id);
 
             showToast('Order Processed!', 'success');
-            setCart([]);
+            setPaymentMode('Cash');
             setCustomerName('');
-            setFulfillmentStatus('pending');
-            setPaymentStatus('paid');
+            setCustomerContact('');
+            setCustomerAddress('');
+            setCart([]);
         } catch (err) {
             console.error(err);
             showToast('Checkout Failed', 'error');
@@ -827,22 +861,59 @@ const CartContent = ({
         <div className="p-6 border-t border-white/10 bg-black/20 space-y-4">
             <div className="flex justify-between text-lg font-bold text-white"><span>Total</span><span>₱{cart.reduce((a, b) => a + (b.price * b.quantity), 0).toLocaleString()}</span></div>
 
-            <div className="relative">
-                <label className="text-xs text-slate-500 mb-1 block">Customer</label>
-                <input
-                    className="glass-input py-2 text-sm"
-                    placeholder="Customer Name"
-                    value={customerName}
-                    onChange={e => { setCustomerName(e.target.value); setShowSuggestions(true); }}
-                    onBlur={() => setTimeout(() => setShowSuggestions(false), 200)}
-                />
-                {showSuggestions && filteredCustomers.length > 0 && (
-                    <div className="absolute bottom-full left-0 w-full mb-1 bg-slate-800 border border-white/10 rounded-lg shadow-xl max-h-40 overflow-y-auto z-20">
-                        {filteredCustomers.map(c => (
-                            <button key={c} onClick={() => { setCustomerName(c); setShowSuggestions(false); }} className="w-full text-left px-4 py-2 hover:bg-white/5 text-sm">{c}</button>
-                        ))}
+            <div className="space-y-3">
+                {/* Customer Search with Autocomplete */}
+                <div className="relative z-30">
+                    <label className="text-xs text-slate-500 mb-1 block">Customer Name</label>
+                    <div className="relative">
+                        <input
+                            className="glass-input py-2 text-sm w-full pl-9"
+                            placeholder="Type to search..."
+                            value={customerName}
+                            onChange={e => { setCustomerName(e.target.value); setShowSuggestions(true); }}
+                            onFocus={() => setShowSuggestions(true)}
+                            onBlur={() => setTimeout(() => setShowSuggestions(false), 200)}
+                        />
+                        <Search className="absolute left-3 top-2.5 text-slate-500" size={14} />
                     </div>
-                )}
+
+                    {showSuggestions && customerSuggestions.length > 0 && (
+                        <div className="absolute top-full left-0 w-full mt-1 bg-slate-800 border border-white/10 rounded-lg shadow-xl max-h-40 overflow-y-auto">
+                            {customerSuggestions.map(c => (
+                                <button
+                                    key={c.id}
+                                    onClick={() => handleSelectCustomer(c)}
+                                    className="w-full text-left px-4 py-2 hover:bg-white/5 text-sm flex justify-between items-center group"
+                                >
+                                    <span className="font-medium text-slate-200">{c.name}</span>
+                                    {c.total_spent > 0 && <span className="text-xs text-primary bg-primary/10 px-1.5 py-0.5 rounded">₱{c.total_spent.toLocaleString()}</span>}
+                                </button>
+                            ))}
+                        </div>
+                    )}
+                </div>
+
+                {/* Extended Details (Auto-filled or New) */}
+                <div className="grid grid-cols-2 gap-3">
+                    <div>
+                        <label className="text-xs text-slate-500 mb-1 block">Contact #</label>
+                        <input
+                            className="glass-input py-2 text-sm w-full"
+                            placeholder="0917..."
+                            value={customerContact}
+                            onChange={e => setCustomerContact(e.target.value)}
+                        />
+                    </div>
+                    <div>
+                        <label className="text-xs text-slate-500 mb-1 block">Address / Notes</label>
+                        <input
+                            className="glass-input py-2 text-sm w-full"
+                            placeholder="Shipping Address..."
+                            value={customerAddress}
+                            onChange={e => setCustomerAddress(e.target.value)}
+                        />
+                    </div>
+                </div>
             </div>
 
             <div className="flex flex-col sm:grid sm:grid-cols-2 gap-4">
