@@ -871,66 +871,61 @@ const CartContent = ({
         <div className="p-6 border-t border-white/10 bg-black/20 space-y-4">
             <div className="flex justify-between text-lg font-bold text-white"><span>Total</span><span>₱{cart.reduce((a, b) => a + (b.price * b.quantity), 0).toLocaleString()}</span></div>
 
-            <div className="space-y-3">
-                {/* Customer Search with Autocomplete */}
-                <div className="relative z-30">
-                    <label className="text-xs text-slate-500 mb-1 block">Customer Name</label>
-                    <div className="relative">
-                        <input
-                            className="glass-input py-2 text-sm w-full pl-9"
-                            placeholder="Type to search..."
-                            value={customerName}
-                            onChange={e => { setCustomerName(e.target.value); setShowSuggestions(true); }}
-                            onFocus={() => setShowSuggestions(true)}
-                            onBlur={() => setTimeout(() => setShowSuggestions(false), 200)}
-                        />
-                        <Search className="absolute left-3 top-2.5 text-slate-500" size={14} />
-                    </div>
+            <div className="space-y-4 pt-4 border-t border-white/5">
+                <h3 className="text-sm font-bold text-slate-400 uppercase tracking-wider">Customer Details</h3>
 
-                    {showSuggestions && customerSuggestions.length > 0 && (
-                        <div className="absolute top-full left-0 w-full mt-1 bg-slate-800 border border-white/10 rounded-lg shadow-xl max-h-40 overflow-y-auto">
-                            {customerSuggestions.map(c => (
-                                <button
-                                    key={c.id}
-                                    onClick={() => handleSelectCustomer(c)}
-                                    className="w-full text-left px-4 py-2 hover:bg-white/5 text-sm flex justify-between items-center group"
-                                >
-                                    <span className="font-medium text-slate-200">{c.name}</span>
-                                    {c.total_spent > 0 && <span className="text-xs text-primary bg-primary/10 px-1.5 py-0.5 rounded">₱{c.total_spent.toLocaleString()}</span>}
-                                </button>
-                            ))}
-                        </div>
-                    )}
-                </div>
-
-                {/* Extended Details (Auto-filled or New) */}
+                {/* Name (Search) & Contact Grid */}
                 <div className="grid grid-cols-2 gap-3">
-                    <div>
-                        <label className="text-xs text-slate-500 mb-1 block">Contact #</label>
-                        <input
-                            className="glass-input py-2 text-sm w-full"
-                            placeholder="0917..."
-                            value={customerContact}
-                            onChange={e => setCustomerContact(e.target.value)}
-                        />
-                    </div>
-                    <div>
-                        <label className="text-xs text-slate-500 mb-1 block">Address / Notes</label>
-                        <input
-                            className="glass-input py-2 text-sm w-full"
-                            placeholder="Shipping Address..."
-                            value={customerAddress}
-                            onChange={e => setCustomerAddress(e.target.value)}
-                        />
-                    </div>
-                </div>
-            </div>
+                    <div className="relative z-30">
+                        <div className="relative">
+                            <input
+                                className="glass-input w-full py-3 text-sm pl-9"
+                                placeholder="Customer Name"
+                                value={customerName}
+                                onChange={e => { setCustomerName(e.target.value); setShowSuggestions(true); }}
+                                onFocus={() => setShowSuggestions(true)}
+                                onBlur={() => setTimeout(() => setShowSuggestions(false), 200)}
+                            />
+                            <Search className="absolute left-3 top-3 text-slate-500" size={14} />
+                        </div>
 
-            <div className="flex flex-col sm:grid sm:grid-cols-2 gap-4">
-                <div className="flex-1">
-                    <label className="text-xs text-slate-500 mb-1 block">Payment Mode</label>
+                        {showSuggestions && customerSuggestions?.length > 0 && (
+                            <div className="absolute top-full left-0 w-full mt-1 bg-slate-800 border border-white/10 rounded-lg shadow-xl max-h-40 overflow-y-auto z-40">
+                                {customerSuggestions.map(c => (
+                                    <button
+                                        key={c.id}
+                                        onClick={() => handleSelectCustomer(c)}
+                                        className="w-full text-left px-4 py-2 hover:bg-white/5 text-sm flex justify-between items-center group"
+                                    >
+                                        <span className="font-medium text-slate-200">{c.name}</span>
+                                        {c.total_spent > 0 && <span className="text-xs text-primary bg-primary/10 px-1.5 py-0.5 rounded">₱{c.total_spent.toLocaleString()}</span>}
+                                    </button>
+                                ))}
+                            </div>
+                        )}
+                    </div>
+
+                    <input
+                        className="glass-input w-full py-3 text-sm"
+                        placeholder="Contact #"
+                        value={customerContact}
+                        onChange={e => setCustomerContact(e.target.value)}
+                    />
+                </div>
+
+                {/* Address */}
+                <input
+                    className="glass-input w-full py-3 text-sm"
+                    placeholder="Address / Remarks"
+                    value={customerAddress}
+                    onChange={e => setCustomerAddress(e.target.value)}
+                />
+
+                <h3 className="text-sm font-bold text-slate-400 uppercase tracking-wider mt-4">Payment & Status</h3>
+
+                <div className="grid grid-cols-2 gap-3">
                     <select
-                        className="glass-input py-2 text-sm w-full"
+                        className="glass-input w-full py-3 text-sm"
                         value={paymentMode}
                         onChange={e => setPaymentMode(e.target.value)}
                     >
@@ -938,11 +933,9 @@ const CartContent = ({
                             <option key={m} value={m} className="bg-slate-900">{m}</option>
                         ))}
                     </select>
-                </div>
-                <div className="flex-1">
-                    <label className="text-xs text-slate-500 mb-1 block">Payment Status</label>
+
                     <select
-                        className="glass-input py-2 text-sm w-full capitalize"
+                        className="glass-input w-full py-3 text-sm capitalize"
                         value={paymentStatus}
                         onChange={e => setPaymentStatus(e.target.value)}
                     >
@@ -951,11 +944,11 @@ const CartContent = ({
                         ))}
                     </select>
                 </div>
+
                 {!isReseller && (
-                    <div className="col-span-1 sm:col-span-2">
-                        <label className="text-xs text-slate-500 mb-1 block">Fulfillment</label>
+                    <div className="grid grid-cols-1">
                         <select
-                            className="glass-input py-2 text-sm w-full capitalize"
+                            className="glass-input w-full py-3 text-sm capitalize"
                             value={fulfillmentStatus}
                             onChange={e => setFulfillmentStatus(e.target.value)}
                         >
@@ -970,8 +963,8 @@ const CartContent = ({
             <button onClick={handleCheckout} disabled={checkoutLoading || cart.length === 0} className="btn-primary w-full py-4 text-lg">
                 {checkoutLoading ? <Loader2 className="animate-spin" /> : <CheckCircle size={20} />} Checkout
             </button>
-        </div >
-    </div >
+        </div>
+    </div>
 );
 
 function CreditCardIcon() {
