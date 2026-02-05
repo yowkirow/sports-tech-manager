@@ -159,10 +159,11 @@ function App() {
         </button>
     );
 
-    // Check for Storefront Mode
-    const isStoreMode = new URLSearchParams(window.location.search).get('mode') === 'store';
+    // Simplified Path-Based Routing
+    const isAdminPath = window.location.pathname.startsWith('/admin');
 
-    if (isStoreMode) {
+    // Default to Storefront unless on /admin path
+    if (!isAdminPath) {
         return (
             <Storefront
                 transactions={transactions}
@@ -238,7 +239,7 @@ function App() {
                 <div className="p-4 border-t border-white/5 space-y-2">
                     <button
                         onClick={() => {
-                            const url = window.location.origin + '?mode=store';
+                            const url = window.location.origin;
                             navigator.clipboard.writeText(url);
                             showToast('Store link copied!', 'success');
                         }}
