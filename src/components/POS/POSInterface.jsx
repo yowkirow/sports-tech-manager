@@ -5,6 +5,7 @@ import { useToast } from '../ui/Toast';
 import { supabase } from '../../lib/supabaseClient';
 import { useRawInventory, useProducts } from '../../hooks/useInventory';
 import useSupabaseCustomers from '../../hooks/useSupabaseCustomers';
+import { getMMCities, getAllProvinces, getCitiesByProvince, getBarangays } from '../../lib/phLocations';
 
 const SIZES = ['XS', 'S', 'M', 'L', 'XL', '2XL', '3XL'];
 const COLORS = ['White', 'Black', 'Kiwi', 'Cream', 'Baby Blue'];
@@ -66,10 +67,72 @@ export default function POSInterface({ transactions, onAddTransaction, onDeleteT
         return () => clearTimeout(timer);
     }, [customerName, showSuggestions, searchCustomers]);
 
+    // Location State
+    const [shippingRegion, setShippingRegion] = useState('MM');
+    const [customerCity, setCustomerCity] = useState('');
+    const [provinceCode, setProvinceCode] = useState('');
+    const [cityCode, setCityCode] = useState('');
+
+    const [provincesList, setProvincesList] = useState([]);
+    const [citiesList, setCitiesList] = useState([]);
+    const [barangaysList, setBarangaysList] = useState([]);
+
+    // Initial Fetch for Provinces & MM Cities
+    React.useEffect(() => {
+        const loadInitialData = async () => {
+            if (shippingRegion === 'MM') {
+                const mmCities = await getMMCities();
+                setCitiesList(mmCities);
+                setProvincesList([]);
+                setCustomerProvince('Metro Manila');
+            } else {
+                const provs = await getAllProvinces();
+                setProvincesList(provs);
+                setCitiesList([]);
+                setCustomerProvince('');
+            }
+            // Reset downstream
+            if (shippingRegion !== 'MM') {
+                setCityCode('');
+                setCustomerCity('');
+                setCustomerBarangay('');
+            }
+        };
+        loadInitialData();
+    }, [shippingRegion]);
+
+    // Fetch Cities when Province Changes
+    React.useEffect(() => {
+        if (provinceCode && shippingRegion === 'Provincial') {
+            const loadCities = async () => {
+                const cities = await getCitiesByProvince(provinceCode);
+                setCitiesList(cities);
+                setCityCode('');
+                setCustomerCity('');
+                setBarangaysList([]);
+            };
+            loadCities();
+        }
+    }, [provinceCode, shippingRegion]);
+
+    // Fetch Barangays when City Changes
+    React.useEffect(() => {
+        if (cityCode) {
+            const loadBarangays = async () => {
+                const brgys = await getBarangays(cityCode);
+                setBarangaysList(brgys);
+                setCustomerBarangay('');
+            };
+            loadBarangays();
+        }
+    }, [cityCode]);
+
+
     const handleSelectCustomer = (c) => {
         setCustomerName(c.name);
         setCustomerContact(c.contact_number || '');
-        setCustomerAddress(c.address || '');
+        setCustomerAddress(c.address || ''); // This might be a legacy string address
+        // Note: For existing customers with simple string addresses, we might not auto-fill the new fields perfectly yet
         setShowSuggestions(false);
     };
 
@@ -201,7 +264,7 @@ export default function POSInterface({ transactions, onAddTransaction, onDeleteT
             // Upsert Customer (Save for next time)
             if (customerName) {
                 // Concatenate address for simple storage
-                const fullAddress = `${customerAddress}${customerBarangay ? ', ' + customerBarangay : ''}${customerProvince ? ', ' + customerProvince : ''}`;
+                const fullAddress = `${customerAddress}${customerBarangay ? ', ' + customerBarangay : ''}${customerCity ? ', ' + customerCity : ''}${customerProvince ? ', ' + customerProvince : ''}`;
                 await upsertCustomer({
                     name: customerName,
                     contact_number: customerContact,
@@ -230,7 +293,9 @@ export default function POSInterface({ transactions, onAddTransaction, onDeleteT
                     customer: customerName,
                     customerContact,
                     customerAddress,
+                    shippingRegion,
                     customerProvince,
+                    customerCity,
                     customerBarangay,
                     paymentMode,
                     paymentStatus,
@@ -255,7 +320,10 @@ export default function POSInterface({ transactions, onAddTransaction, onDeleteT
             setCustomerContact('');
             setCustomerAddress('');
             setCustomerProvince('');
+            setCustomerCity('');
             setCustomerBarangay('');
+            setProvinceCode('');
+            setCityCode('');
             setCart([]);
         } catch (err) {
             console.error(err);
@@ -640,10 +708,24 @@ export default function POSInterface({ transactions, onAddTransaction, onDeleteT
                     showSuggestions={showSuggestions}
                     setShowSuggestions={setShowSuggestions}
                     customerSuggestions={customerSuggestions}
+
+                    // Location Props
+                    shippingRegion={shippingRegion}
+                    setShippingRegion={setShippingRegion}
                     customerProvince={customerProvince}
                     setCustomerProvince={setCustomerProvince}
+                    customerCity={customerCity}
+                    setCustomerCity={setCustomerCity}
                     customerBarangay={customerBarangay}
                     setCustomerBarangay={setCustomerBarangay}
+                    provinceCode={provinceCode}
+                    setProvinceCode={setProvinceCode}
+                    cityCode={cityCode}
+                    setCityCode={setCityCode}
+                    provincesList={provincesList}
+                    citiesList={citiesList}
+                    barangaysList={barangaysList}
+
                     isReseller={isReseller}
                 />
             </div>
@@ -673,10 +755,24 @@ export default function POSInterface({ transactions, onAddTransaction, onDeleteT
                                 showSuggestions={showSuggestions}
                                 setShowSuggestions={setShowSuggestions}
                                 customerSuggestions={customerSuggestions}
+
+                                // Location Props
+                                shippingRegion={shippingRegion}
+                                setShippingRegion={setShippingRegion}
                                 customerProvince={customerProvince}
                                 setCustomerProvince={setCustomerProvince}
+                                customerCity={customerCity}
+                                setCustomerCity={setCustomerCity}
                                 customerBarangay={customerBarangay}
                                 setCustomerBarangay={setCustomerBarangay}
+                                provinceCode={provinceCode}
+                                setProvinceCode={setProvinceCode}
+                                cityCode={cityCode}
+                                setCityCode={setCityCode}
+                                provincesList={provincesList}
+                                citiesList={citiesList}
+                                barangaysList={barangaysList}
+
                                 isReseller={isReseller}
                             />
                         </div>
@@ -845,6 +941,16 @@ const CartContent = ({
     setCustomerProvince,
     customerBarangay,
     setCustomerBarangay,
+
+    // New Props
+    shippingRegion, setShippingRegion,
+    customerCity, setCustomerCity,
+    provinceCode, setProvinceCode,
+    cityCode, setCityCode,
+    provincesList,
+    citiesList,
+    barangaysList,
+
     fulfillmentStatus,
     setFulfillmentStatus,
     paymentStatus,
@@ -933,20 +1039,79 @@ const CartContent = ({
                     />
                 </div>
 
-                {/* Province & Barangay Grid */}
+                {/* Region Selection */}
+                <div className="flex gap-2">
+                    <button
+                        onClick={() => setShippingRegion('MM')}
+                        className={`flex-1 py-3 px-3 rounded-xl text-xs font-bold transition-all border flex flex-col items-center gap-1 ${shippingRegion === 'MM'
+                            ? 'bg-primary/20 border-primary text-primary'
+                            : 'bg-black/40 border-white/5 text-slate-400 hover:border-white/20 hover:bg-white/5'
+                            }`}
+                    >
+                        <span>🏙️ Metro Manila</span>
+                    </button>
+                    <button
+                        onClick={() => setShippingRegion('Provincial')}
+                        className={`flex-1 py-3 px-3 rounded-xl text-xs font-bold transition-all border flex flex-col items-center gap-1 ${shippingRegion === 'Provincial'
+                            ? 'bg-amber-500/20 border-amber-500 text-amber-500'
+                            : 'bg-black/40 border-white/5 text-slate-400 hover:border-white/20 hover:bg-white/5'
+                            }`}
+                    >
+                        <span>🏝️ Outside MM</span>
+                    </button>
+                </div>
+
+                {/* Dynamic Address Selectors */}
                 <div className="grid grid-cols-2 gap-3">
-                    <input
-                        className="glass-input w-full py-3 text-sm"
-                        placeholder="Province"
-                        value={customerProvince}
-                        onChange={e => setCustomerProvince(e.target.value)}
-                    />
-                    <input
-                        className="glass-input w-full py-3 text-sm"
-                        placeholder="Barangay"
-                        value={customerBarangay}
-                        onChange={e => setCustomerBarangay(e.target.value)}
-                    />
+                    {shippingRegion === 'Provincial' && (
+                        <div className="space-y-1 col-span-2">
+                            <label className="text-[10px] text-slate-500 ml-1 uppercase font-bold">Province</label>
+                            <select
+                                className="glass-input w-full py-2 text-sm"
+                                value={provinceCode}
+                                onChange={e => {
+                                    const code = e.target.value;
+                                    const name = e.target.options[e.target.selectedIndex].text;
+                                    setProvinceCode(code);
+                                    setCustomerProvince(name);
+                                }}
+                            >
+                                <option value="" disabled>Select Province</option>
+                                {provincesList.map(p => <option key={p.code} value={p.code} className="bg-slate-900">{p.name}</option>)}
+                            </select>
+                        </div>
+                    )}
+
+                    <div className={`${shippingRegion === 'MM' ? 'col-span-1' : 'col-span-1'}`}>
+                        <label className="text-[10px] text-slate-500 ml-1 uppercase font-bold">City / Municipality</label>
+                        <select
+                            className="glass-input w-full py-2 text-sm"
+                            value={cityCode}
+                            onChange={e => {
+                                const code = e.target.value;
+                                const name = e.target.options[e.target.selectedIndex].text;
+                                setCityCode(code);
+                                setCustomerCity(name);
+                            }}
+                            disabled={!citiesList.length}
+                        >
+                            <option value="" disabled>Select City</option>
+                            {citiesList.map(c => <option key={c.code} value={c.code} className="bg-slate-900">{c.name}</option>)}
+                        </select>
+                    </div>
+
+                    <div className="col-span-1">
+                        <label className="text-[10px] text-slate-500 ml-1 uppercase font-bold">Barangay</label>
+                        <select
+                            className="glass-input w-full py-2 text-sm"
+                            value={customerBarangay}
+                            onChange={e => setCustomerBarangay(e.target.value)}
+                            disabled={!barangaysList.length}
+                        >
+                            <option value="" disabled>Select Baragy.</option>
+                            {barangaysList.map(b => <option key={b.code} value={b.name} className="bg-slate-900">{b.name}</option>)}
+                        </select>
+                    </div>
                 </div>
 
                 {/* Address */}
