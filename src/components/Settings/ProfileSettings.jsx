@@ -30,6 +30,15 @@ export default function ProfileSettings({ user, onLogout }) {
                 data: { full_name: fullName }
             });
             if (error) throw error;
+
+            // Sync to Public Admin Directory (so Activity Logs show names)
+            if (user?.email) {
+                await supabase.from('admin_directory').upsert({
+                    email: user.email,
+                    name: fullName
+                }, { onConflict: 'email' });
+            }
+
             showToast('Profile updated!', 'success');
         } catch (error) {
             console.error(error);

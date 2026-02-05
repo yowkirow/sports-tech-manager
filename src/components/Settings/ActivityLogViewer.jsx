@@ -5,25 +5,40 @@ import { Loader2, RefreshCw, Clock, User, Activity } from 'lucide-react';
 export default function ActivityLogViewer({ user, userRole }) {
     const [logs, setLogs] = useState([]);
     const [loading, setLoading] = useState(true);
+    const [adminMap, setAdminMap] = useState({});
 
     const fetchLogs = async () => {
         setLoading(true);
         try {
-            let query = supabase
-                .from('activity_logs')
-                .select('*')
-                .order('created_at', { ascending: false })
-                .limit(50);
+            // Parallel fetch: Logs + Identity Map
+            const [logsRes, adminsRes] = await Promise.all([
+                supabase
+                    .from('activity_logs')
+                    .select('*')
+                    .order('created_at', { ascending: false })
+                    .limit(50),
+                supabase.from('admin_directory').select('email, name')
+            ]);
+
+            if (logsRes.error) throw logsRes.error;
+
+            // Map emails to names
+            const map = {};
+            if (adminsRes.data) {
+                adminsRes.data.forEach(a => {
+                    if (a.email && a.name) map[a.email] = a.name;
+                });
+            }
+            setAdminMap(map);
+
+            let data = logsRes.data || [];
 
             // Reseller Security: Only show own logs
             if (userRole === 'reseller' && user?.email) {
-                query = query.eq('user_email', user.email);
+                data = data.filter(l => l.user_email === user.email);
             }
 
-            const { data, error } = await query;
-
-            if (error) throw error;
-            setLogs(data || []);
+            setLogs(data);
         } catch (err) {
             console.error('Error fetching logs:', err);
         } finally {
@@ -101,7 +116,14 @@ export default function ActivityLogViewer({ user, userRole }) {
                                         <td className="p-4 text-white align-top">
                                             <div className="flex items-center gap-2">
                                                 <User size={14} className="text-slate-500" />
-                                                {log.user_email}
+                                                {adminMap[log.user_email] ? (
+                                                    <div className="flex flex-col">
+                                                        <span className="font-semibold text-white">{adminMap[log.user_email]}</span>
+                                                        <span className="text-[10px] text-slate-500">{log.user_email}</span>
+                                                    </div>
+                                                ) : (
+                                                    <span>{log.user_email}</span>
+                                                )}
                                             </div>
                                         </td>
                                         <td className="p-4 align-top">
