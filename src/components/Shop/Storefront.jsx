@@ -466,7 +466,7 @@ export default function Storefront({ transactions, onPlaceOrder }) {
                             animate={{ x: 0 }}
                             exit={{ x: '100%' }}
                             transition={{ type: "spring", damping: 25, stiffness: 200 }}
-                            className="relative w-full sm:max-w-md h-[90vh] sm:h-screen bg-slate-900 border-l border-white/10 shadow-2xl flex flex-col"
+                            className="relative w-full sm:max-w-md h-[100dvh] bg-slate-900 border-l border-white/10 shadow-2xl flex flex-col"
                         >
                             <div className="p-4 border-b border-white/10 flex justify-between items-center bg-slate-900/50 backdrop-blur-md">
                                 <h2 className="text-xl font-bold text-white flex items-center gap-2">
@@ -737,6 +737,7 @@ export default function Storefront({ transactions, onPlaceOrder }) {
                                 >
                                     {checkoutLoading ? 'Processing...' : 'Place Order'}
                                 </button>
+                                <div className="h-6 sm:hidden" /> {/* Spacer for bottom navs */}
                             </div>
                         </motion.div>
                     </div>
