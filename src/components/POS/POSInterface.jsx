@@ -43,6 +43,8 @@ export default function POSInterface({ transactions, onAddTransaction, onDeleteT
     const [customerName, setCustomerName] = useState('');
     const [customerContact, setCustomerContact] = useState('');
     const [customerAddress, setCustomerAddress] = useState('');
+    const [customerProvince, setCustomerProvince] = useState('');
+    const [customerBarangay, setCustomerBarangay] = useState('');
     const [fulfillmentStatus, setFulfillmentStatus] = useState('pending');
     const [paymentStatus, setPaymentStatus] = useState('paid');
     const [paymentMode, setPaymentMode] = useState('Cash');
@@ -198,10 +200,12 @@ export default function POSInterface({ transactions, onAddTransaction, onDeleteT
 
             // Upsert Customer (Save for next time)
             if (customerName) {
+                // Concatenate address for simple storage
+                const fullAddress = `${customerAddress}${customerBarangay ? ', ' + customerBarangay : ''}${customerProvince ? ', ' + customerProvince : ''}`;
                 await upsertCustomer({
                     name: customerName,
                     contact_number: customerContact,
-                    address: customerAddress,
+                    address: fullAddress,
                     total_spent: totalAmount
                 });
             }
@@ -226,6 +230,8 @@ export default function POSInterface({ transactions, onAddTransaction, onDeleteT
                     customer: customerName,
                     customerContact,
                     customerAddress,
+                    customerProvince,
+                    customerBarangay,
                     paymentMode,
                     paymentStatus,
                     fulfillmentStatus,
@@ -248,6 +254,8 @@ export default function POSInterface({ transactions, onAddTransaction, onDeleteT
             setCustomerName('');
             setCustomerContact('');
             setCustomerAddress('');
+            setCustomerProvince('');
+            setCustomerBarangay('');
             setCart([]);
         } catch (err) {
             console.error(err);
@@ -631,7 +639,11 @@ export default function POSInterface({ transactions, onAddTransaction, onDeleteT
                     setPaymentStatus={setPaymentStatus}
                     showSuggestions={showSuggestions}
                     setShowSuggestions={setShowSuggestions}
-                    filteredCustomers={filteredCustomers}
+                    customerSuggestions={customerSuggestions}
+                    customerProvince={customerProvince}
+                    setCustomerProvince={setCustomerProvince}
+                    customerBarangay={customerBarangay}
+                    setCustomerBarangay={setCustomerBarangay}
                     isReseller={isReseller}
                 />
             </div>
@@ -660,7 +672,11 @@ export default function POSInterface({ transactions, onAddTransaction, onDeleteT
                                 setPaymentStatus={setPaymentStatus}
                                 showSuggestions={showSuggestions}
                                 setShowSuggestions={setShowSuggestions}
-                                filteredCustomers={filteredCustomers}
+                                customerSuggestions={customerSuggestions}
+                                customerProvince={customerProvince}
+                                setCustomerProvince={setCustomerProvince}
+                                customerBarangay={customerBarangay}
+                                setCustomerBarangay={setCustomerBarangay}
                                 isReseller={isReseller}
                             />
                         </div>
@@ -825,6 +841,10 @@ const CartContent = ({
     setCustomerContact,
     customerAddress,
     setCustomerAddress,
+    customerProvince,
+    setCustomerProvince,
+    customerBarangay,
+    setCustomerBarangay,
     fulfillmentStatus,
     setFulfillmentStatus,
     paymentStatus,
@@ -913,10 +933,26 @@ const CartContent = ({
                     />
                 </div>
 
+                {/* Province & Barangay Grid */}
+                <div className="grid grid-cols-2 gap-3">
+                    <input
+                        className="glass-input w-full py-3 text-sm"
+                        placeholder="Province"
+                        value={customerProvince}
+                        onChange={e => setCustomerProvince(e.target.value)}
+                    />
+                    <input
+                        className="glass-input w-full py-3 text-sm"
+                        placeholder="Barangay"
+                        value={customerBarangay}
+                        onChange={e => setCustomerBarangay(e.target.value)}
+                    />
+                </div>
+
                 {/* Address */}
                 <input
                     className="glass-input w-full py-3 text-sm"
-                    placeholder="Address / Remarks"
+                    placeholder="Street Address / Remarks"
                     value={customerAddress}
                     onChange={e => setCustomerAddress(e.target.value)}
                 />
