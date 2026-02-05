@@ -232,67 +232,7 @@ export default function ProfileSettings({ user, onLogout }) {
                 </motion.div>
             </div>
 
-            {/* Twilio Test Section */}
-            <motion.div
-                initial={{ opacity: 0, y: 20 }}
-                animate={{ opacity: 1, y: 0 }}
-                transition={{ delay: 0.25 }}
-                className="glass-card space-y-6"
-            >
-                <div className="flex items-center gap-3 border-b border-white/5 pb-4">
-                    <div className="p-2 bg-indigo-500/20 text-indigo-400 rounded-lg">
-                        <MessageSquare size={24} />
-                    </div>
-                    <div>
-                        <h3 className="text-xl font-bold text-white">Twilio Integration Test</h3>
-                        <p className="text-xs text-slate-400">Send a test SMS to verify your configuration</p>
-                    </div>
-                </div>
 
-                <div className="flex gap-4 items-end">
-                    <div className="flex-1">
-                        <label className="text-xs font-bold text-slate-500 uppercase block mb-2">Target Phone Number</label>
-                        <input
-                            type="text"
-                            id="testPhoneInput"
-                            placeholder="+639..."
-                            className="glass-input w-full"
-                        />
-                    </div>
-                    <button
-                        onClick={async () => {
-                            const phone = document.getElementById('testPhoneInput').value;
-                            if (!phone) return showToast('Enter a phone number', 'error');
-                            setLoading(true);
-                            try {
-                                const { data, error } = await supabase.functions.invoke('send-tracking-sms', {
-                                    body: {
-                                        phoneNumber: phone,
-                                        customerName: 'Test User',
-                                        trackingNumber: 'TEST-12345',
-                                        orderItems: '1x Test Shirt'
-                                    }
-                                });
-
-                                if (error) throw error;
-                                if (data && !data.success) throw new Error(data.error);
-
-                                showToast('Test SMS Sent!', 'success');
-                            } catch (err) {
-                                console.error(err);
-                                const msg = err.message || 'Failed to send SMS';
-                                showToast(`Error: ${msg}`, 'error');
-                            } finally {
-                                setLoading(false);
-                            }
-                        }}
-                        disabled={loading}
-                        className="btn-primary bg-indigo-600 hover:bg-indigo-500 mb-0.5"
-                    >
-                        Send Test SMS
-                    </button>
-                </div>
-            </motion.div>
 
             {/* Audit Logs Section */}
             <motion.div

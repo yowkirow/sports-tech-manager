@@ -620,6 +620,10 @@ export default function POSInterface({ transactions, onAddTransaction, onDeleteT
                     checkoutLoading={checkoutLoading}
                     customerName={customerName}
                     setCustomerName={setCustomerName}
+                    customerContact={customerContact}
+                    setCustomerContact={setCustomerContact}
+                    customerAddress={customerAddress}
+                    setCustomerAddress={setCustomerAddress}
                     fulfillmentStatus={fulfillmentStatus}
                     setFulfillmentStatus={setFulfillmentStatus}
                     paymentStatus={paymentStatus}
@@ -816,6 +820,10 @@ const CartContent = ({
     checkoutLoading,
     customerName,
     setCustomerName,
+    customerContact,
+    setCustomerContact,
+    customerAddress,
+    setCustomerAddress,
     fulfillmentStatus,
     setFulfillmentStatus,
     paymentStatus,
@@ -824,7 +832,8 @@ const CartContent = ({
     setPaymentMode,
     showSuggestions,
     setShowSuggestions,
-    filteredCustomers,
+    customerSuggestions,
+    handleSelectCustomer,
     isReseller
 }) => (
     <div className="flex flex-col h-full">
