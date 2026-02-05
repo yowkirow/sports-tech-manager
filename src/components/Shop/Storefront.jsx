@@ -675,69 +675,70 @@ export default function Storefront({ transactions, onPlaceOrder }) {
                                         )}
                                     </div>
                                 )}
-                            </div>
 
-                            <div className="p-6 border-t border-white/10 bg-slate-900/50 backdrop-blur-md space-y-3">
-                                <div className="space-y-1 text-sm text-slate-400">
-                                    <div className="flex justify-between">
-                                        <span>Subtotal</span>
-                                        <span>₱{subtotal.toLocaleString()}</span>
-                                    </div>
-                                    <div className="flex justify-between">
-                                        <span>Shipping ({shippingRegion === 'MM' ? 'MM' : 'Provincial'})</span>
-                                        <span>₱{shippingRegion === 'MM' ? 100 : 200}</span>
-                                    </div>
-                                    {appliedVoucher && (
-                                        <div className="flex justify-between text-emerald-400 font-bold">
-                                            <span>Voucher ({appliedVoucher.code})</span>
-                                            <span>-₱{discountAmount.toLocaleString(undefined, { maximumFractionDigits: 2 })}</span>
+
+                                <div className="p-6 border-t border-white/10 bg-slate-900/50 backdrop-blur-md space-y-3">
+                                    <div className="space-y-1 text-sm text-slate-400">
+                                        <div className="flex justify-between">
+                                            <span>Subtotal</span>
+                                            <span>₱{subtotal.toLocaleString()}</span>
                                         </div>
-                                    )}
-                                </div>
-
-                                {/* Voucher Input */}
-                                <div className="py-2 border-t border-white/5 border-dashed">
-                                    {!appliedVoucher ? (
-                                        <div className="flex gap-2">
-                                            <div className="relative flex-1">
-                                                <Ticket className="absolute left-3 top-1/2 -translate-y-1/2 text-slate-500" size={14} />
-                                                <input
-                                                    placeholder="Voucher Code"
-                                                    value={voucherCode}
-                                                    onChange={e => setVoucherCode(e.target.value.toUpperCase())}
-                                                    className="glass-input pl-9 py-2 text-sm w-full uppercase"
-                                                />
+                                        <div className="flex justify-between">
+                                            <span>Shipping ({shippingRegion === 'MM' ? 'MM' : 'Provincial'})</span>
+                                            <span>₱{shippingRegion === 'MM' ? 100 : 200}</span>
+                                        </div>
+                                        {appliedVoucher && (
+                                            <div className="flex justify-between text-emerald-400 font-bold">
+                                                <span>Voucher ({appliedVoucher.code})</span>
+                                                <span>-₱{discountAmount.toLocaleString(undefined, { maximumFractionDigits: 2 })}</span>
                                             </div>
-                                            <button
-                                                onClick={handleApplyVoucher}
-                                                className="bg-white/10 hover:bg-white/20 text-white px-4 py-2 rounded-xl text-sm font-bold transition-colors"
-                                            >
-                                                Apply
-                                            </button>
-                                        </div>
-                                    ) : (
-                                        <div className="flex justify-between items-center bg-emerald-500/10 border border-emerald-500/20 p-2 rounded-lg">
-                                            <span className="text-xs text-emerald-400 font-bold flex items-center gap-2">
-                                                <CheckCircle size={14} /> Code Applied
-                                            </span>
-                                            <button onClick={handleRemoveVoucher} className="text-slate-400 hover:text-white p-1"><X size={14} /></button>
-                                        </div>
-                                    )}
-                                </div>
+                                        )}
+                                    </div>
 
-                                <div className="flex justify-between items-center text-xl font-bold text-white pt-2 border-t border-white/5">
-                                    <span>Total</span>
-                                    <span>₱{(subtotal - discountAmount + (shippingRegion === 'MM' ? 100 : 200)).toLocaleString()}</span>
-                                </div>
+                                    {/* Voucher Input */}
+                                    <div className="py-2 border-t border-white/5 border-dashed">
+                                        {!appliedVoucher ? (
+                                            <div className="flex gap-2">
+                                                <div className="relative flex-1">
+                                                    <Ticket className="absolute left-3 top-1/2 -translate-y-1/2 text-slate-500" size={14} />
+                                                    <input
+                                                        placeholder="Voucher Code"
+                                                        value={voucherCode}
+                                                        onChange={e => setVoucherCode(e.target.value.toUpperCase())}
+                                                        className="glass-input pl-9 py-2 text-sm w-full uppercase"
+                                                    />
+                                                </div>
+                                                <button
+                                                    onClick={handleApplyVoucher}
+                                                    className="bg-white/10 hover:bg-white/20 text-white px-4 py-2 rounded-xl text-sm font-bold transition-colors"
+                                                >
+                                                    Apply
+                                                </button>
+                                            </div>
+                                        ) : (
+                                            <div className="flex justify-between items-center bg-emerald-500/10 border border-emerald-500/20 p-2 rounded-lg">
+                                                <span className="text-xs text-emerald-400 font-bold flex items-center gap-2">
+                                                    <CheckCircle size={14} /> Code Applied
+                                                </span>
+                                                <button onClick={handleRemoveVoucher} className="text-slate-400 hover:text-white p-1"><X size={14} /></button>
+                                            </div>
+                                        )}
+                                    </div>
 
-                                <button
-                                    onClick={handleCheckout}
-                                    disabled={cart.length === 0 || checkoutLoading}
-                                    className="btn-primary w-full py-4 text-lg font-bold disabled:opacity-50 disabled:cursor-not-allowed"
-                                >
-                                    {checkoutLoading ? 'Processing...' : 'Place Order'}
-                                </button>
-                                <div className="h-6 sm:hidden" /> {/* Spacer for bottom navs */}
+                                    <div className="flex justify-between items-center text-xl font-bold text-white pt-2 border-t border-white/5">
+                                        <span>Total</span>
+                                        <span>₱{(subtotal - discountAmount + (shippingRegion === 'MM' ? 100 : 200)).toLocaleString()}</span>
+                                    </div>
+
+                                    <button
+                                        onClick={handleCheckout}
+                                        disabled={cart.length === 0 || checkoutLoading}
+                                        className="btn-primary w-full py-4 text-lg font-bold disabled:opacity-50 disabled:cursor-not-allowed"
+                                    >
+                                        {checkoutLoading ? 'Processing...' : 'Place Order'}
+                                    </button>
+                                    <div className="h-6 sm:hidden" /> {/* Spacer for bottom navs */}
+                                </div>
                             </div>
                         </motion.div>
                     </div>
