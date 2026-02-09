@@ -584,8 +584,16 @@ export default function OrderManagement({ transactions, onAddTransaction, onDele
                                             {order.items.map((item, idx) => (
                                                 <div key={item.id} className="flex flex-col md:flex-row justify-between md:items-center p-3 rounded-xl hover:bg-white/5 bg-black/20 gap-4 border border-white/5 text-sm">
                                                     <div className="flex items-center gap-3 flex-1">
-                                                        <div className="w-10 h-10 rounded-lg bg-slate-800 flex items-center justify-center text-slate-500 shrink-0">
-                                                            <ShoppingBag size={20} />
+                                                        <div className="w-10 h-10 rounded-lg bg-slate-800 flex items-center justify-center text-slate-500 shrink-0 overflow-hidden">
+                                                            {item.details.imageUrl ? (
+                                                                <img
+                                                                    src={item.details.imageUrl}
+                                                                    className="w-full h-full object-cover"
+                                                                    alt={item.details.itemName}
+                                                                />
+                                                            ) : (
+                                                                <ShoppingBag size={20} />
+                                                            )}
                                                         </div>
                                                         <div className="flex-1 space-y-1">
                                                             {editingId === order.id ? (
