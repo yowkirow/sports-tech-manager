@@ -119,7 +119,12 @@ export default function OrderManagement({ transactions, onAddTransaction, onDele
             paymentStatus: order.paymentStatus,
             paymentMode: order.paymentMode,
             trackingNumber: order.items[0]?.details?.trackingNumber || '',
-            date: new Date(order.date).toISOString().split('T')[0] // Initialize date
+            date: new Date(order.date).toISOString().split('T')[0],
+            items: order.items.map(item => ({
+                id: item.id,
+                amount: item.amount,
+                details: { ...item.details }
+            }))
         });
     };
 
@@ -136,16 +141,17 @@ export default function OrderManagement({ transactions, onAddTransaction, onDele
             newDate.setDate(d);
             const isoDate = newDate.toISOString();
 
-            const updates = order.items.map(async (t) => {
+            const updates = editForm.items.map(async (editedItem) => {
+                const originalItem = order.items.find(i => i.id === editedItem.id);
+                if (!originalItem) return;
+
                 const updatedDetails = {
-                    ...t.details,
+                    ...editedItem.details,
                     customerName: editForm.customerName,
                     fulfillmentStatus: editForm.fulfillmentStatus,
                     paymentStatus: editForm.paymentStatus,
                     paymentMode: editForm.paymentMode,
                     trackingNumber: editForm.trackingNumber,
-                    // Remove legacy status to avoid confusion, or keep it synced to fulfillment?
-                    // Let's keep it synced to fulfillment for safety if other components read it
                     status: editForm.fulfillmentStatus
                 };
 
@@ -153,10 +159,11 @@ export default function OrderManagement({ transactions, onAddTransaction, onDele
                     .from('transactions')
                     .update({
                         details: updatedDetails,
-                        description: t.description.replace(t.details.customerName, editForm.customerName),
-                        date: isoDate // Explicit Time (Now)
+                        amount: editedItem.amount,
+                        description: `Sale: ${editedItem.details.itemName} (${editedItem.details.size}/${editedItem.details.color}) to ${editForm.customerName}`,
+                        date: isoDate
                     })
-                    .eq('id', t.id);
+                    .eq('id', editedItem.id);
                 if (error) throw error;
             });
 
@@ -574,20 +581,92 @@ export default function OrderManagement({ transactions, onAddTransaction, onDele
                                         className="bg-white/5 border-t border-white/5"
                                     >
                                         <div className="p-4 space-y-2">
-                                            {order.items.map(item => (
-                                                <div key={item.id} className="flex justify-between items-center p-2 rounded-lg hover:bg-white/5 text-sm">
-                                                    <div className="flex items-center gap-3">
-                                                        <div className="w-8 h-8 rounded bg-slate-800 flex items-center justify-center text-slate-500">
-                                                            <ShoppingBag size={14} />
+                                            {order.items.map((item, idx) => (
+                                                <div key={item.id} className="flex flex-col md:flex-row justify-between md:items-center p-3 rounded-xl hover:bg-white/5 bg-black/20 gap-4 border border-white/5 text-sm">
+                                                    <div className="flex items-center gap-3 flex-1">
+                                                        <div className="w-10 h-10 rounded-lg bg-slate-800 flex items-center justify-center text-slate-500 shrink-0">
+                                                            <ShoppingBag size={20} />
                                                         </div>
-                                                        <div>
-                                                            <p className="font-medium text-slate-200">{item.details?.itemName}</p>
-                                                            <p className="text-xs text-slate-500">{item.details?.size} • {item.details?.color}</p>
+                                                        <div className="flex-1 space-y-1">
+                                                            {editingId === order.id ? (
+                                                                <div className="grid grid-cols-1 md:grid-cols-3 gap-2" onClick={e => e.stopPropagation()}>
+                                                                    <input
+                                                                        className="glass-input py-1 px-2 text-xs"
+                                                                        value={editForm.items[idx]?.details?.itemName || ''}
+                                                                        onChange={e => {
+                                                                            const newItems = [...editForm.items];
+                                                                            newItems[idx].details.itemName = e.target.value;
+                                                                            setEditForm({ ...editForm, items: newItems });
+                                                                        }}
+                                                                        placeholder="Product Name"
+                                                                    />
+                                                                    <input
+                                                                        className="glass-input py-1 px-2 text-xs"
+                                                                        value={editForm.items[idx]?.details?.size || ''}
+                                                                        onChange={e => {
+                                                                            const newItems = [...editForm.items];
+                                                                            newItems[idx].details.size = e.target.value;
+                                                                            setEditForm({ ...editForm, items: newItems });
+                                                                        }}
+                                                                        placeholder="Size"
+                                                                    />
+                                                                    <input
+                                                                        className="glass-input py-1 px-2 text-xs"
+                                                                        value={editForm.items[idx]?.details?.color || ''}
+                                                                        onChange={e => {
+                                                                            const newItems = [...editForm.items];
+                                                                            newItems[idx].details.color = e.target.value;
+                                                                            setEditForm({ ...editForm, items: newItems });
+                                                                        }}
+                                                                        placeholder="Color"
+                                                                    />
+                                                                </div>
+                                                            ) : (
+                                                                <>
+                                                                    <p className="font-bold text-slate-200">{item.details?.itemName}</p>
+                                                                    <p className="text-xs text-slate-500 uppercase font-bold tracking-wider">{item.details?.size} • {item.details?.color}</p>
+                                                                </>
+                                                            )}
                                                         </div>
                                                     </div>
-                                                    <div className="text-right">
-                                                        <p className="font-mono text-white">₱{item.amount.toLocaleString()}</p>
-                                                        <p className="text-xs text-slate-500">x{item.details?.quantity}</p>
+                                                    <div className="flex items-center gap-6 shrink-0 justify-end">
+                                                        <div className="text-right">
+                                                            {editingId === order.id ? (
+                                                                <div className="flex flex-col gap-1 items-end" onClick={e => e.stopPropagation()}>
+                                                                    <div className="flex items-center gap-2">
+                                                                        <span className="text-[10px] text-slate-500 font-bold uppercase">Price</span>
+                                                                        <input
+                                                                            type="number"
+                                                                            className="glass-input py-1 px-2 text-xs w-20 text-right"
+                                                                            value={editForm.items[idx]?.amount || 0}
+                                                                            onChange={e => {
+                                                                                const newItems = [...editForm.items];
+                                                                                newItems[idx].amount = Number(e.target.value);
+                                                                                setEditForm({ ...editForm, items: newItems });
+                                                                            }}
+                                                                        />
+                                                                    </div>
+                                                                    <div className="flex items-center gap-2">
+                                                                        <span className="text-[10px] text-slate-500 font-bold uppercase">Qty</span>
+                                                                        <input
+                                                                            type="number"
+                                                                            className="glass-input py-1 px-2 text-xs w-16 text-right"
+                                                                            value={editForm.items[idx]?.details?.quantity || 0}
+                                                                            onChange={e => {
+                                                                                const newItems = [...editForm.items];
+                                                                                newItems[idx].details.quantity = Number(e.target.value);
+                                                                                setEditForm({ ...editForm, items: newItems });
+                                                                            }}
+                                                                        />
+                                                                    </div>
+                                                                </div>
+                                                            ) : (
+                                                                <>
+                                                                    <p className="font-mono font-bold text-white text-base">₱{item.amount.toLocaleString()}</p>
+                                                                    <p className="text-xs text-slate-500 font-bold">QTY: {item.details?.quantity}</p>
+                                                                </>
+                                                            )}
+                                                        </div>
                                                     </div>
                                                 </div>
                                             ))}
