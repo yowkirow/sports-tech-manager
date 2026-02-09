@@ -102,6 +102,16 @@ function App() {
         return () => subscription.unsubscribe();
     }, []);
 
+    // PWA Redirect Logic
+    React.useEffect(() => {
+        const isStandalone = window.matchMedia('(display-mode: standalone)').matches || window.navigator.standalone;
+        const isRoot = window.location.pathname === '/';
+
+        if (isStandalone && isRoot) {
+            window.location.href = '/admin';
+        }
+    }, []);
+
     const addTransaction = async (transaction) => {
         try {
             await addToSupabase(transaction);
