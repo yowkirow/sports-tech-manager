@@ -3,6 +3,9 @@ import { motion, AnimatePresence } from 'framer-motion';
 import { Package, Clock, CheckCircle, Truck, User, Search, Edit2, Save, X, Trash2, Layers, ChevronDown, ChevronUp, ShoppingBag, Loader2, AlertCircle, Banknote, Filter } from 'lucide-react';
 import { useToast } from '../ui/Toast';
 import { supabase } from '../../lib/supabaseClient';
+import { useProducts } from '../../hooks/useInventory';
+
+const SIZES = ['XS', 'S', 'M', 'L', 'XL', '2XL', '3XL'];
 
 const FULFILLMENT_STATUSES = ['pending', 'in_progress', 'ready', 'shipped', 'cancelled'];
 const PAYMENT_STATUSES = ['unpaid', 'paid'];
@@ -10,6 +13,7 @@ const PAYMENT_MODES = ['Cash', 'Gcash', 'Bank Transfer', 'COD'];
 
 export default function OrderManagement({ transactions, onAddTransaction, onDeleteTransaction, refetch, userRole }) {
     const { showToast } = useToast();
+    const products = useProducts(transactions);
     const isReseller = userRole === 'reseller';
     const [filterFulfillment, setFilterFulfillment] = useState('all');
     const [filterPayment, setFilterPayment] = useState('all'); // 'all', 'paid', 'unpaid'
@@ -598,17 +602,31 @@ export default function OrderManagement({ transactions, onAddTransaction, onDele
                                                         <div className="flex-1 space-y-1">
                                                             {editingId === order.id ? (
                                                                 <div className="grid grid-cols-1 md:grid-cols-3 gap-2" onClick={e => e.stopPropagation()}>
-                                                                    <input
+                                                                    <select
                                                                         className="glass-input py-1 px-2 text-xs"
                                                                         value={editForm.items[idx]?.details?.itemName || ''}
                                                                         onChange={e => {
+                                                                            const selectedProductName = e.target.value;
+                                                                            const product = products.find(p => p.name === selectedProductName);
                                                                             const newItems = [...editForm.items];
-                                                                            newItems[idx].details.itemName = e.target.value;
+
+                                                                            newItems[idx].details.itemName = selectedProductName;
+                                                                            if (product) {
+                                                                                newItems[idx].amount = product.price;
+                                                                                newItems[idx].details.imageUrl = product.imageUrl;
+                                                                                newItems[idx].details.color = product.linkedColor || 'Varied';
+                                                                            }
+
                                                                             setEditForm({ ...editForm, items: newItems });
                                                                         }}
-                                                                        placeholder="Product Name"
-                                                                    />
-                                                                    <input
+                                                                    >
+                                                                        <option value="" disabled>Select Product</option>
+                                                                        {products.map(p => (
+                                                                            <option key={p.id} value={p.name} className="bg-slate-900">{p.name} - ₱{p.price}</option>
+                                                                        ))}
+                                                                    </select>
+
+                                                                    <select
                                                                         className="glass-input py-1 px-2 text-xs"
                                                                         value={editForm.items[idx]?.details?.size || ''}
                                                                         onChange={e => {
@@ -616,8 +634,13 @@ export default function OrderManagement({ transactions, onAddTransaction, onDele
                                                                             newItems[idx].details.size = e.target.value;
                                                                             setEditForm({ ...editForm, items: newItems });
                                                                         }}
-                                                                        placeholder="Size"
-                                                                    />
+                                                                    >
+                                                                        <option value="" disabled>Size</option>
+                                                                        {SIZES.map(s => (
+                                                                            <option key={s} value={s} className="bg-slate-900">{s}</option>
+                                                                        ))}
+                                                                    </select>
+
                                                                     <input
                                                                         className="glass-input py-1 px-2 text-xs"
                                                                         value={editForm.items[idx]?.details?.color || ''}
