@@ -18,6 +18,7 @@ import Storefront from './components/Shop/Storefront';
 import Login from './components/Auth/Login';
 import { supabase } from './lib/supabaseClient';
 import ProfileSettings from './components/Settings/ProfileSettings';
+import OrderTracking from './components/Shop/OrderTracking';
 
 
 function App() {
@@ -171,6 +172,12 @@ function App() {
 
     // Simplified Path-Based Routing
     const isAdminPath = window.location.pathname.startsWith('/admin');
+    const isTrackPath = window.location.pathname.startsWith('/track');
+
+    // Tracking Route
+    if (isTrackPath) {
+        return <OrderTracking />;
+    }
 
     // Default to Storefront unless on /admin path
     if (!isAdminPath) {

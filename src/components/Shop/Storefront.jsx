@@ -1,6 +1,6 @@
 import React, { useState, useMemo } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
-import { Component, Loader2, Upload, ShoppingCart, X, Plus, Minus, CheckCircle, Store, Search, Package, Clock, Ticket } from 'lucide-react';
+import { Component, Loader2, Upload, ShoppingCart, X, Plus, Minus, CheckCircle, Store, Search, Package, Clock, Ticket, Copy, ExternalLink } from 'lucide-react';
 import { supabase } from '../../lib/supabaseClient';
 import { useProducts, useRawInventory } from '../../hooks/useInventory';
 import { useToast } from '../ui/Toast';
@@ -17,6 +17,7 @@ export default function Storefront({ transactions, onPlaceOrder }) {
     const [isCartOpen, setIsCartOpen] = useState(false);
     const [activeProduct, setActiveProduct] = useState(null); // For size selection
     const [searchTerm, setSearchTerm] = useState('');
+    const [lastOrderId, setLastOrderId] = useState('');
     const [showSizeGuide, setShowSizeGuide] = useState(false);
 
     // Checkout State
@@ -293,6 +294,7 @@ export default function Storefront({ transactions, onPlaceOrder }) {
             }
 
             setOrderComplete(true);
+            setLastOrderId(orderId);
             setCart([]);
             // Reset after a delay or let them close
         } catch (err) {
@@ -315,13 +317,42 @@ export default function Storefront({ transactions, onPlaceOrder }) {
                         <CheckCircle size={40} />
                     </div>
                     <h2 className="text-2xl font-bold text-white mb-2">Order Placed!</h2>
-                    <p className="text-slate-400 mb-8">Thank you, {customerName}. We've received your order and will begin processing it shortly.</p>
-                    <button
-                        onClick={() => { setOrderComplete(false); setCustomerName(''); }}
-                        className="btn-primary w-full py-3"
-                    >
-                        Place Another Order
-                    </button>
+                    <p className="text-slate-400 mb-6">Thank you, {customerName}. We've received your order and will begin processing it shortly.</p>
+
+                    <div className="w-full bg-white/5 border border-white/5 rounded-2xl p-4 mb-8 text-left">
+                        <p className="text-[10px] font-bold text-slate-500 uppercase tracking-widest mb-2">Your Tracking Link</p>
+                        <div className="flex items-center gap-3">
+                            <div className="flex-1 text-xs font-mono text-primary truncate bg-black/40 p-2 rounded-lg border border-white/5">
+                                {window.location.origin}/track/{lastOrderId}
+                            </div>
+                            <button
+                                onClick={() => {
+                                    navigator.clipboard.writeText(`${window.location.origin}/track/${lastOrderId}`);
+                                    showToast('Tracking link copied!', 'success');
+                                }}
+                                className="p-2 bg-white/5 hover:bg-white/10 rounded-lg text-slate-400 hover:text-white transition-colors border border-white/5"
+                                title="Copy Link"
+                            >
+                                <Copy size={16} />
+                            </button>
+                        </div>
+                        <p className="text-[9px] text-slate-500 mt-2 italic">* Use your contact number to verify and track in real-time.</p>
+                    </div>
+
+                    <div className="flex flex-col w-full gap-3">
+                        <button
+                            onClick={() => window.location.href = `/track/${lastOrderId}`}
+                            className="bg-white/10 hover:bg-white/20 text-white font-bold py-3 px-4 rounded-xl flex items-center justify-center gap-2 transition-all border border-white/10"
+                        >
+                            <ExternalLink size={18} /> View Status Now
+                        </button>
+                        <button
+                            onClick={() => { setOrderComplete(false); setCustomerName(''); setLastOrderId(''); }}
+                            className="btn-primary w-full py-3"
+                        >
+                            Place Another Order
+                        </button>
+                    </div>
                 </motion.div>
             </div>
         );
