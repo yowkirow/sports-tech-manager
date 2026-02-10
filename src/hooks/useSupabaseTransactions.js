@@ -155,19 +155,20 @@ const useSupabaseTransactions = () => {
 
         // Real-time Subscription
         const channel = supabase
-            .channel('public:transactions')
+            .channel('db-changes') // Unique channel name
             .on(
                 'postgres_changes',
                 { event: '*', schema: 'public', table: 'transactions' },
                 (payload) => {
                     if (payload.eventType === 'INSERT') {
                         setTransactions(prev => {
-                            // Avoid duplicates if local state was already updated optimistically
                             if (prev.find(t => t.id === payload.new.id)) return prev;
                             return [payload.new, ...prev];
                         });
                     } else if (payload.eventType === 'UPDATE') {
-                        setTransactions(prev => prev.map(t => t.id === payload.new.id ? payload.new : t));
+                        setTransactions(prev => prev.map(t =>
+                            t.id === payload.new.id ? { ...t, ...payload.new } : t
+                        ));
                     } else if (payload.eventType === 'DELETE') {
                         setTransactions(prev => prev.filter(t => t.id !== payload.old.id));
                     }

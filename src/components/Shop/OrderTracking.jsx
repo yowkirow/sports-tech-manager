@@ -86,23 +86,45 @@ export default function OrderTracking() {
         if (!isVerified || !orderId || isEditing) return;
 
         const channel = supabase
-            .channel('public:transactions')
+            .channel(`order-track-${orderId}`)
             .on(
                 'postgres_changes',
                 {
-                    event: 'UPDATE',
+                    event: '*',
                     schema: 'public',
                     table: 'transactions',
                 },
                 (payload) => {
-                    if (payload.new.details?.orderId === orderId) {
-                        // Update order data inline
+                    // Check if this transaction belongs to our current order
+                    const tx = payload.new || payload.old;
+                    if (tx?.details?.orderId === orderId) {
                         setOrder(prev => {
                             if (!prev) return prev;
-                            const newItems = prev.items.map(item =>
-                                item.id === payload.new.id ? payload.new : item
-                            );
-                            return { ...prev, items: newItems, details: payload.new.details };
+
+                            if (payload.eventType === 'INSERT') {
+                                if (prev.items.find(i => i.id === payload.new.id)) return prev;
+                                return { ...prev, items: [...prev.items, payload.new] };
+                            }
+
+                            if (payload.eventType === 'UPDATE') {
+                                const updatedItems = prev.items.map(item =>
+                                    item.id === payload.new.id ? { ...item, ...payload.new } : item
+                                );
+                                return {
+                                    ...prev,
+                                    items: updatedItems,
+                                    details: { ...prev.details, ...payload.new.details }
+                                };
+                            }
+
+                            if (payload.eventType === 'DELETE') {
+                                return {
+                                    ...prev,
+                                    items: prev.items.filter(i => i.id !== payload.old.id)
+                                };
+                            }
+
+                            return prev;
                         });
                     }
                 }
