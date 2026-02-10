@@ -722,7 +722,7 @@ export default function OrderManagement({ transactions, onAddTransaction, onDele
                                                             <p className="text-slate-400 text-xs text-uppercase font-bold mb-1">Details (Barangay, City, Province)</p>
                                                             <p className="text-white">
                                                                 {order.items[0].details.shippingDetails ? (
-                                                                    `${order.items[0].details.shippingDetails.city}, ${order.items[0].details.shippingDetails.province} ${order.items[0].details.shippingDetails.zipCode || ''}`
+                                                                    `${order.items[0].details.shippingDetails.barangay ? order.items[0].details.shippingDetails.barangay + ', ' : ''}${order.items[0].details.shippingDetails.city}, ${order.items[0].details.shippingDetails.province}`
                                                                 ) : (
                                                                     `${order.items[0].details.customerBarangay ? order.items[0].details.customerBarangay + ', ' : ''}${order.items[0].details.customerCity ? order.items[0].details.customerCity + ', ' : ''}${order.items[0].details.customerProvince || ''}`
                                                                 )}
