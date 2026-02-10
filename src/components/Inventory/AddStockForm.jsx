@@ -6,7 +6,7 @@ import { motion, AnimatePresence } from 'framer-motion';
 import { useActivityLog } from '../../hooks/useActivityLog';
 import { supabase } from '../../lib/supabaseClient';
 
-const SIZES = ['XS', 'S', 'M', 'L', 'XL', '2XL', '3XL'];
+const SIZES = ['XS', 'S', 'M', 'L', 'XL', '2XL'];
 const COLORS = ['White', 'Black', 'Kiwi', 'Cream', 'Baby Blue'];
 
 export default function AddStockForm({ onAddTransaction, onClose }) {

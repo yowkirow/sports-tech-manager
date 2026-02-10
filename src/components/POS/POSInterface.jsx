@@ -7,7 +7,7 @@ import { useRawInventory, useProducts } from '../../hooks/useInventory';
 import useSupabaseCustomers from '../../hooks/useSupabaseCustomers';
 import { getMMCities, getAllProvinces, getCitiesByProvince, getBarangays } from '../../lib/phLocations';
 
-const SIZES = ['XS', 'S', 'M', 'L', 'XL', '2XL', '3XL'];
+const SIZES = ['XS', 'S', 'M', 'L', 'XL', '2XL'];
 const COLORS = ['White', 'Black', 'Kiwi', 'Cream', 'Baby Blue'];
 
 

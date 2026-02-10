@@ -5,7 +5,7 @@ import { useToast } from '../ui/Toast';
 import { supabase } from '../../lib/supabaseClient';
 import { useProducts } from '../../hooks/useInventory';
 
-const SIZES = ['XS', 'S', 'M', 'L', 'XL', '2XL', '3XL'];
+const SIZES = ['XS', 'S', 'M', 'L', 'XL', '2XL'];
 
 const FULFILLMENT_STATUSES = ['pending', 'in_progress', 'ready', 'shipped', 'cancelled'];
 const PAYMENT_STATUSES = ['unpaid', 'paid'];

@@ -194,7 +194,7 @@ const TransactionForm = ({ onAddTransaction, transactions = [] }) => {
                             label="Size"
                             value={size}
                             onChange={(e) => setSize(e.target.value)}
-                            options={['XS', 'S', 'M', 'L', 'XL', '2XL', '3XL'].map(s => ({ value: s, label: s }))}
+                            options={['XS', 'S', 'M', 'L', 'XL', '2XL'].map(s => ({ value: s, label: s }))}
                         />
 
                         <Select
