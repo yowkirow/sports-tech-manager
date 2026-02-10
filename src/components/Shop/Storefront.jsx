@@ -228,6 +228,15 @@ export default function Storefront({ transactions, onPlaceOrder }) {
         }
     };
 
+    const generateOrderId = () => {
+        const chars = 'ABCDEFGHJKLMNPQRSTUVWXYZ23456789'; // Avoid ambiguous characters
+        let result = '';
+        for (let i = 0; i < 6; i++) {
+            result += chars.charAt(Math.floor(Math.random() * chars.length));
+        }
+        return `ST-${result}`;
+    };
+
     const handleCheckout = async () => {
         if (!customerName) return showToast('Please enter your name', 'error');
         if (!shippingAddress || !city || (shippingRegion === 'Provincial' && !province) || !barangay || !contactNumber) return showToast('Please complete shipping details', 'error');
@@ -239,7 +248,7 @@ export default function Storefront({ transactions, onPlaceOrder }) {
         setCheckoutLoading(true);
 
         try {
-            const orderId = crypto.randomUUID();
+            const orderId = generateOrderId();
             const date = new Date().toISOString();
 
             const shippingFee = shippingRegion === 'MM' ? 100 : 200;
