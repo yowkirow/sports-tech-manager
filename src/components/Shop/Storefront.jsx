@@ -1,6 +1,6 @@
 import React, { useState, useMemo } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
-import { Component, Loader2, Upload, ShoppingCart, X, Plus, Minus, CheckCircle, Store, Search, Package, Clock, Ticket, Copy, ExternalLink, SearchCode } from 'lucide-react';
+import { Component, Loader2, Upload, ShoppingCart, X, Plus, Minus, CheckCircle, Store, Search, Package, Clock, Ticket, Copy, ExternalLink, SearchCode, Phone } from 'lucide-react';
 import { supabase } from '../../lib/supabaseClient';
 import { useProducts, useRawInventory } from '../../hooks/useInventory';
 import { useToast } from '../ui/Toast';
