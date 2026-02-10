@@ -17,6 +17,7 @@ export default function Storefront({ transactions, onPlaceOrder }) {
     const [isCartOpen, setIsCartOpen] = useState(false);
     const [activeProduct, setActiveProduct] = useState(null); // For size selection
     const [searchTerm, setSearchTerm] = useState('');
+    const [showSizeGuide, setShowSizeGuide] = useState(false);
 
     // Checkout State
     const [customerName, setCustomerName] = useState('');
@@ -113,6 +114,7 @@ export default function Storefront({ transactions, onPlaceOrder }) {
             return [...prev, { ...product, size, cartId, quantity: 1 }];
         });
         setActiveProduct(null);
+        setShowSizeGuide(false);
         showToast('Added to cart', 'success');
     };
 
@@ -428,7 +430,55 @@ export default function Storefront({ transactions, onPlaceOrder }) {
                                 </div>
                             </div>
 
-                            <p className="text-xs font-bold text-slate-400 uppercase mb-3">Select Size</p>
+                            <div className="flex items-center justify-between mb-3">
+                                <p className="text-xs font-bold text-slate-400 uppercase">Select Size</p>
+                                <button
+                                    onClick={() => setShowSizeGuide(!showSizeGuide)}
+                                    className="text-[10px] font-bold text-primary hover:underline uppercase tracking-wider"
+                                >
+                                    {showSizeGuide ? 'Hide Size Guide' : 'Size Guide'}
+                                </button>
+                            </div>
+
+                            <AnimatePresence>
+                                {showSizeGuide && (
+                                    <motion.div
+                                        initial={{ height: 0, opacity: 0 }}
+                                        animate={{ height: 'auto', opacity: 1 }}
+                                        exit={{ height: 0, opacity: 0 }}
+                                        className="overflow-hidden mb-4"
+                                    >
+                                        <div className="bg-black/40 rounded-xl border border-white/5 p-3">
+                                            <table className="w-full text-[11px] text-center">
+                                                <thead>
+                                                    <tr className="text-slate-500 border-b border-white/5">
+                                                        <th className="pb-2 font-bold uppercase">Size</th>
+                                                        <th className="pb-2 font-bold uppercase">Chest</th>
+                                                        <th className="pb-2 font-bold uppercase">Height</th>
+                                                    </tr>
+                                                </thead>
+                                                <tbody className="text-slate-300">
+                                                    {[
+                                                        { s: 'XS', c: '18"', h: '25"' },
+                                                        { s: 'S', c: '19"', h: '26"' },
+                                                        { s: 'M', c: '20"', h: '27"' },
+                                                        { s: 'L', c: '21"', h: '28"' },
+                                                        { s: 'XL', c: '22"', h: '29"' },
+                                                        { s: '2XL', c: '23"', h: '30"' },
+                                                    ].map((row) => (
+                                                        <tr key={row.s} className="border-b border-white/5 last:border-0">
+                                                            <td className="py-2 font-bold text-white">{row.s}</td>
+                                                            <td className="py-2">{row.c}</td>
+                                                            <td className="py-2">{row.h}</td>
+                                                        </tr>
+                                                    ))}
+                                                </tbody>
+                                            </table>
+                                            <p className="text-[9px] text-slate-500 mt-2 text-center italic">All measurements are in inches</p>
+                                        </div>
+                                    </motion.div>
+                                )}
+                            </AnimatePresence>
                             <div className="grid grid-cols-4 gap-2">
                                 {SIZES.map(size => {
                                     const stock = getStock(activeProduct, size);
