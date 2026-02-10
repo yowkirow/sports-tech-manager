@@ -1,6 +1,6 @@
 import React, { useState, useMemo } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
-import { Component, Loader2, Upload, ShoppingCart, X, Plus, Minus, CheckCircle, Store, Search, Package, Clock, Ticket, Copy, ExternalLink } from 'lucide-react';
+import { Component, Loader2, Upload, ShoppingCart, X, Plus, Minus, CheckCircle, Store, Search, Package, Clock, Ticket, Copy, ExternalLink, SearchCode } from 'lucide-react';
 import { supabase } from '../../lib/supabaseClient';
 import { useProducts, useRawInventory } from '../../hooks/useInventory';
 import { useToast } from '../ui/Toast';
@@ -19,6 +19,9 @@ export default function Storefront({ transactions, onPlaceOrder }) {
     const [searchTerm, setSearchTerm] = useState('');
     const [lastOrderId, setLastOrderId] = useState('');
     const [showSizeGuide, setShowSizeGuide] = useState(false);
+    const [isTrackModalOpen, setIsTrackModalOpen] = useState(false);
+    const [trackingContact, setTrackingContact] = useState('');
+    const [isSearchingOrder, setIsSearchingOrder] = useState(false);
 
     // Checkout State
     const [customerName, setCustomerName] = useState('');
@@ -305,6 +308,36 @@ export default function Storefront({ transactions, onPlaceOrder }) {
         }
     };
 
+    const handleTrackOrder = async () => {
+        if (!trackingContact.trim()) return showToast('Please enter your contact number', 'error');
+
+        setIsSearchingOrder(true);
+        try {
+            const { data, error } = await supabase
+                .from('transactions')
+                .select('details')
+                .eq('details->>contactNumber', trackingContact.trim())
+                .eq('type', 'sale')
+                .order('date', { ascending: false })
+                .limit(1);
+
+            if (error) throw error;
+            if (!data || data.length === 0) {
+                showToast('No order found with this contact number', 'error');
+                return;
+            }
+
+            const orderId = data[0].details.orderId;
+            setIsTrackModalOpen(false);
+            window.location.href = `/track/${orderId}`;
+        } catch (err) {
+            console.error(err);
+            showToast('Search failed. Please try again.', 'error');
+        } finally {
+            setIsSearchingOrder(false);
+        }
+    };
+
     if (orderComplete) {
         return (
             <div className="min-h-screen bg-slate-900 flex flex-col items-center justify-center p-4 text-center">
@@ -367,6 +400,15 @@ export default function Storefront({ transactions, onPlaceOrder }) {
                 </div>
 
                 <div className="flex items-center gap-4">
+                    <button
+                        onClick={() => setIsTrackModalOpen(true)}
+                        className="p-2 text-slate-400 hover:text-white transition-colors flex items-center gap-2"
+                        title="Track My Order"
+                    >
+                        <SearchCode size={24} />
+                        <span className="hidden sm:inline text-xs font-bold uppercase tracking-wider">Track</span>
+                    </button>
+
                     <button
                         onClick={() => setIsCartOpen(true)}
                         className="relative p-2 text-slate-400 hover:text-white transition-colors"
@@ -821,6 +863,55 @@ export default function Storefront({ transactions, onPlaceOrder }) {
                                     <div className="h-6 sm:hidden" /> {/* Spacer for bottom navs */}
                                 </div>
                             </div>
+                        </motion.div>
+                    </div>
+                )}
+            </AnimatePresence>
+            {/* Tracking Lookup Modal */}
+            <AnimatePresence>
+                {isTrackModalOpen && (
+                    <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/80 backdrop-blur-sm p-4" onClick={() => setIsTrackModalOpen(false)}>
+                        <motion.div
+                            initial={{ scale: 0.9, opacity: 0 }}
+                            animate={{ scale: 1, opacity: 1 }}
+                            exit={{ scale: 0.9, opacity: 0 }}
+                            className="glass-panel p-6 max-w-sm w-full relative"
+                            onClick={e => e.stopPropagation()}
+                        >
+                            <button onClick={() => setIsTrackModalOpen(false)} className="absolute top-4 right-4 text-slate-400 hover:text-white"><X size={24} /></button>
+
+                            <div className="text-center mb-6">
+                                <div className="w-16 h-16 rounded-2xl bg-primary/20 text-primary flex items-center justify-center mx-auto mb-4">
+                                    <SearchCode size={32} />
+                                </div>
+                                <h3 className="text-xl font-bold text-white">Track Your Order</h3>
+                                <p className="text-sm text-slate-400 mt-1">Enter the mobile number used during checkout.</p>
+                            </div>
+
+                            <div className="space-y-4">
+                                <div className="relative">
+                                    <Phone className="absolute left-4 top-1/2 -translate-y-1/2 text-slate-500" size={18} />
+                                    <input
+                                        type="tel"
+                                        placeholder="Mobile Number (e.g. 09123456789)"
+                                        value={trackingContact}
+                                        onChange={e => setTrackingContact(e.target.value)}
+                                        onKeyDown={e => e.key === 'Enter' && handleTrackOrder()}
+                                        className="glass-input pl-12 py-3 rounded-xl w-full"
+                                    />
+                                </div>
+                                <button
+                                    onClick={handleTrackOrder}
+                                    disabled={isSearchingOrder}
+                                    className="btn-primary w-full py-3 flex items-center justify-center gap-2"
+                                >
+                                    {isSearchingOrder ? <Loader2 className="animate-spin" size={18} /> : 'Find My Order'}
+                                </button>
+                            </div>
+
+                            <p className="text-[10px] text-slate-500 mt-4 text-center italic">
+                                * This will find your most recent order.
+                            </p>
                         </motion.div>
                     </div>
                 )}
