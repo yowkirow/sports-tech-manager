@@ -1,6 +1,6 @@
 import React, { useState, useMemo } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
-import { Package, Clock, CheckCircle, Truck, User, Search, Edit2, Save, X, Trash2, Layers, ChevronDown, ChevronUp, ShoppingBag, Loader2, AlertCircle, Banknote, Filter } from 'lucide-react';
+import { Package, Clock, CheckCircle, Truck, User, Search, Edit2, Save, X, Trash2, Layers, ChevronDown, ChevronUp, ShoppingBag, Loader2, AlertCircle, Banknote, Filter, Copy } from 'lucide-react';
 import { useToast } from '../ui/Toast';
 import { supabase } from '../../lib/supabaseClient';
 import { useProducts } from '../../hooks/useInventory';
@@ -263,6 +263,19 @@ export default function OrderManagement({ transactions, onAddTransaction, onDele
         } finally {
             setLoading(false);
         }
+    };
+
+    const handleCopyToClipboard = (text, type) => {
+        navigator.clipboard.writeText(text);
+        showToast(`${type} copied!`, 'success');
+    };
+
+    const formatContactForCopy = (number) => {
+        if (!number) return '';
+        // Remove spaces, dashes, etc.
+        const clean = number.toString().replace(/[\s\-\(\)]/g, '');
+        // If it starts with 0 or +63, remove the prefix to start with 9
+        return clean.replace(/^(0|\+?63)/, '');
     };
 
     return (
@@ -708,14 +721,27 @@ export default function OrderManagement({ transactions, onAddTransaction, onDele
                                                     <div className="grid grid-cols-1 md:grid-cols-2 gap-4 text-sm">
                                                         <div>
                                                             <p className="text-slate-400 text-xs text-uppercase font-bold mb-1">Address</p>
-                                                            <p className="text-white">
+                                                            <p
+                                                                className="text-white hover:text-primary transition-colors cursor-pointer flex items-center gap-2 group/address"
+                                                                onClick={() => handleCopyToClipboard(order.items[0].details.shippingDetails?.address || order.items[0].details.customerAddress, 'Address')}
+                                                                title="Click to copy address"
+                                                            >
                                                                 {order.items[0].details.shippingDetails?.address || order.items[0].details.customerAddress || 'No address provided'}
+                                                                <Copy size={12} className="opacity-0 group-hover/address:opacity-100 transition-opacity" />
                                                             </p>
                                                         </div>
                                                         <div>
                                                             <p className="text-slate-400 text-xs text-uppercase font-bold mb-1">Contact</p>
-                                                            <p className="text-white">
+                                                            <p
+                                                                className="text-white hover:text-primary transition-colors cursor-pointer flex items-center gap-2 group/contact"
+                                                                onClick={() => {
+                                                                    const raw = order.items[0].details.shippingDetails?.contactNumber || order.items[0].details.customerContact || order.items[0].details.contactNumber;
+                                                                    handleCopyToClipboard(formatContactForCopy(raw), 'Contact number');
+                                                                }}
+                                                                title="Click to copy contact (starts with 9)"
+                                                            >
                                                                 {order.items[0].details.shippingDetails?.contactNumber || order.items[0].details.customerContact || order.items[0].details.contactNumber || 'N/A'}
+                                                                <Copy size={12} className="opacity-0 group-hover/contact:opacity-100 transition-opacity" />
                                                             </p>
                                                         </div>
                                                         <div className="col-span-1 md:col-span-2">
