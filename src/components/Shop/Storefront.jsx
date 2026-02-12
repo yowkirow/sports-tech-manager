@@ -24,7 +24,8 @@ export default function Storefront({ transactions, onPlaceOrder }) {
     const [isSearchingOrder, setIsSearchingOrder] = useState(false);
 
     // Checkout State
-    const [customerName, setCustomerName] = useState('');
+    const [firstName, setFirstName] = useState('');
+    const [lastName, setLastName] = useState('');
     const [contactNumber, setContactNumber] = useState('');
     const [shippingAddress, setShippingAddress] = useState(''); // Street
 
@@ -238,8 +239,12 @@ export default function Storefront({ transactions, onPlaceOrder }) {
     };
 
     const handleCheckout = async () => {
-        if (!customerName) return showToast('Please enter your name', 'error');
-        if (!shippingAddress || !city || (shippingRegion === 'Provincial' && !province) || !barangay || !contactNumber) return showToast('Please complete shipping details', 'error');
+        if (!firstName.trim()) return showToast('Please enter your first name', 'error');
+        if (!lastName.trim()) return showToast('Please enter your last name', 'error');
+        if (!contactNumber.trim()) return showToast('Please enter your contact number', 'error');
+        if (!shippingAddress || !city || (shippingRegion === 'Provincial' && !province) || !barangay) return showToast('Please complete shipping details', 'error');
+
+        const customerName = `${firstName.trim()} ${lastName.trim()}`;
 
         // Payment Validation
         const requiresProof = ['Gcash', 'Bank Transfer'].includes(paymentMode);
@@ -359,7 +364,7 @@ export default function Storefront({ transactions, onPlaceOrder }) {
                         <CheckCircle size={40} />
                     </div>
                     <h2 className="text-2xl font-bold text-white mb-2">Order Placed!</h2>
-                    <p className="text-slate-400 mb-6">Thank you, {customerName}. We've received your order and will begin processing it shortly.</p>
+                    <p className="text-slate-400 mb-6">Thank you, {firstName}. We've received your order and will begin processing it shortly.</p>
 
                     <div className="w-full bg-white/5 border border-white/5 rounded-2xl p-4 mb-8 text-left">
                         <p className="text-[10px] font-bold text-slate-500 uppercase tracking-widest mb-2">Your Tracking Link</p>
@@ -389,7 +394,7 @@ export default function Storefront({ transactions, onPlaceOrder }) {
                             <ExternalLink size={18} /> View Status Now
                         </button>
                         <button
-                            onClick={() => { setOrderComplete(false); setCustomerName(''); setLastOrderId(''); }}
+                            onClick={() => { setOrderComplete(false); setFirstName(''); setLastName(''); setLastOrderId(''); }}
                             className="btn-primary w-full py-3"
                         >
                             Place Another Order
@@ -646,9 +651,10 @@ export default function Storefront({ transactions, onPlaceOrder }) {
                                         <h3 className="text-sm font-bold text-slate-400 uppercase tracking-wider mb-2">Shipping Details</h3>
 
                                         <div className="grid grid-cols-2 gap-3">
-                                            <input className="glass-input w-full py-3" placeholder="Name *" value={customerName} onChange={e => setCustomerName(e.target.value)} />
-                                            <input className="glass-input w-full py-3" placeholder="Contact # *" value={contactNumber} onChange={e => setContactNumber(e.target.value)} />
+                                            <input className="glass-input w-full py-3" placeholder="First Name *" value={firstName} onChange={e => setFirstName(e.target.value)} />
+                                            <input className="glass-input w-full py-3" placeholder="Last Name *" value={lastName} onChange={e => setLastName(e.target.value)} />
                                         </div>
+                                        <input className="glass-input w-full py-3" placeholder="Contact # (Required) *" value={contactNumber} onChange={e => setContactNumber(e.target.value)} />
                                         <input className="glass-input w-full py-3" placeholder="Street Address *" value={shippingAddress} onChange={e => setShippingAddress(e.target.value)} />
 
                                         {/* Region & City Selection */}
