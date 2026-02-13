@@ -5,7 +5,6 @@ import { useToast } from '../ui/Toast';
 import { supabase } from '../../lib/supabaseClient';
 import { useProducts } from '../../hooks/useInventory';
 import { sendSMS } from '../../lib/textbee';
-import { trackShipment } from '../../lib/lbc';
 
 const SIZES = ['XS', 'S', 'M', 'L', 'XL', '2XL'];
 
@@ -33,10 +32,6 @@ export default function OrderManagement({ transactions, onAddTransaction, onDele
     const [isSelectionMode, setIsSelectionMode] = useState(false);
     const [selectedOrderIds, setSelectedOrderIds] = useState(new Set());
     const [showBulkEditModal, setShowBulkEditModal] = useState(false);
-
-    // LBC Tracking State
-    const [lbcResults, setLbcResults] = useState({}); // { trackingNumber: { status, lastUpdate, history } }
-    const [trackingLoading, setTrackingLoading] = useState({});
 
     // 1. Group Transactions & Migrate Data
     const groupedOrders = useMemo(() => {
@@ -333,34 +328,6 @@ export default function OrderManagement({ transactions, onAddTransaction, onDele
         }
     };
 
-    const handleTrackLBC = async (trackingNumber) => {
-        if (!trackingNumber || trackingLoading[trackingNumber]) return;
-
-        setTrackingLoading(prev => ({ ...prev, [trackingNumber]: true }));
-        try {
-            const { data: { session } } = await supabase.auth.getSession();
-            const meta = session?.user?.user_metadata;
-
-            if (!meta?.lbc_api_key) {
-                showToast('Please configure LBC API Key in Settings', 'error');
-                return;
-            }
-
-            const result = await trackShipment({
-                trackingNumber,
-                apiKey: meta.lbc_api_key,
-                accountNumber: meta.lbc_account_number
-            });
-
-            setLbcResults(prev => ({ ...prev, [trackingNumber]: result }));
-            showToast('Tracking info updated', 'success');
-        } catch (err) {
-            console.error(err);
-            showToast(`Tracking failed: ${err.message}`, 'error');
-        } finally {
-            setTrackingLoading(prev => ({ ...prev, [trackingNumber]: false }));
-        }
-    };
 
     return (
         <div className="h-full flex flex-col gap-6">
@@ -840,58 +807,8 @@ export default function OrderManagement({ transactions, onAddTransaction, onDele
                                                         </div>
                                                         {order.items[0].details.trackingNumber && (
                                                             <div className="col-span-1 md:col-span-2 mt-2 pt-2 border-t border-white/5">
-                                                                <div className="flex justify-between items-center mb-2">
-                                                                    <p className="text-slate-400 text-xs flex items-center gap-2"><Truck size={10} /> Tracking Number</p>
-                                                                    <button
-                                                                        onClick={() => handleTrackLBC(order.items[0].details.trackingNumber)}
-                                                                        disabled={trackingLoading[order.items[0].details.trackingNumber]}
-                                                                        className="text-[10px] font-bold text-red-400 hover:text-red-300 flex items-center gap-1 bg-red-500/10 px-2 py-1 rounded"
-                                                                    >
-                                                                        {trackingLoading[order.items[0].details.trackingNumber] ? (
-                                                                            <Loader2 size={10} className="animate-spin" />
-                                                                        ) : (
-                                                                            <Search size={10} />
-                                                                        )}
-                                                                        Track LBC
-                                                                    </button>
-                                                                </div>
+                                                                <p className="text-slate-400 text-xs flex items-center gap-2 mb-1"><Truck size={10} /> Tracking Number</p>
                                                                 <p className="text-primary font-mono font-bold tracking-wider">{order.items[0].details.trackingNumber}</p>
-
-                                                                {/* LBC Live Result */}
-                                                                {lbcResults[order.items[0].details.trackingNumber] && (
-                                                                    <motion.div
-                                                                        initial={{ opacity: 0, scale: 0.95 }}
-                                                                        animate={{ opacity: 1, scale: 1 }}
-                                                                        className="mt-3 p-3 rounded-lg bg-red-500/5 border border-red-500/10 space-y-2"
-                                                                    >
-                                                                        <div className="flex justify-between items-center text-xs">
-                                                                            <span className="text-red-400 font-bold uppercase tracking-wider">Latest Status</span>
-                                                                            <span className="text-slate-500">{new Date(lbcResults[order.items[0].details.trackingNumber].lastUpdate).toLocaleString()}</span>
-                                                                        </div>
-                                                                        <p className="text-white font-bold bg-red-500/20 px-2 py-1 rounded inline-block">
-                                                                            {lbcResults[order.items[0].details.trackingNumber].status}
-                                                                        </p>
-
-                                                                        {lbcResults[order.items[0].details.trackingNumber].history?.length > 0 && (
-                                                                            <div className="pt-2 border-t border-white/5 space-y-2 max-h-32 overflow-y-auto custom-scrollbar">
-                                                                                {lbcResults[order.items[0].details.trackingNumber].history.map((h, i) => (
-                                                                                    <div key={i} className="flex gap-3 text-xs">
-                                                                                        <div className="flex flex-col items-center">
-                                                                                            <div className="w-1.5 h-1.5 rounded-full bg-red-500 mt-1.5" />
-                                                                                            {i !== lbcResults[order.items[0].details.trackingNumber].history.length - 1 && (
-                                                                                                <div className="w-px flex-1 bg-white/10" />
-                                                                                            )}
-                                                                                        </div>
-                                                                                        <div className="flex-1 pb-2">
-                                                                                            <p className="text-slate-200 font-bold">{h.status}</p>
-                                                                                            <p className="text-slate-500 text-[10px]">{h.location} • {new Date(h.timestamp).toLocaleString()}</p>
-                                                                                        </div>
-                                                                                    </div>
-                                                                                ))}
-                                                                            </div>
-                                                                        )}
-                                                                    </motion.div>
-                                                                )}
                                                             </div>
                                                         )}
                                                     </div>

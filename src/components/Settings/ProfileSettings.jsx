@@ -23,8 +23,6 @@ export default function ProfileSettings({ user, onLogout }) {
     const [enableSmsNotifications, setEnableSmsNotifications] = useState(user?.user_metadata?.enable_sms_notifications || false);
     const [enableTrackingSms, setEnableTrackingSms] = useState(user?.user_metadata?.enable_tracking_sms || false);
     const [trackingSmsTemplate, setTrackingSmsTemplate] = useState(user?.user_metadata?.tracking_sms_template || 'Hi {customerName}, your SportsTech order is on its way! 🚀 Tracking Details: {trackingNumber}');
-    const [lbcApiKey, setLbcApiKey] = useState(user?.user_metadata?.lbc_api_key || '');
-    const [lbcAccountNumber, setLbcAccountNumber] = useState(user?.user_metadata?.lbc_account_number || '');
     const [testRecipient, setTestRecipient] = useState('');
 
     useEffect(() => {
@@ -35,8 +33,6 @@ export default function ProfileSettings({ user, onLogout }) {
             if (user.user_metadata.enable_sms_notifications !== undefined) setEnableSmsNotifications(user.user_metadata.enable_sms_notifications);
             if (user.user_metadata.enable_tracking_sms !== undefined) setEnableTrackingSms(user.user_metadata.enable_tracking_sms);
             if (user.user_metadata.tracking_sms_template) setTrackingSmsTemplate(user.user_metadata.tracking_sms_template);
-            if (user.user_metadata.lbc_api_key) setLbcApiKey(user.user_metadata.lbc_api_key);
-            if (user.user_metadata.lbc_account_number) setLbcAccountNumber(user.user_metadata.lbc_account_number);
         }
     }, [user]);
 
@@ -96,9 +92,7 @@ export default function ProfileSettings({ user, onLogout }) {
                     textbee_device_id: textbeeDeviceId,
                     enable_sms_notifications: enableSmsNotifications,
                     enable_tracking_sms: enableTrackingSms,
-                    tracking_sms_template: trackingSmsTemplate,
-                    lbc_api_key: lbcApiKey,
-                    lbc_account_number: lbcAccountNumber
+                    tracking_sms_template: trackingSmsTemplate
                 }
             });
             if (error) throw error;
@@ -430,70 +424,6 @@ export default function ProfileSettings({ user, onLogout }) {
                     </div>
                 </motion.div>
 
-                {/* LBC Express API Section */}
-                <motion.div
-                    initial={{ opacity: 0, y: 20 }}
-                    animate={{ opacity: 1, y: 0 }}
-                    transition={{ delay: 0.4 }}
-                    className="glass-card md:col-span-2 space-y-6"
-                >
-                    <div className="flex items-center gap-3 border-b border-white/5 pb-4">
-                        <div className="p-2 bg-red-500/20 text-red-400 rounded-lg">
-                            <Truck size={24} />
-                        </div>
-                        <div>
-                            <h3 className="text-xl font-bold text-white">LBC Express API</h3>
-                            <p className="text-xs text-slate-400">Manage shipment tracking integration</p>
-                        </div>
-                    </div>
-
-                    <div className="grid md:grid-cols-2 gap-6">
-                        <div className="space-y-4">
-                            <div>
-                                <label className="text-xs font-bold text-slate-500 uppercase block mb-2">API Key</label>
-                                <input
-                                    type="password"
-                                    value={lbcApiKey}
-                                    onChange={(e) => setLbcApiKey(e.target.value)}
-                                    placeholder="your-lbc-api-key"
-                                    className="glass-input w-full"
-                                />
-                            </div>
-                            <div>
-                                <label className="text-xs font-bold text-slate-500 uppercase block mb-2">Account Number (Optional)</label>
-                                <input
-                                    type="text"
-                                    value={lbcAccountNumber}
-                                    onChange={(e) => setLbcAccountNumber(e.target.value)}
-                                    placeholder="your-lbc-account-number"
-                                    className="glass-input w-full"
-                                />
-                            </div>
-                            <button
-                                onClick={handleSaveTextBeeSettings}
-                                disabled={loading}
-                                className="btn-primary w-full bg-red-600 hover:bg-red-500"
-                            >
-                                <Save size={18} /> Save LBC Settings
-                            </button>
-                        </div>
-                        <div className="p-4 rounded-xl bg-white/5 border border-white/5 flex items-center justify-center">
-                            <div className="text-center">
-                                <p className="text-xs text-slate-400 max-w-[200px] mx-auto">
-                                    Configure your LBC Express credentials to enable real-time tracking updates within Order Management.
-                                </p>
-                                <a
-                                    href="https://lbcapiservice.lbcapps.com/"
-                                    target="_blank"
-                                    rel="noopener noreferrer"
-                                    className="inline-block mt-4 text-xs font-bold text-red-400 hover:text-red-300 transition-colors"
-                                >
-                                    Visit Developer Portal →
-                                </a>
-                            </div>
-                        </div>
-                    </div>
-                </motion.div>
             </div>
 
 
