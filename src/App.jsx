@@ -19,6 +19,7 @@ import Login from './components/Auth/Login';
 import { supabase } from './lib/supabaseClient';
 import ProfileSettings from './components/Settings/ProfileSettings';
 import OrderTracking from './components/Shop/OrderTracking';
+import { sendSMS } from './lib/textbee';
 
 
 function App() {
@@ -118,6 +119,31 @@ function App() {
             await addToSupabase(transaction);
             if (transaction.type === 'expense') {
                 showToast('Inventory updated!', 'success');
+            }
+
+            // TextBee Integration
+            const meta = session?.user?.user_metadata;
+            if (transaction.type === 'sale' && meta?.enable_sms_notifications && meta?.textbee_api_key && meta?.textbee_device_id) {
+                // Determine recipient: Use customer phone if available, else maybe skip or notify owner
+                // For now, let's assume we notify the OWNER about the sale if enabled.
+                // Or if transaction.details.customerPhone exists, send to them.
+                const recipient = transaction.details?.customerPhone || session.user.email; // Fallback to email as string? No, needs number.
+
+                // If we want to notify the OWNER, we need a "Notification Number" in settings.
+                // For now, let's just implement the logic.
+                if (recipient && recipient.startsWith('+')) {
+                    try {
+                        await sendSMS({
+                            apiKey: meta.textbee_api_key,
+                            deviceId: meta.textbee_device_id,
+                            recipient: recipient,
+                            message: `SportsTech: New Sale! ${transaction.description}. Amount: ₱${transaction.amount}`
+                        });
+                        console.log('SMS Notification sent');
+                    } catch (smsErr) {
+                        console.error('Failed to send SMS:', smsErr);
+                    }
+                }
             }
         } catch (err) {
             console.error(err);

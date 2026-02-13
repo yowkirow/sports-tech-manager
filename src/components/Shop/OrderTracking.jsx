@@ -180,6 +180,7 @@ export default function OrderTracking() {
                     city: editDetails.city,
                     province: editDetails.province,
                     barangay: editDetails.barangay,
+                    contactNumber: editDetails.contactNumber, // Added to sync with shipping details
                 }
             };
 
