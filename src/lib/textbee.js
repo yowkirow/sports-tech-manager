@@ -6,9 +6,19 @@ export const sendSMS = async ({ apiKey, deviceId, recipient, message }) => {
         throw new Error('Missing required SMS parameters');
     }
 
+    // Helper to format PH numbers to International format
+    const formatPhoneNumber = (num) => {
+        const clean = num.toString().replace(/[\s\-\(\)]/g, '');
+        if (clean.startsWith('9')) return `+63${clean}`;
+        if (clean.startsWith('09')) return `+63${clean.slice(1)}`;
+        if (clean.startsWith('639')) return `+${clean}`;
+        if (clean.startsWith('+639')) return clean;
+        return clean; // Return original if it doesn't match PH patterns
+    };
+
     const cleanApiKey = apiKey.trim();
     const cleanDeviceId = deviceId.trim();
-    const cleanRecipient = recipient.trim();
+    const formattedRecipient = formatPhoneNumber(recipient);
 
     const endpoint = `https://api.textbee.dev/api/v1/gateway/devices/${cleanDeviceId}/send-sms`;
 
@@ -20,14 +30,22 @@ export const sendSMS = async ({ apiKey, deviceId, recipient, message }) => {
                 'x-api-key': cleanApiKey,
             },
             body: JSON.stringify({
-                recipients: [cleanRecipient],
+                recipients: [formattedRecipient],
                 message: message,
             }),
         });
 
         if (!response.ok) {
-            const errorData = await response.json().catch(() => ({}));
-            throw new Error(errorData.message || `SMS Gateway Error: ${response.status}`);
+            const textBody = await response.text();
+            let errorMsg = `SMS Gateway Error: ${response.status}`;
+            try {
+                const jsonError = JSON.parse(textBody);
+                errorMsg = jsonError.message || jsonError.error || errorMsg;
+            } catch (e) {
+                // If not JSON, use the text body
+                if (textBody) errorMsg = `SMS Gateway Error: ${response.status} - ${textBody}`;
+            }
+            throw new Error(errorMsg);
         }
 
         return await response.json();
