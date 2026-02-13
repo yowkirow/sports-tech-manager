@@ -6,18 +6,22 @@ export const sendSMS = async ({ apiKey, deviceId, recipient, message }) => {
         throw new Error('Missing required SMS parameters');
     }
 
-    const endpoint = `https://api.textbee.dev/api/v1/gateway/devices/${deviceId}/send-sms`;
+    const cleanApiKey = apiKey.trim();
+    const cleanDeviceId = deviceId.trim();
+    const cleanRecipient = recipient.trim();
+
+    const endpoint = `https://api.textbee.dev/api/v1/gateway/devices/${cleanDeviceId}/send-sms`;
 
     try {
         const response = await fetch(endpoint, {
             method: 'POST',
             headers: {
                 'Content-Type': 'application/json',
-                'x-api-key': apiKey,
+                'x-api-key': cleanApiKey,
             },
             body: JSON.stringify({
-                recipients: [recipient],
-                body: message,
+                recipients: [cleanRecipient],
+                message: message,
             }),
         });
 
