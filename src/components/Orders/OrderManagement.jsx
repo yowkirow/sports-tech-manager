@@ -4,6 +4,7 @@ import { Package, Clock, CheckCircle, Truck, User, Search, Edit2, Save, X, Trash
 import { useToast } from '../ui/Toast';
 import { supabase } from '../../lib/supabaseClient';
 import { useProducts } from '../../hooks/useInventory';
+import { sendSMS } from '../../lib/textbee';
 
 const SIZES = ['XS', 'S', 'M', 'L', 'XL', '2XL'];
 
@@ -173,6 +174,12 @@ export default function OrderManagement({ transactions, onAddTransaction, onDele
 
             await Promise.all(updates);
             showToast('Order updated!', 'success');
+
+            // Trigger SMS if tracking number was added/updated
+            if (editForm.trackingNumber && editForm.trackingNumber !== (order.items[0]?.details?.trackingNumber || '')) {
+                handleSendTrackingSms(order, editForm.trackingNumber);
+            }
+
             setEditingId(null);
             if (refetch) await refetch();
 
@@ -205,6 +212,11 @@ export default function OrderManagement({ transactions, onAddTransaction, onDele
             await Promise.all(updates);
 
             showToast('Tracking updated', 'success');
+
+            // Trigger SMS
+            if (trackingNumber) {
+                handleSendTrackingSms(order, trackingNumber);
+            }
 
             if (refetch) await refetch();
         } catch (err) {
@@ -274,8 +286,46 @@ export default function OrderManagement({ transactions, onAddTransaction, onDele
         if (!number) return '';
         // Remove spaces, dashes, etc.
         const clean = number.toString().replace(/[\s\-\(\)]/g, '');
-        // If it starts with 0 or +63, remove the prefix to start with 9
-        return clean.replace(/^(0|\+?63)/, '');
+        // Ensure it starts with + if it's a valid PH number
+        if (clean.startsWith('9')) return `+63${clean}`;
+        if (clean.startsWith('09')) return `+63${clean.slice(1)}`;
+        if (clean.startsWith('639')) return `+${clean}`;
+        if (clean.startsWith('+639')) return clean;
+        return clean;
+    };
+
+    const handleSendTrackingSms = async (order, trackingNumber) => {
+        const { data: { session } } = await supabase.auth.getSession();
+        const meta = session?.user?.user_metadata;
+
+        if (!meta?.enable_tracking_sms || !meta?.textbee_api_key || !meta?.textbee_device_id || !trackingNumber) return;
+
+        // Get customer contact
+        const contactRaw = order.items[0]?.details?.shippingDetails?.contactNumber ||
+            order.items[0]?.details?.customerContact ||
+            order.items[0]?.details?.contactNumber;
+
+        const recipient = formatContactForCopy(contactRaw);
+        if (!recipient.startsWith('+')) return; // Probably invalid for SMS
+
+        // Parse template
+        let message = meta.tracking_sms_template || 'Hi {customerName}, your order {orderId} has been shipped! Tracking: {trackingNumber}';
+        message = message
+            .replace(/{customerName}/g, order.customerName)
+            .replace(/{trackingNumber}/g, trackingNumber)
+            .replace(/{orderId}/g, order.id.slice(-6));
+
+        try {
+            await sendSMS({
+                apiKey: meta.textbee_api_key,
+                deviceId: meta.textbee_device_id,
+                recipient,
+                message
+            });
+            console.log('Tracking SMS sent successfully');
+        } catch (err) {
+            console.error('Failed to send tracking SMS:', err);
+        }
     };
 
     return (

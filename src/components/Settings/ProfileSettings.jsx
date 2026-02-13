@@ -21,6 +21,8 @@ export default function ProfileSettings({ user, onLogout }) {
     const [textbeeApiKey, setTextbeeApiKey] = useState(user?.user_metadata?.textbee_api_key || '');
     const [textbeeDeviceId, setTextbeeDeviceId] = useState(user?.user_metadata?.textbee_device_id || '');
     const [enableSmsNotifications, setEnableSmsNotifications] = useState(user?.user_metadata?.enable_sms_notifications || false);
+    const [enableTrackingSms, setEnableTrackingSms] = useState(user?.user_metadata?.enable_tracking_sms || false);
+    const [trackingSmsTemplate, setTrackingSmsTemplate] = useState(user?.user_metadata?.tracking_sms_template || 'Hi {customerName}, your SportsTech order is on its way! 🚀 Tracking Details: {trackingNumber}');
     const [testRecipient, setTestRecipient] = useState('');
 
     useEffect(() => {
@@ -29,6 +31,8 @@ export default function ProfileSettings({ user, onLogout }) {
             if (user.user_metadata.textbee_api_key) setTextbeeApiKey(user.user_metadata.textbee_api_key);
             if (user.user_metadata.textbee_device_id) setTextbeeDeviceId(user.user_metadata.textbee_device_id);
             if (user.user_metadata.enable_sms_notifications !== undefined) setEnableSmsNotifications(user.user_metadata.enable_sms_notifications);
+            if (user.user_metadata.enable_tracking_sms !== undefined) setEnableTrackingSms(user.user_metadata.enable_tracking_sms);
+            if (user.user_metadata.tracking_sms_template) setTrackingSmsTemplate(user.user_metadata.tracking_sms_template);
         }
     }, [user]);
 
@@ -86,7 +90,9 @@ export default function ProfileSettings({ user, onLogout }) {
                 data: {
                     textbee_api_key: textbeeApiKey,
                     textbee_device_id: textbeeDeviceId,
-                    enable_sms_notifications: enableSmsNotifications
+                    enable_sms_notifications: enableSmsNotifications,
+                    enable_tracking_sms: enableTrackingSms,
+                    tracking_sms_template: trackingSmsTemplate
                 }
             });
             if (error) throw error;
@@ -340,6 +346,51 @@ export default function ProfileSettings({ user, onLogout }) {
                                     Enable SMS Notifications for Sales
                                 </label>
                             </div>
+
+                            <div className="space-y-4 pt-2 border-t border-white/5">
+                                <div className="flex items-center gap-2">
+                                    <input
+                                        type="checkbox"
+                                        id="enableTrackingSms"
+                                        checked={enableTrackingSms}
+                                        onChange={(e) => setEnableTrackingSms(e.target.checked)}
+                                        className="w-4 h-4 rounded border-white/10 bg-white/5 text-primary"
+                                    />
+                                    <label htmlFor="enableTrackingSms" className="text-sm text-slate-300 cursor-pointer">
+                                        Enable Tracking SMS for Orders
+                                    </label>
+                                </div>
+
+                                {enableTrackingSms && (
+                                    <motion.div
+                                        initial={{ opacity: 0, height: 0 }}
+                                        animate={{ opacity: 1, height: 'auto' }}
+                                        className="space-y-2"
+                                    >
+                                        <label className="text-[10px] font-bold text-slate-500 uppercase block">Tracking SMS Template</label>
+                                        <textarea
+                                            value={trackingSmsTemplate}
+                                            onChange={(e) => setTrackingSmsTemplate(e.target.value)}
+                                            rows={3}
+                                            placeholder="Hi {customerName}, your order has been shipped! Tracking: {trackingNumber}"
+                                            className="glass-input w-full text-sm resize-none"
+                                        />
+                                        <div className="flex flex-wrap gap-2">
+                                            {['{customerName}', '{trackingNumber}', '{orderId}'].map(tag => (
+                                                <button
+                                                    key={tag}
+                                                    type="button"
+                                                    onClick={() => setTrackingSmsTemplate(prev => prev + tag)}
+                                                    className="text-[10px] px-2 py-1 rounded bg-white/5 text-slate-400 hover:text-white hover:bg-white/10"
+                                                >
+                                                    {tag}
+                                                </button>
+                                            ))}
+                                        </div>
+                                    </motion.div>
+                                )}
+                            </div>
+
                             <button
                                 onClick={handleSaveTextBeeSettings}
                                 disabled={loading}
