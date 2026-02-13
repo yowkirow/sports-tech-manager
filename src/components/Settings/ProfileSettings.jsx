@@ -22,7 +22,7 @@ export default function ProfileSettings({ user, onLogout }) {
     const [textbeeDeviceId, setTextbeeDeviceId] = useState(user?.user_metadata?.textbee_device_id || '');
     const [enableSmsNotifications, setEnableSmsNotifications] = useState(user?.user_metadata?.enable_sms_notifications || false);
     const [enableTrackingSms, setEnableTrackingSms] = useState(user?.user_metadata?.enable_tracking_sms || false);
-    const [trackingSmsTemplate, setTrackingSmsTemplate] = useState(user?.user_metadata?.tracking_sms_template || 'Hi {customerName}, your SportsTech order is on its way! 🚀 Tracking Details: {trackingNumber}');
+    const [trackingSmsTemplate, setTrackingSmsTemplate] = useState(user?.user_metadata?.tracking_sms_template || 'Hi {customerName}, your SportsTech order is on its way! 🚀 Track here: {trackingLink}');
     const [testRecipient, setTestRecipient] = useState('');
 
     useEffect(() => {
@@ -376,7 +376,7 @@ export default function ProfileSettings({ user, onLogout }) {
                                             className="glass-input w-full text-sm resize-none"
                                         />
                                         <div className="flex flex-wrap gap-2">
-                                            {['{customerName}', '{trackingNumber}', '{orderId}'].map(tag => (
+                                            {['{customerName}', '{trackingNumber}', '{trackingLink}', '{orderId}'].map(tag => (
                                                 <button
                                                     key={tag}
                                                     type="button"

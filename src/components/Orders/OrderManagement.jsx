@@ -300,20 +300,27 @@ export default function OrderManagement({ transactions, onAddTransaction, onDele
 
         if (!meta?.enable_tracking_sms || !meta?.textbee_api_key || !meta?.textbee_device_id || !trackingNumber) return;
 
-        // Get customer contact
+        // Get customer contact - check all possible fields
         const contactRaw = order.items[0]?.details?.shippingDetails?.contactNumber ||
             order.items[0]?.details?.customerContact ||
-            order.items[0]?.details?.contactNumber;
+            order.items[0]?.details?.contactNumber ||
+            ''; // Fallback to empty string
 
         const recipient = formatContactForCopy(contactRaw);
-        if (!recipient.startsWith('+')) return; // Probably invalid for SMS
+        if (!recipient || !recipient.startsWith('+')) {
+            console.warn('Skipping SMS: Invalid or missing contact number', contactRaw);
+            return;
+        }
+
+        const trackingLink = `https://www.lbcexpress.com/track/?tracking_no=${trackingNumber}`;
 
         // Parse template
-        let message = meta.tracking_sms_template || 'Hi {customerName}, your order {orderId} has been shipped! Tracking: {trackingNumber}';
+        let message = meta.tracking_sms_template || 'Hi {customerName}, your order {orderId} has been shipped! Track here: {trackingLink}';
         message = message
-            .replace(/{customerName}/g, order.customerName)
+            .replace(/{customerName}/g, order.customerName || 'Customer')
             .replace(/{trackingNumber}/g, trackingNumber)
-            .replace(/{orderId}/g, order.id.slice(-6));
+            .replace(/{trackingLink}/g, trackingLink)
+            .replace(/{orderId}/g, order.id.slice(0, 8)); // Use first 8 chars for cleaner ID
 
         try {
             await sendSMS({
@@ -322,9 +329,10 @@ export default function OrderManagement({ transactions, onAddTransaction, onDele
                 recipient,
                 message
             });
-            console.log('Tracking SMS sent successfully');
-        } catch (err) {
-            console.error('Failed to send tracking SMS:', err);
+            showToast('Tracking SMS sent!', 'success');
+        } catch (error) {
+            console.error('Failed to send tracking SMS:', error);
+            showToast(`SMS Failed: ${error.message}`, 'error');
         }
     };
 
