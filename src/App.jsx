@@ -10,7 +10,8 @@ import OrderManagement from './components/Orders/OrderManagement';
 import Expenses from './components/Expenses';
 import Sales from './components/Sales';
 import VoucherManager from './components/Vouchers/VoucherManager';
-import { LayoutDashboard, Store, ShoppingBag, Receipt, Package, LogOut, X, Wallet, Banknote, Menu, Globe, Link, Ticket, Settings as SettingsIcon, Lock } from 'lucide-react';
+import SupplierManager from './components/Supplier/SupplierManager';
+import { LayoutDashboard, Store, ShoppingBag, Receipt, Package, LogOut, X, Wallet, Banknote, Menu, Globe, Link, Ticket, Settings as SettingsIcon, Lock, ClipboardList } from 'lucide-react';
 import clsx from 'clsx';
 import { motion, AnimatePresence } from 'framer-motion';
 import { useToast } from './components/ui/Toast';
@@ -271,6 +272,7 @@ function App() {
                             <NavItem id="sales" label="Sales" icon={Banknote} />
                             <NavItem id="expenses" label="Expenses" icon={Wallet} />
                             <NavItem id="inventory" label="Inventory" icon={ShoppingBag} />
+                            <NavItem id="supplier" label="Supplier Order" icon={ClipboardList} />
                             <NavItem id="vouchers" label="Vouchers" icon={Ticket} />
                         </>
                     )}
@@ -322,6 +324,7 @@ function App() {
                             {activeTab === 'expenses' && 'Expenses'}
                             {activeTab === 'dashboard' && 'Dashboard'}
                             {activeTab === 'inventory' && 'Inventory'}
+                            {activeTab === 'supplier' && 'Supplier Order'}
                             {activeTab === 'vouchers' && 'Vouchers'}
                             {activeTab === 'settings' && 'Settings'}
                             {activeTab === 'add-stock' && 'Receive Stock'}
@@ -413,6 +416,14 @@ function App() {
                                         transactions={transactions}
                                         onAddTransaction={addTransaction}
                                         onDeleteTransaction={deleteTransaction}
+                                    />
+                                </div>
+                            )}
+
+                            {activeTab === 'supplier' && (
+                                <div className="animate-fade-in h-full">
+                                    <SupplierManager
+                                        transactions={effectiveTransactions}
                                     />
                                 </div>
                             )}
