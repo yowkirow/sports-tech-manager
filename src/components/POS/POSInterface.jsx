@@ -1156,7 +1156,7 @@ const CartContent = ({
                         <p className="text-[10px] font-bold text-slate-500 uppercase tracking-widest">Scan to Pay</p>
                         <div className="bg-white p-2 rounded-xl">
                             <img
-                                src="/payment-qr.jpg"
+                                src="/payment-qr.jpeg"
                                 alt="Payment QR"
                                 className="w-full max-w-[200px] h-auto rounded-lg"
                                 onError={(e) => {

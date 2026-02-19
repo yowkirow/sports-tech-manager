@@ -782,7 +782,7 @@ export default function Storefront({ transactions, onPlaceOrder }) {
                                                 <p className="text-[10px] font-bold text-slate-500 uppercase tracking-widest">Scan to Pay Now</p>
                                                 <div className="bg-white p-1 rounded-lg">
                                                     <img
-                                                        src="/payment-qr.jpg"
+                                                        src="/payment-qr.jpeg"
                                                         alt="Payment QR"
                                                         className="w-full max-w-[180px] h-auto rounded-md shadow-sm"
                                                         onError={(e) => {
