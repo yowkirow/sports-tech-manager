@@ -7,7 +7,7 @@ import ActivityLogViewer from './ActivityLogViewer';
 import ColorSettings from './ColorSettings';
 import { sendSMS } from '../../lib/textbee';
 
-export default function ProfileSettings({ user, onLogout }) {
+export default function ProfileSettings({ user, onLogout, transactions = [], onAddTransaction }) {
     const { showToast } = useToast();
     const [loading, setLoading] = useState(false);
 
@@ -438,7 +438,7 @@ export default function ProfileSettings({ user, onLogout }) {
                 >
                     <ColorSettings
                         transactions={user?.user_metadata?.role === 'admin' ? transactions : []}
-                        onAddTransaction={window.onAddTransaction} // Note: This needs to pass down from App or be globally available
+                        onAddTransaction={onAddTransaction}
                     />
                 </motion.div>
 

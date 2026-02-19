@@ -52,7 +52,7 @@ export default function AddStockForm({ onAddTransaction, onClose, transactions }
             };
 
             if (category === 'blanks') {
-                details = { ...details, size, color };
+                details = { ...details, size, linkedColor: color };
             } else {
                 details = { ...details, subCategory };
             }

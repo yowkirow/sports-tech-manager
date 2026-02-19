@@ -74,7 +74,7 @@ const TransactionForm = ({ onAddTransaction, transactions = [] }) => {
         let details = { quantity: parseInt(quantity) };
 
         if (type === 'sale' || category === 'blanks') {
-            details = { ...details, size, color };
+            details = { ...details, size, linkedColor: color };
         } else if (category === 'accessories') {
             details = { ...details, subCategory };
         }

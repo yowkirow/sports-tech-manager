@@ -70,14 +70,25 @@ export default function SupplierManager({ transactions }) {
         const colorMap = {}; // { Color: { Size: Quantity } }
 
         selectedOrdersList.forEach(order => {
-            order.items.forEach(item => {
-                const color = item.details?.linkedColor || "Unknown";
+            // Helper to process a single item (or flat transaction)
+            const processItem = (item) => {
+                const color = item.details?.linkedColor || item.details?.color || "Unknown";
                 const size = item.details?.size || "Unknown";
                 const qty = item.details?.quantity || 1;
 
                 if (!colorMap[color]) colorMap[color] = {};
                 if (!colorMap[color][size]) colorMap[color][size] = 0;
                 colorMap[color][size] += qty;
+            };
+
+            order.items.forEach(t => {
+                // Check if this transaction has nested items (POS Sale)
+                if (t.details?.items && Array.isArray(t.details.items)) {
+                    t.details.items.forEach(item => processItem(item));
+                } else {
+                    // Manual/Flat transaction
+                    processItem(t);
+                }
             });
         });
 
