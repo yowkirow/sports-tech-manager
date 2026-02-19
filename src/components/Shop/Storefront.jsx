@@ -774,6 +774,29 @@ export default function Storefront({ transactions, onPlaceOrder }) {
                                         </select>
 
                                         {['Gcash', 'Bank Transfer'].includes(paymentMode) && (
+                                            <motion.div
+                                                initial={{ opacity: 0, scale: 0.95 }}
+                                                animate={{ opacity: 1, scale: 1 }}
+                                                className="mt-4 p-4 bg-white rounded-2xl flex flex-col items-center gap-2 shadow-2xl"
+                                            >
+                                                <p className="text-[10px] font-bold text-slate-500 uppercase tracking-widest">Scan to Pay Now</p>
+                                                <div className="bg-white p-1 rounded-lg">
+                                                    <img
+                                                        src="/payment-qr.jpg"
+                                                        alt="Payment QR"
+                                                        className="w-full max-w-[180px] h-auto rounded-md shadow-sm"
+                                                        onError={(e) => {
+                                                            e.currentTarget.style.display = 'none';
+                                                            const parent = e.currentTarget.parentElement;
+                                                            if (parent) parent.innerHTML = '<div class="p-6 text-slate-400 text-[10px] text-center font-sans uppercase tracking-tighter">QR Unavailable</div>';
+                                                        }}
+                                                    />
+                                                </div>
+                                                <p className="text-[9px] text-slate-400 text-center font-medium">Verify "Sports Tech" name before paying</p>
+                                            </motion.div>
+                                        )}
+
+                                        {['Gcash', 'Bank Transfer'].includes(paymentMode) && (
                                             <div className="mt-4 p-4 border border-dashed border-white/20 rounded-xl bg-white/5">
                                                 <p className="text-xs text-slate-400 mb-2 font-bold uppercase">Proof of Payment</p>
 

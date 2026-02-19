@@ -1146,6 +1146,32 @@ const CartContent = ({
                     </select>
                 </div>
 
+                {/* Payment QR Code */}
+                {['Gcash', 'Bank Transfer'].includes(paymentMode) && (
+                    <motion.div
+                        initial={{ opacity: 0, y: 10 }}
+                        animate={{ opacity: 1, y: 0 }}
+                        className="p-4 bg-white rounded-2xl border border-white/10 flex flex-col items-center gap-3 shadow-xl mt-4"
+                    >
+                        <p className="text-[10px] font-bold text-slate-500 uppercase tracking-widest">Scan to Pay</p>
+                        <div className="bg-white p-2 rounded-xl">
+                            <img
+                                src="/payment-qr.jpg"
+                                alt="Payment QR"
+                                className="w-full max-w-[200px] h-auto rounded-lg"
+                                onError={(e) => {
+                                    e.currentTarget.style.display = 'none';
+                                    const parent = e.currentTarget.parentElement;
+                                    if (parent) parent.innerHTML = '<div class="p-8 text-slate-400 text-xs text-center font-sans">Payment QR Missing</div>';
+                                }}
+                            />
+                        </div>
+                        <p className="text-[9px] text-slate-500 text-center italic">
+                            Verify account name is "Sports Tech" before proceeding.
+                        </p>
+                    </motion.div>
+                )}
+
                 {!isReseller && (
                     <div className="grid grid-cols-1">
                         <select
