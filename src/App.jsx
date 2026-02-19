@@ -69,7 +69,7 @@ function App() {
         if (!isReseller) return transactions;
         return transactions.filter(t => {
             // Always show products/system events
-            if (t.type === 'define_product' || t.type === 'delete_product') return true;
+            if (['define_product', 'delete_product', 'define_color', 'delete_color'].includes(t.type)) return true;
             // Otherwise only show own
             return t.details?.createdBy === session?.user?.email;
         });

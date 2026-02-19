@@ -437,7 +437,7 @@ export default function ProfileSettings({ user, onLogout, transactions = [], onA
                     transition={{ delay: 0.1 }}
                 >
                     <ColorSettings
-                        transactions={user?.user_metadata?.role === 'admin' ? transactions : []}
+                        transactions={transactions}
                         onAddTransaction={onAddTransaction}
                     />
                 </motion.div>
