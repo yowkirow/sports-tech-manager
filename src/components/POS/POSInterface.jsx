@@ -3,12 +3,11 @@ import { motion, AnimatePresence, Reorder } from 'framer-motion';
 import { Search, ShoppingCart, Trash2, CheckCircle, Package, Plus, Loader2, Edit, X, Upload, Ruler, GripVertical } from 'lucide-react';
 import { useToast } from '../ui/Toast';
 import { supabase } from '../../lib/supabaseClient';
-import { useRawInventory, useProducts } from '../../hooks/useInventory';
+import { useRawInventory, useProducts, useColors } from '../../hooks/useInventory';
 import useSupabaseCustomers from '../../hooks/useSupabaseCustomers';
 import { getMMCities, getAllProvinces, getCitiesByProvince, getBarangays } from '../../lib/phLocations';
 
 const SIZES = ['XS', 'S', 'M', 'L', 'XL', '2XL'];
-const COLORS = ['White', 'Black', 'Kiwi', 'Cream', 'Baby Blue'];
 
 
 
@@ -141,6 +140,7 @@ export default function POSInterface({ transactions, onAddTransaction, onDeleteT
     // Derived Data
     const rawInventory = useRawInventory(transactions);
     const products = useProducts(transactions);
+    const colors = useColors(transactions);
 
     // Sync local order when products change (and not reordering)
     useMemo(() => {
@@ -379,6 +379,7 @@ export default function POSInterface({ transactions, onAddTransaction, onDeleteT
             {showProductModal && (
                 <ProductDefinitionModal
                     editingProduct={editingProduct}
+                    colors={colors}
                     onClose={() => setShowProductModal(false)}
                     onSave={async (formData) => {
                         setCheckoutLoading(true);
@@ -784,7 +785,7 @@ export default function POSInterface({ transactions, onAddTransaction, onDeleteT
 
 // --- Standalone Sub-Components ---
 
-const ProductDefinitionModal = ({ editingProduct, onClose, onSave, onDelete }) => {
+const ProductDefinitionModal = ({ editingProduct, onClose, onSave, onDelete, colors }) => {
     const [form, setForm] = useState({
         name: editingProduct?.name || '',
         price: editingProduct?.price || 70,
@@ -861,7 +862,7 @@ const ProductDefinitionModal = ({ editingProduct, onClose, onSave, onDelete }) =
                     <div>
                         <label className="text-xs text-slate-400">Raw Material (Inventory Link)</label>
                         <select className="glass-input mt-1" value={form.linkedColor} onChange={e => setForm({ ...form, linkedColor: e.target.value })}>
-                            {COLORS.map(c => <option key={c} value={c} className="bg-slate-900">{c} Shirt</option>)}
+                            {colors.map(c => <option key={c.name} value={c.name} className="bg-slate-900">{c.name} Shirt</option>)}
                         </select>
                     </div>
 

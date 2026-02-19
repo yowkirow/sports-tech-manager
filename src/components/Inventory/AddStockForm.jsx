@@ -5,13 +5,14 @@ import { motion, AnimatePresence } from 'framer-motion';
 
 import { useActivityLog } from '../../hooks/useActivityLog';
 import { supabase } from '../../lib/supabaseClient';
+import { useColors } from '../../hooks/useInventory';
 
 const SIZES = ['XS', 'S', 'M', 'L', 'XL', '2XL'];
-const COLORS = ['White', 'Black', 'Kiwi', 'Cream', 'Baby Blue'];
 
-export default function AddStockForm({ onAddTransaction, onClose }) {
+export default function AddStockForm({ onAddTransaction, onClose, transactions }) {
     const { showToast } = useToast();
     const { logActivity } = useActivityLog();
+    const colors = useColors(transactions || []);
 
     const [loading, setLoading] = useState(false);
 
@@ -160,7 +161,7 @@ export default function AddStockForm({ onAddTransaction, onClose }) {
                                         onChange={(e) => setColor(e.target.value)}
                                         className="glass-input appearance-none"
                                     >
-                                        {COLORS.map(c => <option key={c} value={c} className="bg-slate-900">{c}</option>)}
+                                        {colors.map(c => <option key={c.name} value={c.name} className="bg-slate-900">{c.name}</option>)}
                                     </select>
                                 </div>
                             </motion.div>

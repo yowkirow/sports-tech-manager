@@ -433,6 +433,8 @@ function App() {
                                     <ProfileSettings
                                         user={session?.user}
                                         onLogout={() => supabase.auth.signOut()}
+                                        transactions={transactions}
+                                        onAddTransaction={addTransaction}
                                     />
                                 </div>
                             )}
@@ -451,6 +453,7 @@ function App() {
                                 setShowAddStockModal(false);
                             }}
                             onClose={() => setShowAddStockModal(false)}
+                            transactions={transactions}
                         />
                     </div>
                 </div>,

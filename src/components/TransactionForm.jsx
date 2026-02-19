@@ -4,6 +4,7 @@ import Button from './ui/Button';
 import Input from './ui/Input';
 import Select from './ui/Select';
 import { PlusCircle, MinusCircle, Calculator } from 'lucide-react';
+import { useColors } from '../hooks/useInventory';
 
 const TransactionForm = ({ onAddTransaction, transactions = [] }) => {
     const [type, setType] = useState('expense'); // 'expense' or 'sale'
@@ -18,8 +19,10 @@ const TransactionForm = ({ onAddTransaction, transactions = [] }) => {
 
     // Details
     const [size, setSize] = useState('M');
-    const [color, setColor] = useState('Black');
+    const [color, setColor] = useState('White');
     const [subCategory, setSubCategory] = useState('');
+
+    const colors = useColors(transactions);
 
     // Get unique customer names from previous sales for autocomplete
     const getCustomerSuggestions = () => {
@@ -53,7 +56,6 @@ const TransactionForm = ({ onAddTransaction, transactions = [] }) => {
             setAmount(calculatedInitial.toString());
             setDescription(`${quantity}x Blank Shirts (${color}, ${size})`); // Auto-gen description
         } else {
-            // Clear if switching away? Maybe keep for user convenience
             if (!amount && type === 'sale') setDescription('');
         }
     }, [quantity, category, type, isFixedPrice, size, color]);
@@ -63,7 +65,7 @@ const TransactionForm = ({ onAddTransaction, transactions = [] }) => {
         const finalAmount = isFixedPrice ? (parseInt(quantity) * FIXED_SHIRT_PRICE) : parseFloat(amount);
 
         if (!finalAmount && finalAmount !== 0) return;
-        if (!description && !isFixedPrice) return; // Description optional for fixed price since auto-generated
+        if (!description && !isFixedPrice) return;
         if (type === 'sale' && !customerName.trim()) {
             alert('Please enter customer name for sales');
             return;
@@ -77,7 +79,6 @@ const TransactionForm = ({ onAddTransaction, transactions = [] }) => {
             details = { ...details, subCategory };
         }
 
-        // Add customer name for sales
         if (type === 'sale' && customerName.trim()) {
             details = { ...details, customerName: customerName.trim() };
         }
@@ -127,8 +128,6 @@ const TransactionForm = ({ onAddTransaction, transactions = [] }) => {
             </div>
 
             <form onSubmit={handleSubmit}>
-
-                {/* Category Selection (Only for Expense) */}
                 {type === 'expense' && (
                     <Select
                         label="Item Type"
@@ -153,7 +152,6 @@ const TransactionForm = ({ onAddTransaction, transactions = [] }) => {
                         step="1"
                     />
 
-                    {/* Amount Field - Read Only if Fixed Price */}
                     {isFixedPrice ? (
                         <div style={{ marginBottom: '1rem' }}>
                             <label style={{ display: 'block', marginBottom: '0.5rem', color: 'var(--text-muted)', fontSize: '0.9rem' }}>
@@ -187,7 +185,6 @@ const TransactionForm = ({ onAddTransaction, transactions = [] }) => {
                     )}
                 </div>
 
-                {/* Dynamic Details Section for Shirts */}
                 {showShirtDetails && (
                     <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '1rem', background: 'rgba(255,255,255,0.03)', padding: '1rem', borderRadius: '8px', marginBottom: '1rem' }}>
                         <Select
@@ -201,12 +198,11 @@ const TransactionForm = ({ onAddTransaction, transactions = [] }) => {
                             label="Color"
                             value={color}
                             onChange={(e) => setColor(e.target.value)}
-                            options={['Black', 'White', 'Navy', 'Heather Grey', 'Red', 'Blue', 'Green', 'Yellow', 'Pink', 'Aqua', 'Peach'].map(c => ({ value: c, label: c }))}
+                            options={colors.map(c => ({ value: c.name, label: c.name }))}
                         />
                     </div>
                 )}
 
-                {/* Customer Name Field (Only for Sales) */}
                 {type === 'sale' && (
                     <div style={{ background: 'rgba(255,255,255,0.03)', padding: '1rem', borderRadius: '8px', marginBottom: '1rem', position: 'relative' }}>
                         <label style={{ display: 'block', marginBottom: '0.5rem', color: 'var(--text-muted)', fontSize: '0.9rem' }}>
@@ -235,7 +231,6 @@ const TransactionForm = ({ onAddTransaction, transactions = [] }) => {
                             }}
                         />
 
-                        {/* Autocomplete Suggestions */}
                         {showSuggestions && customerSuggestions.length > 0 && (
                             <div style={{
                                 position: 'absolute',
@@ -275,7 +270,6 @@ const TransactionForm = ({ onAddTransaction, transactions = [] }) => {
                     </div>
                 )}
 
-                {/* Dynamic Details Section for Accessories */}
                 {category === 'accessories' && type === 'expense' && (
                     <div style={{ background: 'rgba(255,255,255,0.03)', padding: '1rem', borderRadius: '8px', marginBottom: '1rem' }}>
                         <Input
@@ -288,7 +282,6 @@ const TransactionForm = ({ onAddTransaction, transactions = [] }) => {
                     </div>
                 )}
 
-                {/* Description (Hidden if Fixed Price - Auto Generated) */}
                 {!isFixedPrice && (
                     <Input
                         label="Description / Note"

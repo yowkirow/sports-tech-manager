@@ -4,6 +4,7 @@ import { useToast } from '../ui/Toast';
 import { User, Lock, Save, LogOut, Shield, MessageSquare, Send } from 'lucide-react';
 import { motion } from 'framer-motion';
 import ActivityLogViewer from './ActivityLogViewer';
+import ColorSettings from './ColorSettings';
 import { sendSMS } from '../../lib/textbee';
 
 export default function ProfileSettings({ user, onLogout }) {
@@ -428,15 +429,28 @@ export default function ProfileSettings({ user, onLogout }) {
 
 
 
-            {/* Audit Logs Section */}
-            <motion.div
-                initial={{ opacity: 0, y: 20 }}
-                animate={{ opacity: 1, y: 0 }}
-                transition={{ delay: 0.3 }}
-                className="pt-8 border-t border-white/5"
-            >
-                <ActivityLogViewer user={user} userRole={user?.user_metadata?.role || 'admin'} />
-            </motion.div>
+            {/* AUDIT & DATA MANAGEMENT */}
+            <div className="space-y-8 pt-8 border-t border-white/5">
+                <motion.div
+                    initial={{ opacity: 0, y: 20 }}
+                    animate={{ opacity: 1, y: 0 }}
+                    transition={{ delay: 0.1 }}
+                >
+                    <ColorSettings
+                        transactions={user?.user_metadata?.role === 'admin' ? transactions : []}
+                        onAddTransaction={window.onAddTransaction} // Note: This needs to pass down from App or be globally available
+                    />
+                </motion.div>
+
+                {/* Audit Logs Section */}
+                <motion.div
+                    initial={{ opacity: 0, y: 20 }}
+                    animate={{ opacity: 1, y: 0 }}
+                    transition={{ delay: 0.3 }}
+                >
+                    <ActivityLogViewer user={user} userRole={user?.user_metadata?.role || 'admin'} />
+                </motion.div>
+            </div>
 
             <div className="text-center text-slate-500 text-sm mt-8">
                 <p>Logged in as: <span className="text-white font-mono">{user?.email}</span></p>
