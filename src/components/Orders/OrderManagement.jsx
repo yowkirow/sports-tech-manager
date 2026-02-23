@@ -282,7 +282,7 @@ export default function OrderManagement({ transactions, onAddTransaction, onDele
         showToast(`${type} copied!`, 'success');
     };
 
-    const formatContactForCopy = (number) => {
+    const formatContactForSMS = (number) => {
         if (!number) return '';
         // Remove spaces, dashes, etc.
         const clean = number.toString().replace(/[\s\-\(\)]/g, '');
@@ -291,6 +291,18 @@ export default function OrderManagement({ transactions, onAddTransaction, onDele
         if (clean.startsWith('09')) return `+63${clean.slice(1)}`;
         if (clean.startsWith('639')) return `+${clean}`;
         if (clean.startsWith('+639')) return clean;
+        return clean;
+    };
+
+    const formatContactForCopy = (number) => {
+        if (!number) return '';
+        // Remove all non-numeric characters
+        let clean = number.toString().replace(/\D/g, '');
+
+        // Strip prefixes: +63, 63, or 0
+        if (clean.startsWith('639')) clean = clean.slice(2);
+        else if (clean.startsWith('09')) clean = clean.slice(1);
+
         return clean;
     };
 
@@ -306,7 +318,7 @@ export default function OrderManagement({ transactions, onAddTransaction, onDele
             order.items[0]?.details?.contactNumber ||
             ''; // Fallback to empty string
 
-        const recipient = formatContactForCopy(contactRaw);
+        const recipient = formatContactForSMS(contactRaw);
         if (!recipient || !recipient.startsWith('+')) {
             console.warn('Skipping SMS: Invalid or missing contact number', contactRaw);
             return;
