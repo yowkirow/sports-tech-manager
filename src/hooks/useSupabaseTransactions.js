@@ -174,10 +174,47 @@ const useSupabaseTransactions = () => {
                     }
                 }
             )
-            .subscribe();
+            .subscribe((status, err) => {
+                if (status === 'SUBSCRIBED') {
+                    console.log('Successfully subscribed to real-time changes');
+                } else if (status === 'CHANNEL_ERROR') {
+                    console.error('Real-time channel error:', err);
+                } else if (status === 'TIMED_OUT') {
+                    console.error('Real-time connection timed out');
+                } else if (status === 'CLOSED') {
+                    console.log('Real-time connection closed');
+                }
+            });
+
+        // Visibility Change (App foregrounded) - Auto-sync
+        const handleVisibilityChange = () => {
+            if (document.visibilityState === 'visible') {
+                console.log('App became visible, refetching transactions...');
+                fetchTransactions();
+            }
+        };
+
+        // Window Focus - Auto-sync
+        const handleFocus = () => {
+            console.log('Window focused, refetching transactions...');
+            fetchTransactions();
+        };
+
+        // Online/Offline status
+        const handleOnline = () => {
+            console.log('Browser came back online, refetching transactions...');
+            fetchTransactions();
+        };
+
+        window.addEventListener('visibilitychange', handleVisibilityChange);
+        window.addEventListener('focus', handleFocus);
+        window.addEventListener('online', handleOnline);
 
         return () => {
             supabase.removeChannel(channel);
+            window.removeEventListener('visibilitychange', handleVisibilityChange);
+            window.removeEventListener('focus', handleFocus);
+            window.removeEventListener('online', handleOnline);
         };
     }, []);
 
