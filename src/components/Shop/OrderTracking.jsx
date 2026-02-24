@@ -509,7 +509,7 @@ export default function OrderTracking() {
                                         <div>
                                             <p className="text-xs text-slate-500 uppercase font-bold tracking-widest">Payment Mode</p>
                                             <p className="text-white font-medium uppercase">{order.details.paymentMode}</p>
-                                            <p className="text-slate-400 text-sm">Cutoff: Every Friday</p>
+                                            <p className="text-slate-400 text-sm">Cutoff: Every Thursday</p>
                                         </div>
                                     </div>
                                 </div>

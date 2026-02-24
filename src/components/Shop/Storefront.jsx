@@ -755,8 +755,8 @@ export default function Storefront({ transactions, onPlaceOrder }) {
                                                     <Clock size={14} className="shrink-0 mt-0.5" />
                                                     <div>
                                                         <p className="font-bold text-amber-400 mb-1">Shipping Schedule</p>
-                                                        <p>Cutoff: Every <span className="font-bold underline">Friday</span></p>
-                                                        <p>Shipping Day: Every <span className="font-bold underline">Saturday</span></p>
+                                                        <p>Cutoff: Every <span className="font-bold underline">Thursday</span></p>
+                                                        <p>Shipping Day: Every <span className="font-bold underline">Sunday</span></p>
                                                     </div>
                                                 </div>
                                             </div>
