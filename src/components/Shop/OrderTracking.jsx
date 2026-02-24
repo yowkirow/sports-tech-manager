@@ -39,12 +39,21 @@ export default function OrderTracking() {
     const fetchOrder = async (id, contact) => {
         setLoading(true);
         try {
-            // We search for a transaction of type 'sale' with this orderId
-            const { data, error } = await supabase
+            let query = supabase
                 .from('transactions')
                 .select('*')
-                .eq('type', 'sale')
-                .filter('details->>orderId', 'eq', id);
+                .eq('type', 'sale');
+
+            if (id) {
+                // If ID is provided (from URL), search by orderId
+                query = query.filter('details->>orderId', 'eq', id);
+            } else {
+                // If no ID, search by contact number and get the latest order
+                query = query.eq('details->>contactNumber', contact.trim())
+                    .order('date', { ascending: false });
+            }
+
+            const { data, error } = await query;
 
             if (error) throw error;
 
@@ -53,23 +62,29 @@ export default function OrderTracking() {
                 return;
             }
 
-            // Group transactions by orderId (they share the same details mostly)
-            // But we only need one to verify the contact number
-            const firstItem = data[0];
+            // If we searched by contact without ID, we take the most recent order's ID
+            const activeOrderId = id || data[0].details.orderId;
+
+            // Filter all items belonging to this specific orderId
+            const orderItems = id ? data : data.filter(item => item.details.orderId === activeOrderId);
+
+            const firstItem = orderItems[0];
             const storedContact = firstItem.details.contactNumber || firstItem.details.shippingDetails?.contactNumber;
 
-            if (storedContact !== contact && !storedContact.endsWith(contact)) {
+            // Verify contact if we came from a specific ID link
+            if (id && storedContact !== contact && !storedContact.endsWith(contact)) {
                 showToast('Verification failed. Invalid contact number.', 'error');
                 return;
             }
 
             // Success - store the group of items
             setOrder({
-                id,
-                items: data,
+                id: activeOrderId,
+                items: orderItems,
                 details: firstItem.details,
                 date: firstItem.date
             });
+            setOrderId(activeOrderId); // Ensure state is updated for real-time channel
             setIsVerified(true);
             showToast('Order verified!', 'success');
 
@@ -138,7 +153,7 @@ export default function OrderTracking() {
 
     const handleVerify = (e) => {
         e.preventDefault();
-        if (!orderId || !contactVerify) return;
+        if (!contactVerify) return;
         fetchOrder(orderId, contactVerify);
     };
 
@@ -259,21 +274,6 @@ export default function OrderTracking() {
 
                     <form onSubmit={handleVerify} className="space-y-4">
                         <div className="space-y-1">
-                            <label className="text-xs font-bold text-slate-500 uppercase ml-1">Order ID</label>
-                            <div className="relative">
-                                <Search className="absolute left-4 top-1/2 -translate-y-1/2 text-slate-500" size={18} />
-                                <input
-                                    type="text"
-                                    value={orderId}
-                                    onChange={e => setOrderId(e.target.value)}
-                                    placeholder="Enter Order ID"
-                                    className="glass-input pl-12 w-full py-3"
-                                    required
-                                />
-                            </div>
-                        </div>
-
-                        <div className="space-y-1">
                             <label className="text-xs font-bold text-slate-500 uppercase ml-1">Contact Number</label>
                             <div className="relative">
                                 <Phone className="absolute left-4 top-1/2 -translate-y-1/2 text-slate-500" size={18} />
@@ -281,7 +281,7 @@ export default function OrderTracking() {
                                     type="tel"
                                     value={contactVerify}
                                     onChange={e => setContactVerify(e.target.value)}
-                                    placeholder="Enter registered number"
+                                    placeholder="Enter your registered number"
                                     className="glass-input pl-12 w-full py-3"
                                     required
                                 />
