@@ -30,20 +30,20 @@ export default function SupplierManager({ transactions }) {
 
         // Filter based on UI state
         return Object.values(grouped).filter(order => {
-            const isUnfulfilled = !['shipped', 'delivered'].includes(order.fulfillmentStatus);
+            const isPending = order.fulfillmentStatus === 'pending';
 
             if (filterType === 'unfulfilled') {
-                return isUnfulfilled;
+                return isPending;
             }
 
             if (filterType === 'week') {
                 const orderDate = new Date(order.date);
                 const now = new Date();
                 const oneWeekAgo = new Date(now.getTime() - 7 * 24 * 60 * 60 * 1000);
-                return orderDate >= oneWeekAgo && isUnfulfilled;
+                return orderDate >= oneWeekAgo && isPending;
             }
 
-            return true;
+            return isPending; // Ensure other states are filtered out by default if a new filter is added
         }).sort((a, b) => new Date(b.date) - new Date(a.date));
     }, [transactions, filterType]);
 
@@ -138,7 +138,7 @@ export default function SupplierManager({ transactions }) {
                             filterType === 'week' ? "bg-primary text-white shadow-lg" : "text-slate-400 hover:text-white"
                         )}
                     >
-                        Unfulfilled (Last 7 Days)
+                        Pending (Last 7 Days)
                     </button>
                 </div>
 
