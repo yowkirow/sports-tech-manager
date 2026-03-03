@@ -996,7 +996,9 @@ const CartContent = ({
                     <div className="flex-1 min-w-0">
                         <h4 className="font-medium text-slate-200 truncate">{item.name}</h4>
                         <div className="flex items-center gap-2 text-xs text-slate-400">
-                            <span className="bg-white/10 px-1.5 py-0.5 rounded text-white">{item.size}</span>
+                            {item.size !== 'N/A' && (
+                                <span className="bg-white/10 px-1.5 py-0.5 rounded text-white">{item.size}</span>
+                            )}
                             <span>₱{item.price}</span>
                         </div>
                     </div>

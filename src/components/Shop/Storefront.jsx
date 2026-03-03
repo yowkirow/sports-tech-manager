@@ -653,7 +653,9 @@ export default function Storefront({ transactions, onPlaceOrder }) {
                                                     <h4 className="font-bold text-slate-200 truncate pr-2">{item.name}</h4>
                                                     <p className="text-white font-mono">₱{item.price * item.quantity}</p>
                                                 </div>
-                                                <p className="text-xs text-slate-400 mb-2">Size: {item.size}</p>
+                                                {item.size !== 'N/A' && (
+                                                    <p className="text-xs text-slate-400 mb-2">Size: {item.size}</p>
+                                                )}
 
                                                 <div className="flex items-center gap-3">
                                                     <div className="flex items-center bg-black/40 rounded-lg p-1">
@@ -686,7 +688,7 @@ export default function Storefront({ transactions, onPlaceOrder }) {
                                                 <p className="text-xs text-slate-400">Great for practice! Only ₱{pickleballProduct.price}</p>
                                             </div>
                                             <button
-                                                onClick={() => addToCart(pickleballProduct, 'Standard')}
+                                                onClick={() => addToCart(pickleballProduct, 'N/A')}
                                                 className="px-3 py-1.5 bg-primary text-white text-xs font-bold rounded-lg hover:bg-primary/80 transition-colors"
                                             >
                                                 Add

@@ -739,7 +739,10 @@ export default function OrderManagement({ transactions, onAddTransaction, onDele
                                                             ) : (
                                                                 <>
                                                                     <p className="font-bold text-slate-200">{item.details?.itemName}</p>
-                                                                    <p className="text-xs text-slate-500 uppercase font-bold tracking-wider">{item.details?.size} • {item.details?.color}</p>
+                                                                    <p className="text-xs text-slate-500 uppercase font-bold tracking-wider">
+                                                                        {item.details?.size !== 'N/A' && `${item.details?.size} • `}
+                                                                        {item.details?.color}
+                                                                    </p>
                                                                 </>
                                                             )}
                                                         </div>
