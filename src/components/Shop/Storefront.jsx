@@ -50,6 +50,7 @@ export default function Storefront({ transactions, onPlaceOrder }) {
     const [uploadingProof, setUploadingProof] = useState(false);
     const [checkoutLoading, setCheckoutLoading] = useState(false);
     const [orderComplete, setOrderComplete] = useState(false);
+    const [isRushOrder, setIsRushOrder] = useState(false);
 
     // Initial Fetch for Provinces & MM Cities
     React.useEffect(() => {
@@ -138,6 +139,16 @@ export default function Storefront({ transactions, onPlaceOrder }) {
     const [appliedVoucher, setAppliedVoucher] = useState(null);
 
     const subtotal = useMemo(() => cart.reduce((a, b) => a + (b.price * b.quantity), 0), [cart]);
+    const totalItems = useMemo(() => cart.reduce((a, b) => a + b.quantity, 0), [cart]);
+    const rushFeeAmount = isRushOrder ? totalItems * 100 : 0;
+
+    // Suggestive selling
+    const pickleballProduct = useMemo(() => {
+        return products.find(p => p.name.toLowerCase().includes('pickle') || p.name.toLowerCase().includes('pickleball'));
+    }, [products]);
+    const isPickleballInCart = useMemo(() => {
+        return pickleballProduct && cart.some(item => item.name === pickleballProduct.name);
+    }, [cart, pickleballProduct]);
 
     // Derived discount
     const discountAmount = useMemo(() => {
@@ -259,12 +270,13 @@ export default function Storefront({ transactions, onPlaceOrder }) {
             const shippingFee = shippingRegion === 'MM' ? 100 : 200;
 
             // Create transactions for each item
-            // Create transactions for each item
             const newTransactions = cart.map(item => {
                 const itemTotal = item.price * item.quantity;
                 const ratio = itemTotal / subtotal;
                 const itemDiscount = discountAmount * ratio;
-                const finalAmount = itemTotal - itemDiscount;
+                const itemRushFee = isRushOrder ? item.quantity * 100 : 0;
+                // Add rush fee to the final amount so it gets tallied correctly as revenue
+                const finalAmount = (itemTotal - itemDiscount) + itemRushFee;
 
                 return {
                     id: crypto.randomUUID(),
@@ -293,7 +305,9 @@ export default function Storefront({ transactions, onPlaceOrder }) {
                             // zipCode, // Removed
                             contactNumber,
                             region: shippingRegion,
-                            shippingFee
+                            shippingFee,
+                            isRushOrder,
+                            rushFee: itemRushFee
                         },
                         voucherCode: appliedVoucher ? appliedVoucher.code : null,
                         discountShare: itemDiscount,
@@ -643,6 +657,28 @@ export default function Storefront({ transactions, onPlaceOrder }) {
                                             <p>Your cart is empty</p>
                                         </div>
                                     )}
+
+                                    {pickleballProduct && !isPickleballInCart && (
+                                        <div className="mt-4 p-4 bg-primary/10 border border-primary/20 rounded-xl flex items-center gap-4">
+                                            <div className="w-12 h-12 bg-black/20 rounded-lg overflow-hidden shrink-0">
+                                                {pickleballProduct.imageUrl ? (
+                                                    <img src={pickleballProduct.imageUrl} className="w-full h-full object-cover" alt="Pickleball" />
+                                                ) : (
+                                                    <div className="w-full h-full flex items-center justify-center text-primary/50"><Package size={20} /></div>
+                                                )}
+                                            </div>
+                                            <div className="flex-1">
+                                                <h4 className="text-sm font-bold text-white mb-1">Add {pickleballProduct.name}?</h4>
+                                                <p className="text-xs text-slate-400">Great for practice! Only ₱{pickleballProduct.price}</p>
+                                            </div>
+                                            <button
+                                                onClick={() => addToCart(pickleballProduct, 'Standard')}
+                                                className="px-3 py-1.5 bg-primary text-white text-xs font-bold rounded-lg hover:bg-primary/80 transition-colors"
+                                            >
+                                                Add
+                                            </button>
+                                        </div>
+                                    )}
                                 </div>
 
                                 {/* Shipping & Payment Form (Scrollable) */}
@@ -762,6 +798,22 @@ export default function Storefront({ transactions, onPlaceOrder }) {
                                             </div>
                                         </div>
 
+                                        <div className="bg-white/5 p-4 rounded-xl border border-white/10 space-y-2 mt-4">
+                                            <h3 className="text-sm font-bold text-slate-400 uppercase tracking-wider">Order Options</h3>
+                                            <label className="flex items-center gap-3 cursor-pointer p-2 hover:bg-white/5 rounded-lg transition-colors">
+                                                <input
+                                                    type="checkbox"
+                                                    checked={isRushOrder}
+                                                    onChange={(e) => setIsRushOrder(e.target.checked)}
+                                                    className="w-5 h-5 rounded border-gray-300 text-primary accent-primary"
+                                                />
+                                                <div>
+                                                    <span className="text-sm text-white font-bold block">Rush Order (Priority Processing)</span>
+                                                    <span className="text-xs text-slate-400">₱100 additional fee per shirt</span>
+                                                </div>
+                                            </label>
+                                        </div>
+
                                         <h3 className="text-sm font-bold text-slate-400 uppercase tracking-wider mb-2 mt-4">Payment</h3>
                                         <select
                                             className="glass-input w-full py-3"
@@ -854,6 +906,12 @@ export default function Storefront({ transactions, onPlaceOrder }) {
                                                 <span>-₱{discountAmount.toLocaleString(undefined, { maximumFractionDigits: 2 })}</span>
                                             </div>
                                         )}
+                                        {isRushOrder && (
+                                            <div className="flex justify-between text-amber-400">
+                                                <span>Rush Fee (₱100/shirt x {totalItems})</span>
+                                                <span>₱{rushFeeAmount}</span>
+                                            </div>
+                                        )}
                                     </div>
 
                                     {/* Voucher Input */}
@@ -888,7 +946,7 @@ export default function Storefront({ transactions, onPlaceOrder }) {
 
                                     <div className="flex justify-between items-center text-xl font-bold text-white pt-2 border-t border-white/5">
                                         <span>Total</span>
-                                        <span>₱{(subtotal - discountAmount + (shippingRegion === 'MM' ? 100 : 200)).toLocaleString()}</span>
+                                        <span>₱{(subtotal - discountAmount + (shippingRegion === 'MM' ? 100 : 200) + rushFeeAmount).toLocaleString()}</span>
                                     </div>
 
                                     <button
