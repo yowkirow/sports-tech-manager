@@ -575,8 +575,15 @@ export default function POSInterface({ transactions, onAddTransaction, onDeleteT
                                     animate={{ opacity: 1, scale: 1 }}
                                     className={`glass-card p-0 overflow-hidden cursor-pointer group flex flex-col min-h-[180px] sm:min-h-[220px] relative ${selectedProducts.has(product.name) ? 'ring-2 ring-primary bg-primary/10' : ''}`}
                                     onClick={() => {
-                                        if (isSelectionMode) toggleSelection(product.name);
-                                        else setActiveProduct(product);
+                                        if (isSelectionMode) {
+                                            toggleSelection(product.name);
+                                        } else {
+                                            if (product.category && product.category !== 'shirts') {
+                                                addToCart(product, 'N/A');
+                                            } else {
+                                                setActiveProduct(product);
+                                            }
+                                        }
                                     }}
                                 >
                                     {isSelectionMode && (
@@ -789,6 +796,7 @@ const ProductDefinitionModal = ({ editingProduct, onClose, onSave, onDelete, col
     const [form, setForm] = useState({
         name: editingProduct?.name || '',
         price: editingProduct?.price || 70,
+        category: editingProduct?.category || 'shirts',
         linkedColor: editingProduct?.linkedColor || 'Black',
         imageUrl: editingProduct?.imageUrl || null
     });
@@ -860,11 +868,20 @@ const ProductDefinitionModal = ({ editingProduct, onClose, onSave, onDelete, col
                     </div>
 
                     <div>
-                        <label className="text-xs text-slate-400">Raw Material (Inventory Link)</label>
-                        <select className="glass-input mt-1" value={form.linkedColor} onChange={e => setForm({ ...form, linkedColor: e.target.value })}>
-                            {colors.map(c => <option key={c.name} value={c.name} className="bg-slate-900">{c.name} Shirt</option>)}
+                        <label className="text-xs text-slate-400">Category</label>
+                        <select className="glass-input mt-1 capitalize" value={form.category} onChange={e => setForm({ ...form, category: e.target.value })}>
+                            {['shirts', 'accessories', 'equipment'].map(c => <option key={c} value={c} className="bg-slate-900">{c}</option>)}
                         </select>
                     </div>
+
+                    {form.category === 'shirts' && (
+                        <div>
+                            <label className="text-xs text-slate-400">Raw Material (Inventory Link)</label>
+                            <select className="glass-input mt-1" value={form.linkedColor} onChange={e => setForm({ ...form, linkedColor: e.target.value })}>
+                                {colors.map(c => <option key={c.name} value={c.name} className="bg-slate-900">{c.name} Shirt</option>)}
+                            </select>
+                        </div>
+                    )}
 
                     <div className="flex gap-2 mt-4">
                         {editingProduct && (

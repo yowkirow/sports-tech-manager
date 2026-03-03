@@ -105,7 +105,15 @@ export default function Storefront({ transactions, onPlaceOrder }) {
     const filteredProducts = products.filter(p => p.name.toLowerCase().includes(searchTerm.toLowerCase()));
 
     const getStock = (product, size) => {
-        if (!product.linkedColor) return 999;
+        if (!product.linkedColor || product.category !== 'shirts') {
+            // For accessories and equipment, look up stock via the acc-{name} key
+            if (product.category && product.category !== 'shirts') {
+                const key = `acc-${product.name.replace(/\s+/g, '-').toLowerCase()}`;
+                // If it's an accessory, fallback to 999 if tracking isn't strictly set up yet
+                return typeof rawInventory[key] === 'number' ? rawInventory[key] : 999;
+            }
+            return 999;
+        }
         const key = `shirt-${product.linkedColor}-${size}`;
         return rawInventory[key] || 0;
     };
@@ -473,7 +481,13 @@ export default function Storefront({ transactions, onPlaceOrder }) {
                             initial={{ opacity: 0, y: 20 }}
                             animate={{ opacity: 1, y: 0 }}
                             className="glass-card p-0 overflow-hidden group cursor-pointer flex flex-col text-left"
-                            onClick={() => setActiveProduct(product)}
+                            onClick={() => {
+                                if (product.category && product.category !== 'shirts') {
+                                    addToCart(product, 'N/A');
+                                } else {
+                                    setActiveProduct(product);
+                                }
+                            }}
                         >
                             <div className="aspect-[4/5] bg-black/40 relative overflow-hidden">
                                 {product.imageUrl ? (
