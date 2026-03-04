@@ -154,6 +154,14 @@ export default function Storefront({ transactions, onPlaceOrder }) {
     const suggestedProducts = useMemo(() => {
         return products
             .filter(p => !cart.some(item => item.name === p.name)) // Exclude items already in cart
+            .sort((a, b) => {
+                // Priority to non-shirts (accessories, equipment)
+                const aIsShirt = a.category === 'shirts' || !a.category;
+                const bIsShirt = b.category === 'shirts' || !b.category;
+                if (aIsShirt && !bIsShirt) return 1;
+                if (!aIsShirt && bIsShirt) return -1;
+                return 0; // Maintain original order otherwise
+            })
             .slice(0, 4); // Take up to 4 items
     }, [products, cart]);
 
