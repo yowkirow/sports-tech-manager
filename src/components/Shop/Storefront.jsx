@@ -524,7 +524,7 @@ export default function Storefront({ transactions, onPlaceOrder }) {
             {/* Size Selection Modal */}
             <AnimatePresence>
                 {activeProduct && (
-                    <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/80 backdrop-blur-sm p-4" onClick={() => setActiveProduct(null)}>
+                    <div className="fixed inset-0 z-[60] flex items-center justify-center bg-black/80 backdrop-blur-sm p-4" onClick={() => setActiveProduct(null)}>
                         <motion.div
                             initial={{ scale: 0.9, opacity: 0 }}
                             animate={{ scale: 1, opacity: 1 }}
