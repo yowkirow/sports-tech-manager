@@ -148,7 +148,12 @@ export default function Storefront({ transactions, onPlaceOrder }) {
 
     const subtotal = useMemo(() => cart.reduce((a, b) => a + (b.price * b.quantity), 0), [cart]);
     const totalItems = useMemo(() => cart.reduce((a, b) => a + b.quantity, 0), [cart]);
-    const rushFeeAmount = isRushOrder ? totalItems * 100 : 0;
+    const rushableItemsCount = useMemo(() => cart.reduce((total, item) => {
+        const product = products.find(p => p.name === item.name);
+        const isShirt = !product || !product.category || product.category === 'shirts';
+        return isShirt ? total + item.quantity : total;
+    }, 0), [cart, products]);
+    const rushFeeAmount = isRushOrder ? rushableItemsCount * 100 : 0;
 
     // Suggestive selling
     const suggestedProducts = useMemo(() => {
