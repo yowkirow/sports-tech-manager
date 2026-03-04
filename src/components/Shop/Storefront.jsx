@@ -151,12 +151,11 @@ export default function Storefront({ transactions, onPlaceOrder }) {
     const rushFeeAmount = isRushOrder ? totalItems * 100 : 0;
 
     // Suggestive selling
-    const pickleballProduct = useMemo(() => {
-        return products.find(p => p.name.toLowerCase().includes('pickle') || p.name.toLowerCase().includes('pickleball'));
-    }, [products]);
-    const isPickleballInCart = useMemo(() => {
-        return pickleballProduct && cart.some(item => item.name === pickleballProduct.name);
-    }, [cart, pickleballProduct]);
+    const suggestedProducts = useMemo(() => {
+        return products
+            .filter(p => !cart.some(item => item.name === p.name)) // Exclude items already in cart
+            .slice(0, 4); // Take up to 4 items
+    }, [products, cart]);
 
     // Derived discount
     const discountAmount = useMemo(() => {
@@ -674,25 +673,38 @@ export default function Storefront({ transactions, onPlaceOrder }) {
                                         </div>
                                     )}
 
-                                    {pickleballProduct && !isPickleballInCart && (
-                                        <div className="mt-4 p-4 bg-primary/10 border border-primary/20 rounded-xl flex items-center gap-4">
-                                            <div className="w-12 h-12 bg-black/20 rounded-lg overflow-hidden shrink-0">
-                                                {pickleballProduct.imageUrl ? (
-                                                    <img src={pickleballProduct.imageUrl} className="w-full h-full object-cover" alt="Pickleball" />
-                                                ) : (
-                                                    <div className="w-full h-full flex items-center justify-center text-primary/50"><Package size={20} /></div>
-                                                )}
+                                    {suggestedProducts.length > 0 && (
+                                        <div className="mt-6 pt-4 border-t border-white/5">
+                                            <h3 className="text-xs font-bold text-slate-400 uppercase tracking-wider mb-4">You May Also Like</h3>
+                                            <div className="flex gap-4 overflow-x-auto pb-4 snap-x hide-scrollbar">
+                                                {suggestedProducts.map(product => (
+                                                    <div key={product.id} className="min-w-[140px] max-w-[140px] bg-white/5 border border-white/10 rounded-xl flex flex-col overflow-hidden shrink-0 snap-center">
+                                                        <div className="w-full h-24 bg-black/20 relative">
+                                                            {product.imageUrl ? (
+                                                                <img src={product.imageUrl} className="w-full h-full object-cover" alt={product.name} />
+                                                            ) : (
+                                                                <div className="w-full h-full flex items-center justify-center text-slate-500"><Package size={24} /></div>
+                                                            )}
+                                                        </div>
+                                                        <div className="p-3 flex flex-col flex-1">
+                                                            <h4 className="text-xs font-bold text-white line-clamp-2 mb-1 min-h-[32px]">{product.name}</h4>
+                                                            <p className="text-xs text-primary font-bold mb-3 mt-auto">₱{product.price}</p>
+                                                            <button
+                                                                onClick={() => {
+                                                                    if (product.category && product.category !== 'shirts') {
+                                                                        addToCart(product, 'N/A');
+                                                                    } else {
+                                                                        setActiveProduct(product);
+                                                                    }
+                                                                }}
+                                                                className="w-full py-2 bg-white/10 hover:bg-primary hover:text-white transition-colors text-[10px] font-bold uppercase rounded-lg border border-white/5"
+                                                            >
+                                                                Quick Add
+                                                            </button>
+                                                        </div>
+                                                    </div>
+                                                ))}
                                             </div>
-                                            <div className="flex-1">
-                                                <h4 className="text-sm font-bold text-white mb-1">Add {pickleballProduct.name}?</h4>
-                                                <p className="text-xs text-slate-400">Great for practice! Only ₱{pickleballProduct.price}</p>
-                                            </div>
-                                            <button
-                                                onClick={() => addToCart(pickleballProduct, 'N/A')}
-                                                className="px-3 py-1.5 bg-primary text-white text-xs font-bold rounded-lg hover:bg-primary/80 transition-colors"
-                                            >
-                                                Add
-                                            </button>
                                         </div>
                                     )}
                                 </div>
