@@ -80,9 +80,10 @@ export default function OrderManagement({ transactions, onAddTransaction, onDele
             }
 
             if (t.details?.isOnlineOrder) groups[key].isOnlineOrder = true; // Ensure flag is set if any item has it
+            if (t.details?.shippingDetails?.isRushOrder || t.details?.isRushOrder) groups[key].isRushOrder = true;
 
             groups[key].items.push(t);
-            groups[key].totalAmount += t.amount;
+            groups[key].totalAmount += (Number(t.amount) || 0);
         });
 
         return Object.values(groups).sort((a, b) => new Date(b.date) - new Date(a.date));
@@ -512,6 +513,11 @@ export default function OrderManagement({ transactions, onAddTransaction, onDele
                                                     *New
                                                 </span>
                                             )}
+                                            {order.isRushOrder && (
+                                                <span className="px-2 py-0.5 rounded-full text-[10px] font-bold uppercase tracking-wide bg-amber-500/20 text-amber-500 border border-amber-500/20 animate-pulse">
+                                                    RUSH
+                                                </span>
+                                            )}
                                             <span className={`px-2 py-0.5 rounded-full text-[10px] font-bold uppercase tracking-wide border ${order.paymentStatus === 'paid'
                                                 ? 'bg-emerald-500/10 border-emerald-500/20 text-emerald-400'
                                                 : 'bg-red-500/10 border-red-500/20 text-red-400'
@@ -526,7 +532,7 @@ export default function OrderManagement({ transactions, onAddTransaction, onDele
                                     <div className="flex items-center gap-3 text-slate-400 text-xs">
                                         <span>{new Date(order.date).toLocaleString('en-US', { month: 'short', day: 'numeric', year: 'numeric', hour: '2-digit', minute: '2-digit' })}</span>
                                         <span>•</span>
-                                        <span>{order.items.length} Items</span>
+                                        <span>{order.items.reduce((sum, item) => sum + (Number(item.details?.quantity) || 1), 0)} Items</span>
                                         <span>•</span>
                                         <span className="text-primary flex items-center gap-1">
                                             <Banknote size={12} /> {order.paymentMode}

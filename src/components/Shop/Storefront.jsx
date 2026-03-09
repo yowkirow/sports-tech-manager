@@ -146,12 +146,12 @@ export default function Storefront({ transactions, onPlaceOrder }) {
     const [voucherCode, setVoucherCode] = useState('');
     const [appliedVoucher, setAppliedVoucher] = useState(null);
 
-    const subtotal = useMemo(() => cart.reduce((a, b) => a + (b.price * b.quantity), 0), [cart]);
-    const totalItems = useMemo(() => cart.reduce((a, b) => a + b.quantity, 0), [cart]);
+    const subtotal = useMemo(() => cart.reduce((a, b) => a + ((Number(b.price) || 0) * (Number(b.quantity) || 0)), 0), [cart]);
+    const totalItems = useMemo(() => cart.reduce((a, b) => a + (Number(b.quantity) || 0), 0), [cart]);
     const rushableItemsCount = useMemo(() => cart.reduce((total, item) => {
         const product = products.find(p => p.name === item.name);
         const isShirt = !product || !product.category || product.category === 'shirts';
-        return isShirt ? total + item.quantity : total;
+        return isShirt ? total + (Number(item.quantity) || 0) : total;
     }, 0), [cart, products]);
     const rushFeeAmount = isRushOrder ? rushableItemsCount * 100 : 0;
 
@@ -291,10 +291,13 @@ export default function Storefront({ transactions, onPlaceOrder }) {
 
             // Create transactions for each item
             const newTransactions = cart.map(item => {
-                const itemTotal = item.price * item.quantity;
-                const ratio = itemTotal / subtotal;
+                const itemPrice = Number(item.price) || 0;
+                const itemQty = Number(item.quantity) || 0;
+                const itemTotal = itemPrice * itemQty;
+                const subtotalSafe = subtotal || 1;
+                const ratio = itemTotal / subtotalSafe;
                 const itemDiscount = discountAmount * ratio;
-                const itemRushFee = isRushOrder ? item.quantity * 100 : 0;
+                const itemRushFee = isRushOrder ? itemQty * 100 : 0;
                 // Add rush fee to the final amount so it gets tallied correctly as revenue
                 const finalAmount = (itemTotal - itemDiscount) + itemRushFee;
 
@@ -520,7 +523,7 @@ export default function Storefront({ transactions, onPlaceOrder }) {
                             </div>
                             <div className="p-4 flex flex-col flex-1">
                                 <h3 className="font-bold text-white mb-1 line-clamp-2">{product.name}</h3>
-                                <p className="text-primary font-bold mt-auto">₱{product.price}</p>
+                                <p className="text-primary font-bold mt-auto">₱{Number(product.price) || 0}</p>
                             </div>
                         </motion.div>
                     ))}
@@ -553,7 +556,7 @@ export default function Storefront({ transactions, onPlaceOrder }) {
                                 </div>
                                 <div>
                                     <h3 className="font-bold text-lg text-white leading-tight mb-2">{activeProduct.name}</h3>
-                                    <p className="text-primary font-bold text-xl">₱{activeProduct.price}</p>
+                                    <p className="text-primary font-bold text-xl">₱{Number(activeProduct.price) || 0}</p>
                                 </div>
                             </div>
 
@@ -663,7 +666,7 @@ export default function Storefront({ transactions, onPlaceOrder }) {
                                             <div className="flex-1 min-w-0">
                                                 <div className="flex justify-between items-start mb-1">
                                                     <h4 className="font-bold text-slate-200 truncate pr-2">{item.name}</h4>
-                                                    <p className="text-white font-mono">₱{item.price * item.quantity}</p>
+                                                    <p className="text-white font-mono">₱{(Number(item.price) || 0) * (Number(item.quantity) || 0)}</p>
                                                 </div>
                                                 {item.size !== 'N/A' && (
                                                     <p className="text-xs text-slate-400 mb-2">Size: {item.size}</p>
@@ -701,7 +704,7 @@ export default function Storefront({ transactions, onPlaceOrder }) {
                                                         </div>
                                                         <div className="p-3 flex flex-col flex-1">
                                                             <h4 className="text-xs font-bold text-white line-clamp-2 mb-1 min-h-[32px]">{product.name}</h4>
-                                                            <p className="text-xs text-primary font-bold mb-3 mt-auto">₱{product.price}</p>
+                                                            <p className="text-xs text-primary font-bold mb-3 mt-auto">₱{Number(product.price) || 0}</p>
                                                             <button
                                                                 onClick={() => {
                                                                     if (product.category && product.category !== 'shirts') {
