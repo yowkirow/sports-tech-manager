@@ -147,6 +147,9 @@ export default function OrderManagement({ transactions, onAddTransaction, onDele
             newDate.setDate(d);
             const isoDate = newDate.toISOString();
 
+            const isNewTracking = editForm.trackingNumber && editForm.trackingNumber !== (order.items[0]?.details?.trackingNumber || '');
+            const finalFulfillmentStatus = isNewTracking ? 'shipped' : editForm.fulfillmentStatus;
+
             const updates = editForm.items.map(async (editedItem) => {
                 const originalItem = order.items.find(i => i.id === editedItem.id);
                 if (!originalItem) return;
@@ -154,11 +157,11 @@ export default function OrderManagement({ transactions, onAddTransaction, onDele
                 const updatedDetails = {
                     ...editedItem.details,
                     customerName: editForm.customerName,
-                    fulfillmentStatus: editForm.fulfillmentStatus,
+                    fulfillmentStatus: finalFulfillmentStatus,
                     paymentStatus: editForm.paymentStatus,
                     paymentMode: editForm.paymentMode,
                     trackingNumber: editForm.trackingNumber,
-                    status: editForm.fulfillmentStatus
+                    status: finalFulfillmentStatus
                 };
 
                 const { error } = await supabase
@@ -177,8 +180,8 @@ export default function OrderManagement({ transactions, onAddTransaction, onDele
             showToast('Order updated!', 'success');
 
             // Trigger SMS if tracking number was added/updated
-            if (editForm.trackingNumber && editForm.trackingNumber !== (order.items[0]?.details?.trackingNumber || '')) {
-                handleSendTrackingSms(order, editForm.trackingNumber);
+            if (isNewTracking) {
+                await handleSendTrackingSms(order, editForm.trackingNumber);
             }
 
             setEditingId(null);
@@ -216,13 +219,13 @@ export default function OrderManagement({ transactions, onAddTransaction, onDele
 
             // Trigger SMS
             if (trackingNumber) {
-                handleSendTrackingSms(order, trackingNumber);
+                await handleSendTrackingSms(order, trackingNumber);
             }
 
             if (refetch) await refetch();
         } catch (err) {
             console.error(err);
-            showToast('Update failed', 'error');
+            showToast('Update failed: ' + err.message, 'error');
         } finally {
             setLoading(false);
         }
@@ -309,10 +312,21 @@ export default function OrderManagement({ transactions, onAddTransaction, onDele
 
     const handleSendTrackingSms = async (order, trackingNumber) => {
         try {
+            console.log("Triggering SMS for tracking:", trackingNumber);
             const { data: { user } } = await supabase.auth.getUser();
             const meta = user?.user_metadata;
 
-            if (!meta?.enable_tracking_sms || !meta?.textbee_api_key || !meta?.textbee_device_id || !trackingNumber) return;
+            if (!meta?.enable_tracking_sms) {
+                console.warn("SMS is disabled in User Metadata");
+                showToast("SMS Disabled in Profile Settings", "info");
+                return;
+            }
+            if (!meta?.textbee_api_key || !meta?.textbee_device_id) {
+                console.warn("Missing TextBee keys in User Metadata");
+                showToast("SMS Failed: No API Key or Device ID found in Profile Settings", "error");
+                return;
+            }
+            if (!trackingNumber) return;
 
             // Get customer contact - check all possible fields
             const contactRaw = order.items[0]?.details?.shippingDetails?.contactNumber ||
@@ -323,7 +337,7 @@ export default function OrderManagement({ transactions, onAddTransaction, onDele
             const recipient = formatContactForSMS(contactRaw);
             if (!recipient || !recipient.startsWith('+')) {
                 console.warn('Skipping SMS: Invalid or missing contact number', contactRaw);
-                showToast(`SMS Skipped: Invalid contact ${contactRaw}`, 'error');
+                showToast(`SMS Skipped: Customer missing valid phone #`, 'error');
                 return;
             }
 
@@ -343,6 +357,7 @@ export default function OrderManagement({ transactions, onAddTransaction, onDele
                 .replace(/{trackingLink}/g, trackingLink)
                 .replace(/{orderId}/g, String(order.id).slice(0, 8)); // Use first 8 chars for cleaner ID
 
+            console.log("Sending TextBee API request to", recipient);
             await sendSMS({
                 apiKey: meta.textbee_api_key,
                 deviceId: meta.textbee_device_id,
