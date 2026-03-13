@@ -308,34 +308,41 @@ export default function OrderManagement({ transactions, onAddTransaction, onDele
     };
 
     const handleSendTrackingSms = async (order, trackingNumber) => {
-        const { data: { session } } = await supabase.auth.getSession();
-        const meta = session?.user?.user_metadata;
-
-        if (!meta?.enable_tracking_sms || !meta?.textbee_api_key || !meta?.textbee_device_id || !trackingNumber) return;
-
-        // Get customer contact - check all possible fields
-        const contactRaw = order.items[0]?.details?.shippingDetails?.contactNumber ||
-            order.items[0]?.details?.customerContact ||
-            order.items[0]?.details?.contactNumber ||
-            ''; // Fallback to empty string
-
-        const recipient = formatContactForSMS(contactRaw);
-        if (!recipient || !recipient.startsWith('+')) {
-            console.warn('Skipping SMS: Invalid or missing contact number', contactRaw);
-            return;
-        }
-
-        const trackingLink = `https://www.lbcexpress.com/track/?tracking_no=${trackingNumber}`;
-
-        // Parse template
-        let message = meta.tracking_sms_template || 'Hi {customerName}, your order {orderId} has been shipped! Track here: {trackingLink}';
-        message = message
-            .replace(/{customerName}/g, order.customerName || 'Customer')
-            .replace(/{trackingNumber}/g, trackingNumber)
-            .replace(/{trackingLink}/g, trackingLink)
-            .replace(/{orderId}/g, order.id.slice(0, 8)); // Use first 8 chars for cleaner ID
-
         try {
+            const { data: { user } } = await supabase.auth.getUser();
+            const meta = user?.user_metadata;
+
+            if (!meta?.enable_tracking_sms || !meta?.textbee_api_key || !meta?.textbee_device_id || !trackingNumber) return;
+
+            // Get customer contact - check all possible fields
+            const contactRaw = order.items[0]?.details?.shippingDetails?.contactNumber ||
+                order.items[0]?.details?.customerContact ||
+                order.items[0]?.details?.contactNumber ||
+                ''; // Fallback to empty string
+
+            const recipient = formatContactForSMS(contactRaw);
+            if (!recipient || !recipient.startsWith('+')) {
+                console.warn('Skipping SMS: Invalid or missing contact number', contactRaw);
+                showToast(`SMS Skipped: Invalid contact ${contactRaw}`, 'error');
+                return;
+            }
+
+            // Intelligently format the tracking link
+            const internalTracker = `${window.location.origin}/track/${order.id}`;
+            let trackingLink = trackingNumber;
+            if (!trackingNumber.startsWith('http') && trackingNumber.length < 25) {
+                // If it looks like an ordinary tracking ID, fallback to LBC or courier
+                trackingLink = `https://www.lbcexpress.com/track/?tracking_no=${trackingNumber}`;
+            }
+
+            // Parse template
+            let message = meta.tracking_sms_template || 'Hi {customerName}, your order {orderId} has been shipped! Track here: {trackingLink}';
+            message = message
+                .replace(/{customerName}/g, order.customerName || 'Customer')
+                .replace(/{trackingNumber}/g, trackingNumber)
+                .replace(/{trackingLink}/g, trackingLink)
+                .replace(/{orderId}/g, String(order.id).slice(0, 8)); // Use first 8 chars for cleaner ID
+
             await sendSMS({
                 apiKey: meta.textbee_api_key,
                 deviceId: meta.textbee_device_id,
