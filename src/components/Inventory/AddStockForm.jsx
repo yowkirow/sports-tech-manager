@@ -5,7 +5,7 @@ import { motion, AnimatePresence } from 'framer-motion';
 
 import { useActivityLog } from '../../hooks/useActivityLog';
 import { supabase } from '../../lib/supabaseClient';
-import { useColors } from '../../hooks/useInventory';
+import { useColors, useBrands } from '../../hooks/useInventory';
 
 const SIZES = ['XS', 'S', 'M', 'L', 'XL', '2XL'];
 
@@ -13,6 +13,7 @@ export default function AddStockForm({ onAddTransaction, onClose, transactions }
     const { showToast } = useToast();
     const { logActivity } = useActivityLog();
     const colors = useColors(transactions || []);
+    const brands = useBrands(transactions || []);
 
     const [loading, setLoading] = useState(false);
 
@@ -25,6 +26,7 @@ export default function AddStockForm({ onAddTransaction, onClose, transactions }
     // Shirt Details
     const [size, setSize] = useState('M');
     const [color, setColor] = useState('White');
+    const [brand, setBrand] = useState('Sypik');
 
     // Accessory Details
     const [subCategory, setSubCategory] = useState('');
@@ -52,7 +54,7 @@ export default function AddStockForm({ onAddTransaction, onClose, transactions }
             };
 
             if (category === 'blanks') {
-                details = { ...details, size, linkedColor: color };
+                details = { ...details, size, linkedColor: color, brand };
             } else {
                 details = { ...details, subCategory };
             }
@@ -144,6 +146,16 @@ export default function AddStockForm({ onAddTransaction, onClose, transactions }
                                 exit={{ opacity: 0, height: 0 }}
                                 className="grid grid-cols-2 gap-4"
                             >
+                                <div className="space-y-2 col-span-2">
+                                    <label className="text-sm text-slate-400">Brand</label>
+                                    <select
+                                        value={brand}
+                                        onChange={(e) => setBrand(e.target.value)}
+                                        className="glass-input appearance-none"
+                                    >
+                                        {brands.map(b => <option key={b.name} value={b.name} className="bg-slate-900">{b.name}</option>)}
+                                    </select>
+                                </div>
                                 <div className="space-y-2">
                                     <label className="text-sm text-slate-400">Size</label>
                                     <select

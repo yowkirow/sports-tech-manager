@@ -20,10 +20,12 @@ export const useRawInventory = (transactions) => {
 
             let key;
             if (t.category === 'blanks' || (category === 'blanks')) {
-                // Sypik Logic: A "Sale" of a product linked to "White" counts as a sale of "White Blank"
-                const validColor = color || (t.details.linkedColor); // linkedColor comes from Product Sale
+                // Multi-Brand Logic: Include brand in the key
+                // validColor comes from Color or linkedColor
+                const validColor = color || t.details.linkedColor;
+                const validBrand = t.details.brand || 'Sypik'; // Default to Sypik for legacy orders
                 if (!validColor || !size) return;
-                key = `shirt-${validColor}-${size}`;
+                key = `shirt-${validBrand.toLowerCase()}-${validColor.toLowerCase()}-${size}`;
             } else {
                 const name = subCategory || t.details.itemName || t.description;
                 if (!name) return;
@@ -57,7 +59,7 @@ export const useProducts = (transactions) => {
             if (!t.details) return;
 
             if (t.type === 'define_product') {
-                const { name, price, imageUrl, linkedColor, category, order } = t.details;
+                const { name, price, imageUrl, linkedColor, category, order, brand } = t.details;
                 if (!name) return;
                 // Normalize key to prevent duplicates from case/whitespace
                 const key = name.trim().toLowerCase();
@@ -68,6 +70,7 @@ export const useProducts = (transactions) => {
                     price,
                     imageUrl,
                     linkedColor,
+                    brand: brand || 'Sypik',
                     category: category || 'shirts',
                     order: order !== undefined ? order : 9999 // Default to end
                 });
@@ -126,5 +129,40 @@ export const useColors = (transactions) => {
         });
 
         return Array.from(colorsMap.values());
+    }, [transactions]);
+};
+
+// 4. Hook to manage "Brands" (Shirt brands like Sypik, etc.)
+export const useBrands = (transactions) => {
+    return useMemo(() => {
+        const DEFAULT_BRANDS = [
+            { name: 'Sypik' }
+        ];
+
+        const brandsMap = new Map();
+        // Initialize with defaults
+        DEFAULT_BRANDS.forEach(b => brandsMap.set(b.name.toLowerCase(), b));
+
+        const chronoTransactions = [...transactions].reverse();
+
+        chronoTransactions.forEach(t => {
+            if (!t.details) return;
+
+            if (t.type === 'define_brand') {
+                const { name } = t.details;
+                if (name) {
+                    brandsMap.set(name.toLowerCase(), {
+                        name: name.trim(),
+                    });
+                }
+            } else if (t.type === 'delete_brand') {
+                const { name } = t.details;
+                if (name) {
+                    brandsMap.delete(name.toLowerCase());
+                }
+            }
+        });
+
+        return Array.from(brandsMap.values());
     }, [transactions]);
 };

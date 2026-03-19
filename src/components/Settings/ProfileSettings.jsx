@@ -5,6 +5,7 @@ import { User, Lock, Save, LogOut, Shield, MessageSquare, Send } from 'lucide-re
 import { motion } from 'framer-motion';
 import ActivityLogViewer from './ActivityLogViewer';
 import ColorSettings from './ColorSettings';
+import BrandSettings from './BrandSettings';
 import { sendSMS } from '../../lib/textbee';
 
 export default function ProfileSettings({ user, onLogout, transactions = [], onAddTransaction }) {
@@ -437,6 +438,17 @@ export default function ProfileSettings({ user, onLogout, transactions = [], onA
                     transition={{ delay: 0.1 }}
                 >
                     <ColorSettings
+                        transactions={transactions}
+                        onAddTransaction={onAddTransaction}
+                    />
+                </motion.div>
+
+                <motion.div
+                    initial={{ opacity: 0, y: 20 }}
+                    animate={{ opacity: 1, y: 0 }}
+                    transition={{ delay: 0.2 }}
+                >
+                    <BrandSettings
                         transactions={transactions}
                         onAddTransaction={onAddTransaction}
                     />

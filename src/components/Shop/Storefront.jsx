@@ -106,15 +106,16 @@ export default function Storefront({ transactions, onPlaceOrder }) {
 
     const getStock = (product, size) => {
         if (!product.linkedColor || product.category !== 'shirts') {
-            // For accessories and equipment, look up stock via the acc-{name} key
             if (product.category && product.category !== 'shirts') {
                 const key = `acc-${product.name.replace(/\s+/g, '-').toLowerCase()}`;
-                // If it's an accessory, fallback to 999 if tracking isn't strictly set up yet
                 return typeof rawInventory[key] === 'number' ? rawInventory[key] : 999;
             }
             return 999;
         }
-        const key = `shirt-${product.linkedColor}-${size}`;
+        const brand = (product.brand || 'Sypik').toLowerCase();
+        const color = product.linkedColor.toLowerCase();
+        const sz = size.toLowerCase();
+        const key = `shirt-${brand}-${color}-${sz}`;
         return rawInventory[key] || 0;
     };
 
@@ -322,6 +323,7 @@ export default function Storefront({ transactions, onPlaceOrder }) {
                         customerName,
                         contactNumber,
                         itemName: item.name,
+                        brand: item.brand || 'Sypik',
                         size: item.size,
                         color: item.linkedColor || 'Varied',
                         quantity: item.quantity,
@@ -626,10 +628,11 @@ export default function Storefront({ transactions, onPlaceOrder }) {
                                         <button
                                             key={size}
                                             onClick={() => addToCart(activeProduct, size)}
-                                            className="p-3 rounded-xl border text-center transition-all border-white/10 hover:border-primary hover:bg-primary/20 text-white"
+                                            className={`p-3 rounded-xl border text-center transition-all ${hasStock ? 'border-white/10 hover:border-primary hover:bg-primary/20 text-white' : 'border-white/5 text-slate-600 cursor-not-allowed opacity-50'}`}
+                                            disabled={!hasStock}
                                         >
                                             <div className="font-bold">{size}</div>
-                                            <div className="text-[10px] mt-1 text-slate-500">Available</div>
+                                            <div className="text-[10px] mt-1 text-slate-500">{hasStock ? 'Available' : 'Out of Stock'}</div>
                                         </button>
                                     );
                                 })}

@@ -16,18 +16,17 @@ const InventoryList = ({ transactions, onAddTransaction, onDeleteTransaction, on
         // Key based on what it is
         let key, name, variant;
         if (t.category === 'blanks') {
-            const { size, color } = t.details;
-            // Normalize color casing to merge "White" and "white"
-            const safeColor = (color || 'Unknown').trim();
-            key = `shirt-${size}-${safeColor.toLowerCase()}`;
+            const { size, linkedColor, color, brand } = t.details;
+            const safeColor = (linkedColor || color || 'Unknown').trim();
+            const safeBrand = (brand || 'Sypik').trim();
+            key = `shirt-${safeBrand.toLowerCase()}-${safeColor.toLowerCase()}-${size.toLowerCase()}`;
 
-            // Present nicely formatted color (Title Case) if needed, or just use the first one found
             name = `${safeColor} Shirt`;
-            variant = size;
+            variant = `${safeBrand} - ${size}`;
         } else {
             // Accessories or others
             const sub = t.details.subCategory || t.category;
-            key = `misc-${sub}`;
+            key = `misc-${sub.toLowerCase()}`;
             name = sub;
             variant = 'N/A';
         }
@@ -165,14 +164,14 @@ const InventoryList = ({ transactions, onAddTransaction, onDeleteTransaction, on
             if (!t.details) return;
 
             // Reconstruct key to match item.id
-            let key;
             if (t.category === 'blanks') {
-                const { size, color } = t.details;
-                const safeColor = (color || 'Unknown').trim();
-                key = `shirt-${size}-${safeColor.toLowerCase()}`;
+                const { size, linkedColor, color, brand } = t.details;
+                const safeColor = (linkedColor || color || 'Unknown').trim();
+                const safeBrand = (brand || 'Sypik').trim();
+                key = `shirt-${safeBrand.toLowerCase()}-${safeColor.toLowerCase()}-${size.toLowerCase()}`;
             } else {
                 const sub = t.details.subCategory || t.category;
-                key = `misc-${sub}`;
+                key = `misc-${sub.toLowerCase()}`;
             }
 
             if (key === item.id) {

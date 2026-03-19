@@ -757,6 +757,7 @@ export default function OrderManagement({ transactions, onAddTransaction, onDele
                                                                                 newItems[idx].amount = product.price;
                                                                                 newItems[idx].details.imageUrl = product.imageUrl;
                                                                                 newItems[idx].details.color = product.linkedColor || 'Varied';
+                                                                                newItems[idx].details.brand = product.brand || 'Sypik';
                                                                             }
 
                                                                             setEditForm({ ...editForm, items: newItems });
@@ -796,8 +797,9 @@ export default function OrderManagement({ transactions, onAddTransaction, onDele
                                                                 </div>
                                                             ) : (
                                                                 <>
-                                                                    <p className="font-bold text-slate-200">{item.details?.itemName}</p>
-                                                                    <p className="text-xs text-slate-500 uppercase font-bold tracking-wider">
+                                                                    <p className="font-bold text-slate-200 leading-tight">{item.details?.itemName}</p>
+                                                                    <p className="text-[10px] text-slate-500 uppercase font-bold tracking-wider mt-0.5">
+                                                                        {item.details?.brand && `${item.details.brand} • `}
                                                                         {item.details?.size !== 'N/A' && `${item.details?.size} • `}
                                                                         {item.details?.color}
                                                                     </p>
