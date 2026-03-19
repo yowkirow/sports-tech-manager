@@ -93,16 +93,19 @@ export default function AddExpenseForm({ onAddTransaction, onUpdateTransaction, 
                 showToast('Expense updated', 'success');
             } else {
                 // Create
+                const isAdSpend = finalCategory === 'Marketing/Ads';
+
                 const newTransaction = {
                     id: crypto.randomUUID(),
                     type: 'expense',
                     amount: parseFloat(amount),
                     description: description || `Expense: ${finalCategory}`,
-                    category: 'general',
+                    category: isAdSpend ? 'ads' : 'general',
                     date: newDate.toISOString(),
                     details: {
                         subCategory: finalCategory,
                         isGeneral: true,
+                        platform: isAdSpend ? customCategory : undefined, // Reuse customCategory for ad platform
                         createdBy: user?.email || 'Unknown'
                     }
                 };

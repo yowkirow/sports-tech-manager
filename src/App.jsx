@@ -11,7 +11,8 @@ import Expenses from './components/Expenses';
 import Sales from './components/Sales';
 import VoucherManager from './components/Vouchers/VoucherManager';
 import SupplierManager from './components/Supplier/SupplierManager';
-import { LayoutDashboard, Store, ShoppingBag, Receipt, Package, LogOut, X, Wallet, Banknote, Menu, Globe, Link, Ticket, Settings as SettingsIcon, Lock, ClipboardList } from 'lucide-react';
+import AdsReporting from './components/Reports/AdsReporting';
+import { LayoutDashboard, Store, ShoppingBag, Receipt, Package, LogOut, X, Wallet, Banknote, Menu, Globe, Link, Ticket, Settings as SettingsIcon, Lock, ClipboardList, TrendingUp } from 'lucide-react';
 import clsx from 'clsx';
 import { motion, AnimatePresence } from 'framer-motion';
 import { useToast } from './components/ui/Toast';
@@ -274,6 +275,7 @@ function App() {
                             <NavItem id="inventory" label="Inventory" icon={ShoppingBag} />
                             <NavItem id="supplier" label="Supplier Order" icon={ClipboardList} />
                             <NavItem id="vouchers" label="Vouchers" icon={Ticket} />
+                            <NavItem id="reports" label="Reports" icon={TrendingUp} />
                         </>
                     )}
                     <NavItem id="dashboard" label="Dashboard" icon={LayoutDashboard} />
@@ -326,6 +328,7 @@ function App() {
                             {activeTab === 'inventory' && 'Inventory'}
                             {activeTab === 'supplier' && 'Supplier Order'}
                             {activeTab === 'vouchers' && 'Vouchers'}
+                            {activeTab === 'reports' && 'Reports'}
                             {activeTab === 'settings' && 'Settings'}
                             {activeTab === 'add-stock' && 'Receive Stock'}
                         </h2>
@@ -425,6 +428,12 @@ function App() {
                                     <SupplierManager
                                         transactions={effectiveTransactions}
                                     />
+                                </div>
+                            )}
+
+                            {activeTab === 'reports' && (
+                                <div className="animate-fade-in h-full">
+                                    <AdsReporting transactions={transactions} />
                                 </div>
                             )}
 
