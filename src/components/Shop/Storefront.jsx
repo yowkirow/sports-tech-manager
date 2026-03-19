@@ -112,11 +112,8 @@ export default function Storefront({ transactions, onPlaceOrder }) {
             }
             return 999;
         }
-        const brand = (product.brand || 'Sypik').toLowerCase();
-        const color = product.linkedColor.toLowerCase();
-        const sz = size.toLowerCase();
-        const key = `shirt-${brand}-${color}-${sz}`;
-        return rawInventory[key] || 0;
+        // Shirts are pre-ordered/print-on-demand, so default to infinite (999) stock
+        return 999;
     };
 
     const addToCart = (product, size) => {
