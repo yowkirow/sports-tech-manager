@@ -84,6 +84,36 @@ export default function OrderManagement({ transactions, onAddTransaction, onDele
 
             groups[key].items.push(t);
             groups[key].totalAmount += (Number(t.amount) || 0);
+
+            // Safety for legacy orders: Ensure shipping fee is counted in total if not already included in amounts
+            // Note: Since each transaction in an order might have the same shippingFee metadata, 
+            // we only count it ONCE per order group.
+            if (t.details?.shippingDetails?.shippingFee && !groups[key].shippingFeeAdded) {
+                const sFee = Number(t.details.shippingDetails.shippingFee) || 0;
+                groups[key].shippingFee = sFee;
+                groups[key].shippingFeeAdded = true;
+
+                // If it's a legacy order where amount sum DOES NOT include shipping fee, we add it to totalAmount.
+                // We'll recalculate the actual items sum and check if it matches the totalAmount.
+                // But a simpler way: if summing amounts doesn't include the shipping fee already, add it.
+                // We'll wait until all items are processed to adjust the totalAmount if needed?
+                // No, let's just make the totalAmount always sum(amount) for consistency with accounting.
+            }
+
+            if (t.details?.shippingDetails?.rushFee) {
+                groups[key].totalRushFee = (groups[key].totalRushFee || 0) + (Number(t.details.shippingDetails.rushFee) || 0);
+            }
+        });
+
+        // SECOND PASS for fixing totalAmount for LEGACY orders
+        Object.values(groups).forEach(order => {
+            const expectedSumWithShipping = (order.items.reduce((s, i) => s + (i.details?.originalAmount || 0), 0)) - (order.items.reduce((s, i) => s + (i.details?.discountShare || 0), 0)) + (order.totalRushFee || 0) + (order.shippingFee || 0);
+
+            // If the sum of transaction amounts is less than the expected total, we assume it's a legacy order missing the shipping fee.
+            // We'll adjust it ONLY if the difference is exactly the shipping fee (or very close).
+            if (order.shippingFee > 0 && order.totalAmount < expectedSumWithShipping) {
+                order.totalAmount = expectedSumWithShipping;
+            }
         });
 
         return Object.values(groups).sort((a, b) => new Date(b.date) - new Date(a.date));
@@ -816,6 +846,35 @@ export default function OrderManagement({ transactions, onAddTransaction, onDele
                                                     </div>
                                                 </div>
                                             ))}
+
+                                            {/* Order Breakdown (Fees) */}
+                                            <div className="mt-4 p-4 bg-black/40 rounded-xl border border-white/10 space-y-2">
+                                                <div className="flex justify-between text-xs text-slate-400">
+                                                    <span>Items Subtotal</span>
+                                                    <span>₱{(order.items.reduce((acc, item) => acc + (item.details?.originalAmount || 0), 0)).toLocaleString()}</span>
+                                                </div>
+                                                {(order.items.reduce((acc, item) => acc + (item.details?.discountShare || 0), 0)) > 0 && (
+                                                    <div className="flex justify-between text-xs text-emerald-400">
+                                                        <span>Voucher/Discount</span>
+                                                        <span>-₱{(order.items.reduce((acc, item) => acc + (item.details?.discountShare || 0), 0)).toLocaleString()}</span>
+                                                    </div>
+                                                )}
+                                                {order.isRushOrder && (
+                                                    <div className="flex justify-between text-xs text-amber-400">
+                                                        <span>Rush Processing Fee (Synced)</span>
+                                                        <span>₱{(order.totalRushFee || 0).toLocaleString()}</span>
+                                                    </div>
+                                                )}
+                                                <div className="flex justify-between text-xs text-slate-400">
+                                                    <span>Shipping Fee ({order.items[0]?.details?.shippingDetails?.region || (order.items[0]?.details?.shippingDetails?.province === 'Metro Manila' ? 'MM' : 'Prov')})</span>
+                                                    <span>₱{(order.shippingFee || 0).toLocaleString()}</span>
+                                                </div>
+                                                <div className="flex justify-between text-base font-bold text-white pt-2 border-t border-white/5 mt-1">
+                                                    <span>Grand Total</span>
+                                                    <span>₱{order.totalAmount.toLocaleString()}</span>
+                                                </div>
+                                            </div>
+
                                             {/* Shipping Information for POS and Online Orders */}
                                             {(order.items[0]?.details?.shippingDetails || order.items[0]?.details?.customerProvince) && (
                                                 <div className="mt-4 p-3 bg-white/5 rounded-xl border border-white/5">

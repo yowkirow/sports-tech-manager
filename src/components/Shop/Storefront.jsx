@@ -297,9 +297,18 @@ export default function Storefront({ transactions, onPlaceOrder }) {
                 const subtotalSafe = subtotal || 1;
                 const ratio = itemTotal / subtotalSafe;
                 const itemDiscount = discountAmount * ratio;
-                const itemRushFee = isRushOrder ? itemQty * 100 : 0;
+                const product = products.find(p => p.name === item.name);
+                const isShirt = !product || !product.category || product.category === 'shirts';
+                const itemRushFee = (isRushOrder && isShirt) ? itemQty * 100 : 0;
+
                 // Add rush fee to the final amount so it gets tallied correctly as revenue
-                const finalAmount = (itemTotal - itemDiscount) + itemRushFee;
+                let finalAmount = (itemTotal - itemDiscount) + itemRushFee;
+
+                // We'll add the shipping fee to the first item's final amount 
+                // to ensure the total of all transactions matches the total paid.
+                if (cart.indexOf(item) === 0) {
+                    finalAmount += shippingFee;
+                }
 
                 return {
                     id: crypto.randomUUID(),

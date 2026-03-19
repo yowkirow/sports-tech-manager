@@ -465,8 +465,14 @@ export default function OrderTracking() {
                                     </div>
                                     <div className="flex justify-between text-lg font-bold text-white pt-2">
                                         <span>Total Paid</span>
-                                        <span>₱{(order.items.reduce((acc, item) => acc + item.amount, 0) + (order.details.shippingDetails?.shippingFee || 0)).toLocaleString()}</span>
+                                        <span>₱{(order.items.reduce((acc, item) => acc + item.amount, 0)).toLocaleString()}</span>
                                     </div>
+                                    {/* Legacy Support Hint */}
+                                    {order.items.reduce((acc, item) => acc + item.amount, 0) < (order.items.reduce((acc, item) => acc + (item.details?.originalAmount || 0), 0) - (order.details.discountShare || 0) + (order.details.shippingDetails?.shippingFee || 0)) && (
+                                        <div className="text-[10px] text-slate-500 text-right mt-1 italic">
+                                            * Shipping fee breakdown might be adjusted in the items total.
+                                        </div>
+                                    )}
                                 </div>
                             </div>
 
