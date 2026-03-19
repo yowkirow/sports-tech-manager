@@ -19,7 +19,10 @@ export const useRawInventory = (transactions) => {
             if (!['expense', 'sale', 'update_stock'].includes(type) && t.category !== 'return') return;
 
             let key;
-            if (t.category === 'blanks' || (category === 'blanks')) {
+            if (
+                t.category === 'blanks' || category === 'blanks' ||
+                t.category === 'shirts' || category === 'shirts'
+            ) {
                 // Multi-Brand Logic: Include brand in the key
                 // validColor comes from Color or linkedColor
                 const validColor = color || t.details.linkedColor;
