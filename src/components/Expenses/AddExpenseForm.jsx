@@ -155,15 +155,17 @@ export default function AddExpenseForm({ onAddTransaction, onUpdateTransaction, 
                         </select>
                     </div>
 
-                    {category === 'Other' && (
+                    {(category === 'Other' || category === 'Marketing/Ads') && (
                         <div className="space-y-2">
-                            <label className="text-sm text-slate-400">Specify Category</label>
+                            <label className="text-sm text-slate-400">
+                                {category === 'Marketing/Ads' ? 'Ad Platform' : 'Specify Category'}
+                            </label>
                             <input
                                 type="text"
                                 value={customCategory}
                                 onChange={(e) => setCustomCategory(e.target.value)}
                                 className="glass-input"
-                                placeholder="e.g. Office Supplies"
+                                placeholder={category === 'Marketing/Ads' ? 'e.g. Facebook, TikTok' : 'e.g. Office Supplies'}
                                 required
                             />
                         </div>
