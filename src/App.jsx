@@ -22,6 +22,8 @@ import { supabase } from './lib/supabaseClient';
 import ProfileSettings from './components/Settings/ProfileSettings';
 import OrderTracking from './components/Shop/OrderTracking';
 import { sendSMS } from './lib/textbee';
+import EventRegistration from './components/Event/EventRegistration';
+import ReferrerDashboard from './components/Event/ReferrerDashboard';
 
 
 function App() {
@@ -201,10 +203,17 @@ function App() {
     // Simplified Path-Based Routing
     const isAdminPath = window.location.pathname.startsWith('/admin');
     const isTrackPath = window.location.pathname.startsWith('/track');
+    const isEventPath = window.location.pathname.startsWith('/event');
 
     // Tracking Route
-    if (isTrackPath) {
-        return <OrderTracking />;
+    if (isTrackPath) return <OrderTracking />;
+    
+    // Event Route
+    if (isEventPath) {
+        if (window.location.pathname.includes('/dashboard')) {
+            return <ReferrerDashboard />;
+        }
+        return <EventRegistration />;
     }
 
     // Default to Storefront unless on /admin path

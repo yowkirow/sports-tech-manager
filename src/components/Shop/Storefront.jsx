@@ -1,6 +1,6 @@
 import React, { useState, useMemo } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
-import { Component, Loader2, Upload, ShoppingCart, X, Plus, Minus, CheckCircle, Store, Search, Package, Clock, Ticket, Copy, ExternalLink, SearchCode, Phone } from 'lucide-react';
+import { Component, Loader2, Upload, ShoppingCart, X, Plus, Minus, CheckCircle, Store, Search, Package, Clock, Ticket, Copy, ExternalLink, SearchCode, Phone, Trophy } from 'lucide-react';
 import { supabase } from '../../lib/supabaseClient';
 import { useProducts, useRawInventory } from '../../hooks/useInventory';
 import { useToast } from '../ui/Toast';
@@ -459,6 +459,15 @@ export default function Storefront({ transactions, onPlaceOrder }) {
                 </div>
 
                 <div className="flex items-center gap-4">
+                    <button
+                        onClick={() => window.location.href = '/event'}
+                        className="p-2 text-primary hover:text-white transition-colors flex items-center gap-2 border border-primary/20 bg-primary/5 px-4 py-1.5 rounded-full"
+                        title="Referral Event"
+                    >
+                        <Trophy size={20} />
+                        <span className="hidden sm:inline text-[10px] font-bold uppercase tracking-widest">Join Event</span>
+                    </button>
+
                     <button
                         onClick={() => setIsTrackModalOpen(true)}
                         className="p-2 text-slate-400 hover:text-white transition-colors flex items-center gap-2"
