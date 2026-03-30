@@ -522,8 +522,8 @@ export default function Storefront({ transactions, onPlaceOrder }) {
                         className={clsx(
                             "px-6 py-2 rounded-full text-xs font-bold transition-all border shrink-0 uppercase tracking-widest",
                             selectedBrand === 'All' 
-                                ? "bg-primary text-slate-900 border-primary" 
-                                : "bg-white/5 text-slate-400 border-white/10 hover:bg-white/10"
+                                ? "bg-[#fbbf24] text-slate-900 border-[#fbbf24] shadow-[0_0_20px_rgba(251,191,36,0.4)]" 
+                                : "bg-white/5 text-slate-400 border-white/10 hover:bg-white/15 hover:text-white"
                         )}
                     >
                         All Items
@@ -535,8 +535,8 @@ export default function Storefront({ transactions, onPlaceOrder }) {
                             className={clsx(
                                 "px-6 py-2 rounded-full text-xs font-bold transition-all border shrink-0 uppercase tracking-widest",
                                 selectedBrand === b.name 
-                                    ? "bg-primary text-slate-900 border-primary shadow-[0_0_15px_rgba(251,191,36,0.3)]" 
-                                    : "bg-white/5 text-slate-400 border-white/10 hover:bg-white/10"
+                                    ? "bg-[#fbbf24] text-slate-900 border-[#fbbf24] shadow-[0_0_20px_rgba(251,191,36,0.4)]" 
+                                    : "bg-white/5 text-slate-400 border-white/10 hover:bg-white/15 hover:text-white"
                             )}
                         >
                             {b.name}
