@@ -2,7 +2,7 @@ import React, { useState, useMemo } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
 import { Component, Loader2, Upload, ShoppingCart, X, Plus, Minus, CheckCircle, Store, Search, Package, Clock, Ticket, Copy, ExternalLink, SearchCode, Phone, Trophy } from 'lucide-react';
 import { supabase } from '../../lib/supabaseClient';
-import { useProducts, useRawInventory } from '../../hooks/useInventory';
+import { useProducts, useRawInventory, useBrands } from '../../hooks/useInventory';
 import { useToast } from '../ui/Toast';
 import { getMMCities, getAllProvinces, getCitiesByProvince, getBarangays } from '../../lib/phLocations';
 
@@ -12,11 +12,14 @@ export default function Storefront({ transactions, onPlaceOrder }) {
     const { showToast } = useToast();
     const products = useProducts(transactions);
     const rawInventory = useRawInventory(transactions);
+    const brands = useBrands(transactions);
 
     const [cart, setCart] = useState([]);
     const [isCartOpen, setIsCartOpen] = useState(false);
     const [activeProduct, setActiveProduct] = useState(null); // For size selection
+    const [activeImageIdx, setActiveImageIdx] = useState(0); // For gallery
     const [searchTerm, setSearchTerm] = useState('');
+    const [selectedBrand, setSelectedBrand] = useState('All');
     const [lastOrderId, setLastOrderId] = useState('');
     const [showSizeGuide, setShowSizeGuide] = useState(false);
     const [isTrackModalOpen, setIsTrackModalOpen] = useState(false);
@@ -102,7 +105,11 @@ export default function Storefront({ transactions, onPlaceOrder }) {
         }
     }, [cityCode]);
 
-    const filteredProducts = products.filter(p => p.name.toLowerCase().includes(searchTerm.toLowerCase()));
+    const filteredProducts = products.filter(p => {
+        const matchesSearch = p.name.toLowerCase().includes(searchTerm.toLowerCase());
+        const matchesBrand = selectedBrand === 'All' || p.brand === selectedBrand;
+        return matchesSearch && matchesBrand;
+    });
 
     const getStock = (product, size) => {
         if (!product.linkedColor || product.category !== 'shirts') {
@@ -506,6 +513,35 @@ export default function Storefront({ transactions, onPlaceOrder }) {
                     />
                 </div>
 
+                {/* Brands Hub */}
+                <div className="mb-8 flex gap-3 overflow-x-auto pb-2 scrollbar-hide">
+                    <button 
+                        onClick={() => setSelectedBrand('All')}
+                        className={clsx(
+                            "px-6 py-2 rounded-full text-xs font-bold transition-all border shrink-0 uppercase tracking-widest",
+                            selectedBrand === 'All' 
+                                ? "bg-primary text-slate-900 border-primary" 
+                                : "bg-white/5 text-slate-400 border-white/10 hover:bg-white/10"
+                        )}
+                    >
+                        All Items
+                    </button>
+                    {brands.map(b => (
+                        <button 
+                            key={b.name}
+                            onClick={() => setSelectedBrand(b.name)}
+                            className={clsx(
+                                "px-6 py-2 rounded-full text-xs font-bold transition-all border shrink-0 uppercase tracking-widest",
+                                selectedBrand === b.name 
+                                    ? "bg-primary text-slate-900 border-primary shadow-[0_0_15px_rgba(251,191,36,0.3)]" 
+                                    : "bg-white/5 text-slate-400 border-white/10 hover:bg-white/10"
+                            )}
+                        >
+                            {b.name}
+                        </button>
+                    ))}
+                </div>
+
                 <div className="grid grid-cols-[repeat(auto-fill,minmax(160px,1fr))] md:grid-cols-[repeat(auto-fill,minmax(200px,1fr))] gap-4 sm:gap-6">
                     {filteredProducts.map(product => (
                         <motion.div
@@ -518,6 +554,7 @@ export default function Storefront({ transactions, onPlaceOrder }) {
                                     addToCart(product, 'N/A');
                                 } else {
                                     setActiveProduct(product);
+                                    setActiveImageIdx(0);
                                 }
                             }}
                         >
@@ -567,11 +604,36 @@ export default function Storefront({ transactions, onPlaceOrder }) {
                         >
                             <button onClick={() => setActiveProduct(null)} className="absolute top-4 right-4 text-slate-400 hover:text-white"><X size={24} /></button>
 
-                            <div className="flex gap-4 mb-6">
-                                <div className="w-20 h-24 bg-black/40 rounded-lg overflow-hidden shrink-0">
-                                    {activeProduct.imageUrl && <img src={activeProduct.imageUrl} className="w-full h-full object-cover" />}
+                            <div className="flex flex-col gap-4 mb-6">
+                                <div className="w-full aspect-square bg-black/40 rounded-2xl overflow-hidden ring-1 ring-white/10 relative">
+                                    <AnimatePresence mode="wait">
+                                        <motion.img 
+                                            key={activeImageIdx}
+                                            initial={{ opacity: 0 }}
+                                            animate={{ opacity: 1 }}
+                                            src={(activeProduct.images && activeProduct.images[activeImageIdx]) || activeProduct.imageUrl} 
+                                            className="w-full h-full object-cover" 
+                                        />
+                                    </AnimatePresence>
                                 </div>
+                                {activeProduct.images?.length > 1 && (
+                                    <div className="flex gap-2 justify-center overflow-x-auto pb-1">
+                                        {activeProduct.images.map((img, idx) => (
+                                            <button 
+                                                key={idx}
+                                                onClick={() => setActiveImageIdx(idx)}
+                                                className={clsx(
+                                                    "w-12 h-12 rounded-lg overflow-hidden border-2 transition-all shrink-0",
+                                                    activeImageIdx === idx ? "border-primary" : "border-white/10 grayscale opacity-50"
+                                                )}
+                                            >
+                                                <img src={img} className="w-full h-full object-cover" />
+                                            </button>
+                                        ))}
+                                    </div>
+                                )}
                                 <div>
+                                    <p className="text-[10px] text-slate-500 font-bold uppercase tracking-[0.2em] mb-1">{activeProduct.brand}</p>
                                     <h3 className="font-bold text-lg text-white leading-tight mb-2">{activeProduct.name}</h3>
                                     <p className="text-primary font-bold text-xl">₱{Number(activeProduct.price) || 0}</p>
                                 </div>
@@ -605,14 +667,21 @@ export default function Storefront({ transactions, onPlaceOrder }) {
                                                     </tr>
                                                 </thead>
                                                 <tbody className="text-slate-300">
-                                                    {[
+                                                    {(activeProduct.brand?.toLowerCase() === 'sypik' ? [
                                                         { s: 'XS', c: '18"', h: '25"' },
                                                         { s: 'S', c: '19"', h: '26"' },
                                                         { s: 'M', c: '20"', h: '27"' },
                                                         { s: 'L', c: '21"', h: '28"' },
                                                         { s: 'XL', c: '22"', h: '29"' },
                                                         { s: '2XL', c: '23"', h: '30"' },
-                                                    ].map((row) => (
+                                                    ] : [
+                                                        { s: 'XS', c: '18.5"', h: '25.5"' },
+                                                        { s: 'S', c: '19.5"', h: '26.5"' },
+                                                        { s: 'M', c: '20.5"', h: '27.5"' },
+                                                        { s: 'L', c: '21.5"', h: '28.5"' },
+                                                        { s: 'XL', c: '22.5"', h: '29.5"' },
+                                                        { s: '2XL', c: '23.5"', h: '30.5"' },
+                                                    ]).map((row) => (
                                                         <tr key={row.s} className="border-b border-white/5 last:border-0">
                                                             <td className="py-2 font-bold text-white">{row.s}</td>
                                                             <td className="py-2">{row.c}</td>
@@ -621,7 +690,7 @@ export default function Storefront({ transactions, onPlaceOrder }) {
                                                     ))}
                                                 </tbody>
                                             </table>
-                                            <p className="text-[9px] text-slate-500 mt-2 text-center italic">All measurements are in inches</p>
+                                            <p className="text-[9px] text-slate-500 mt-2 text-center italic">Brand-specific measurements ({activeProduct.brand})</p>
                                         </div>
                                     </motion.div>
                                 )}
@@ -1006,10 +1075,18 @@ export default function Storefront({ transactions, onPlaceOrder }) {
                                         )}
                                     </div>
 
-                                    <div className="flex justify-between items-center text-xl font-bold text-white pt-2 border-t border-white/5">
-                                        <span>Total</span>
-                                        <span>₱{(subtotal - discountAmount + (shippingRegion === 'MM' ? 100 : 200) + rushFeeAmount).toLocaleString()}</span>
+                                    <div className="flex justify-between items-center text-xl font-bold pt-2 border-t border-white/5">
+                                        <span className="text-white">Total</span>
+                                        <span className={clsx("transition-colors duration-500", appliedVoucher ? "text-emerald-400 drop-shadow-[0_0_8px_rgba(52,211,153,0.3)]" : "text-white")}>
+                                            ₱{(subtotal - discountAmount + (shippingRegion === 'MM' ? 100 : 200) + rushFeeAmount).toLocaleString()}
+                                        </span>
                                     </div>
+                                    {appliedVoucher && (
+                                        <div className="p-2 bg-emerald-500/10 border border-emerald-500/20 rounded-lg flex items-center justify-center gap-2 mt-1">
+                                            <CheckCircle size={14} className="text-emerald-400" />
+                                            <span className="text-[10px] font-bold text-emerald-400 uppercase tracking-widest">You're saving ₱{discountAmount.toLocaleString()}</span>
+                                        </div>
+                                    )}
 
                                     <button
                                         onClick={handleCheckout}

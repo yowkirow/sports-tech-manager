@@ -68,14 +68,15 @@ export const useProducts = (transactions) => {
                 const key = name.trim().toLowerCase();
 
                 products.set(key, {
-                    id: t.id, // Use latest ID
-                    name: name.trim(), // Clean up display name too
+                    id: t.id,
+                    name: name.trim(),
                     price,
                     imageUrl,
+                    images: t.details.images || (imageUrl ? [imageUrl] : []),
                     linkedColor,
                     brand: brand || 'Sypik',
                     category: category || 'shirts',
-                    order: order !== undefined ? order : 9999 // Default to end
+                    order: order !== undefined ? order : 9999
                 });
             } else if (t.type === 'delete_product') {
                 const { name } = t.details;

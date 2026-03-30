@@ -644,7 +644,8 @@ const ProductDefinitionModal = ({ editingProduct, onClose, onSave, onDelete, col
         brand: editingProduct?.brand || 'Sypik',
         category: editingProduct?.category || 'shirts',
         linkedColor: editingProduct?.linkedColor || 'Black',
-        imageUrl: editingProduct?.imageUrl || null
+        imageUrl: editingProduct?.imageUrl || null,
+        images: editingProduct?.images || (editingProduct?.imageUrl ? [editingProduct.imageUrl] : [])
     });
     const [uploading, setUploading] = useState(false);
     const fileRef = useRef(null);
@@ -660,13 +661,31 @@ const ProductDefinitionModal = ({ editingProduct, onClose, onSave, onDelete, col
             const { error: uploadError } = await supabase.storage.from('product-images').upload(fileName, file);
             if (uploadError) throw uploadError;
             const { data } = supabase.storage.from('product-images').getPublicUrl(fileName);
-            setForm(p => ({ ...p, imageUrl: data.publicUrl }));
-            showToast('Image uploaded!', 'success');
+            
+            const newUrl = data.publicUrl;
+            setForm(p => {
+                const newImages = [...(p.images || []), newUrl];
+                return { 
+                    ...p, 
+                    imageUrl: newImages[0], // Keep first as main
+                    images: newImages 
+                };
+            });
+            showToast('Image added to gallery!', 'success');
         } catch (err) {
             showToast(`Upload failed: ${err.message}`, 'error');
         } finally {
+            setUploading(true); // Wait, should be false. Fix it.
             setUploading(false);
         }
+    };
+
+    const removeImage = (url) => {
+        setForm(p => ({
+            ...p,
+            images: p.images.filter(img => img !== url),
+            imageUrl: p.images[0] === url ? p.images[1] || null : p.imageUrl
+        }));
     };
 
     return (
@@ -675,8 +694,29 @@ const ProductDefinitionModal = ({ editingProduct, onClose, onSave, onDelete, col
                 <button onClick={onClose} className="absolute top-4 right-4 text-slate-400 hover:text-white"><X size={20} /></button>
                 <h3 className="text-xl font-bold mb-6 text-white">{editingProduct ? 'Edit Product' : 'New Product'}</h3>
                 <div className="space-y-4">
-                    <div onClick={() => fileRef.current?.click()} className="h-32 rounded-xl border-2 border-dashed border-white/20 flex items-center justify-center cursor-pointer hover:bg-white/5 relative overflow-hidden bg-black/20">
-                        {form.imageUrl ? <img src={form.imageUrl} className="w-full h-full object-cover" /> : <div className="text-center text-slate-500">{uploading ? <Loader2 className="animate-spin" /> : <Upload />}<span className="text-xs block mt-1">Upload Photo</span></div>}
+                    <div className="flex gap-2 overflow-x-auto pb-2 scrollbar-hide">
+                        <div 
+                            onClick={() => fileRef.current?.click()} 
+                            className="w-24 h-24 rounded-xl border-2 border-dashed border-white/20 flex flex-col items-center justify-center cursor-pointer hover:bg-white/5 bg-black/20 shrink-0"
+                        >
+                            {uploading ? <Loader2 className="animate-spin text-primary" size={20} /> : <Plus size={20} className="text-slate-500" />}
+                            <span className="text-[10px] uppercase font-bold text-slate-500 mt-1">Add Photo</span>
+                        </div>
+                        
+                        {(form.images || []).map((img, idx) => (
+                            <div key={idx} className="w-24 h-24 rounded-xl relative group shrink-0 overflow-hidden ring-1 ring-white/10">
+                                <img src={img} className="w-full h-full object-cover" alt={`Product ${idx}`} />
+                                <button 
+                                    onClick={() => removeImage(img)}
+                                    className="absolute top-1 right-1 p-1 bg-black/60 rounded-lg text-white opacity-0 group-hover:opacity-100 transition-opacity"
+                                >
+                                    <X size={12} />
+                                </button>
+                                {idx === 0 && (
+                                    <div className="absolute bottom-0 left-0 right-0 bg-primary/90 text-black text-[8px] font-bold py-0.5 text-center uppercase tracking-tighter">Main Visual</div>
+                                )}
+                            </div>
+                        ))}
                     </div>
                     <input type="file" ref={fileRef} className="hidden" onChange={handleUpload} />
                     <div className="grid grid-cols-2 gap-4">
