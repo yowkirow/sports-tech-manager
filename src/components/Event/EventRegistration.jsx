@@ -159,7 +159,7 @@ export default function EventRegistration() {
                         </div>
                         <h1 className="text-5xl lg:text-7xl font-bold text-white leading-tight">
                             Refer Friends. <br/>
-                            <span className="text-transparent bg-clip-text bg-gradient-to-r from-primary to-orange-500">Win Registration.</span>
+                            <span className="text-transparent bg-clip-text bg-gradient-to-r from-primary to-red-500">Win Registration.</span>
                         </h1>
                         <p className="text-lg text-slate-400 max-w-lg leading-relaxed">
                             Top referrers this month get their next tournament registration covered 
