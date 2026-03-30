@@ -3,6 +3,7 @@ import { motion, AnimatePresence } from 'framer-motion';
 import { Component, Loader2, Upload, ShoppingCart, X, Plus, Minus, CheckCircle, Store, Search, Package, Clock, Ticket, Copy, ExternalLink, SearchCode, Phone, Trophy } from 'lucide-react';
 import { supabase } from '../../lib/supabaseClient';
 import { useProducts, useRawInventory, useBrands } from '../../hooks/useInventory';
+import clsx from 'clsx';
 import { useToast } from '../ui/Toast';
 import { getMMCities, getAllProvinces, getCitiesByProvince, getBarangays } from '../../lib/phLocations';
 

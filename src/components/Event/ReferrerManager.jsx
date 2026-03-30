@@ -146,16 +146,34 @@ export default function ReferrerManager() {
         if (!confirm(`Delete ${ref.name}? Their stats will be lost.`)) return;
         
         try {
-            const { error } = await supabase.from('referrers').delete().eq('id', ref.id);
-            if (error) throw error;
+            // 1. Delete from referrers
+            const { error: refErr, count } = await supabase
+                .from('referrers')
+                .delete({ count: 'exact' })
+                .eq('id', ref.id);
 
-            // Also delete their voucher from transactions
-            await supabase.from('transactions').delete().eq('type', 'voucher').eq('details->>code', ref.voucher_code);
+            if (refErr) throw refErr;
+            
+            // If count is 0, it means RLS or ID mismatch prevented deletion
+            if (count === 0) {
+                throw new Error('Database rejected deletion. Check your Supabase RLS policies for the "referrers" table.');
+            }
 
-            showToast('Referrer deleted', 'success');
+            // 2. Delete the associated voucher from transactions
+            // We use 'contains' for JSONB objects to be more compatible
+            const { error: transErr } = await supabase
+                .from('transactions')
+                .delete()
+                .eq('type', 'voucher')
+                .contains('details', { code: ref.voucher_code });
+
+            if (transErr) console.warn('Voucher deletion failed:', transErr.message);
+
+            showToast('Referrer deleted successfully', 'success');
             fetchReferrers();
         } catch (err) {
-            showToast(err.message, 'error');
+            console.error('Delete Error:', err);
+            showToast(`Delete Failed: ${err.message}`, 'error');
         }
     };
 
