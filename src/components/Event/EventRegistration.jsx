@@ -1,7 +1,7 @@
 import React, { useState, useEffect } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
 import { supabase } from '../../lib/supabaseClient';
-import { Trophy, Users, Zap, CheckCircle, Smartphone, Award, ExternalLink, ArrowRight, UserPlus, Info, Ticket, Loader2 } from 'lucide-react';
+import { Trophy, Users, Zap, CheckCircle, Smartphone, Award, ExternalLink, ArrowRight, UserPlus, Info, Ticket, Loader2, X } from 'lucide-react';
 import { useToast } from '../ui/Toast';
 import clsx from 'clsx';
 
