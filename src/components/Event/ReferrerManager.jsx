@@ -105,7 +105,8 @@ export default function ReferrerManager() {
                 // Auto-gen code if empty
                 let code = formData.voucher_code;
                 if (!code) {
-                    code = `${formData.name.split(' ')[0].toUpperCase()}${Math.floor(Math.random() * 9)}ST`;
+                    const base = formData.name.trim().split(' ')[0].toUpperCase().replace(/[^A-Z]/g, '') || 'REF';
+                    code = `${base}10`;
                 }
                 
                 const { error } = await supabase

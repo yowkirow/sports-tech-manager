@@ -61,7 +61,7 @@ export default function EventRegistration() {
 
             // Generate Voucher Code (NAME10)
             let baseCode = name.trim().split(' ')[0].toUpperCase().replace(/[^A-Z]/g, '');
-            if (baseCode.length < 3) baseCode = 'REF' + Math.floor(Math.random() * 100);
+            if (!baseCode) baseCode = 'REF'; // Complete fallback only if name has no letters
             let finalCode = `${baseCode}10`;
 
             // Check uniqueness
@@ -72,7 +72,7 @@ export default function EventRegistration() {
                 .single();
 
             if (duplicate) {
-                finalCode = `${baseCode}${Math.floor(Math.random() * 99)}ST`;
+                finalCode = `${baseCode}${Math.floor(Math.random() * 9)}10`;
             }
 
             const { error } = await supabase
