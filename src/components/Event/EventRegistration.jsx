@@ -91,24 +91,21 @@ export default function EventRegistration() {
             // Also insert into transactions as a "voucher" so the storefront recognizes it
             const { error: voucherError } = await supabase.from('transactions').insert([{
                 type: 'voucher',
+                category: 'voucher', // Match admin filters
                 amount: 0,
                 date: new Date().toISOString(),
-                description: `Event Voucher for ${name}`,
+                description: `Referral Event Voucher for ${name}`,
                 details: {
                     code: finalCode,
                     discountType: 'percent',
                     value: 10,
-                    active: true, // Boolean in DB, will be 'true' in string filter
+                    active: true,
                     isReferral: true,
                     referrerName: name
                 }
             }]);
 
-            if (voucherError) {
-                console.error('Voucher creation failed:', voucherError);
-                // We'll still proceed since the referrer record was created, 
-                // but this explains why it might not "reflect" in the storefront.
-            }
+            if (voucherError) throw voucherError;
 
             setRegisteredVoucher(finalCode);
             showToast('Registration Successful!', 'success');
