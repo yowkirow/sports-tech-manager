@@ -6,6 +6,7 @@ import { useProducts, useRawInventory, useBrands } from '../../hooks/useInventor
 import clsx from 'clsx';
 import { useToast } from '../ui/Toast';
 import { getMMCities, getAllProvinces, getCitiesByProvince, getBarangays } from '../../lib/phLocations';
+import { getSizeGuideForBrand } from '../../data/sizeGuides';
 
 const SIZES = ['XS', 'S', 'M', 'L', 'XL', '2XL'];
 
@@ -668,21 +669,7 @@ export default function Storefront({ transactions, onPlaceOrder }) {
                                                     </tr>
                                                 </thead>
                                                 <tbody className="text-slate-300">
-                                                    {(activeProduct.brand?.toLowerCase() === 'sypik' ? [
-                                                        { s: 'XS', c: '18"', h: '25"' },
-                                                        { s: 'S', c: '19"', h: '26"' },
-                                                        { s: 'M', c: '20"', h: '27"' },
-                                                        { s: 'L', c: '21"', h: '28"' },
-                                                        { s: 'XL', c: '22"', h: '29"' },
-                                                        { s: '2XL', c: '23"', h: '30"' },
-                                                    ] : [
-                                                        { s: 'XS', c: '18.5"', h: '25.5"' },
-                                                        { s: 'S', c: '19.5"', h: '26.5"' },
-                                                        { s: 'M', c: '20.5"', h: '27.5"' },
-                                                        { s: 'L', c: '21.5"', h: '28.5"' },
-                                                        { s: 'XL', c: '22.5"', h: '29.5"' },
-                                                        { s: '2XL', c: '23.5"', h: '30.5"' },
-                                                    ]).map((row) => (
+                                                    {getSizeGuideForBrand(activeProduct.brand).map((row) => (
                                                         <tr key={row.s} className="border-b border-white/5 last:border-0">
                                                             <td className="py-2 font-bold text-white">{row.s}</td>
                                                             <td className="py-2">{row.c}</td>
