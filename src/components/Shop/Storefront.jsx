@@ -1176,7 +1176,7 @@ export default function Storefront({ transactions, onPlaceOrder }) {
                                 onClick={() => window.location.href = '/event'}
                             >
                                 <img 
-                                    src="https://dmmydgioujpablalezsn.supabase.co/storage/v1/object/public/product-images/event-banner-1774863208854.png" 
+                                    src="/STEvent.jpg" 
                                     alt="Tournament Promo" 
                                     className="w-full h-auto transition-transform duration-700 group-hover:scale-105"
                                 />
