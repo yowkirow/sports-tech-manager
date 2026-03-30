@@ -27,6 +27,7 @@ export default function Storefront({ transactions, onPlaceOrder }) {
     const [isTrackModalOpen, setIsTrackModalOpen] = useState(false);
     const [trackingContact, setTrackingContact] = useState('');
     const [isSearchingOrder, setIsSearchingOrder] = useState(false);
+    const [showEventPopup, setShowEventPopup] = useState(false);
 
     // Checkout State
     const [firstName, setFirstName] = useState('');
@@ -106,6 +107,17 @@ export default function Storefront({ transactions, onPlaceOrder }) {
             loadBarangays();
         }
     }, [cityCode]);
+
+    React.useEffect(() => {
+        const hasSeenPopup = sessionStorage.getItem('hasSeenEventPopup');
+        if (!hasSeenPopup) {
+            const timer = setTimeout(() => {
+                setShowEventPopup(true);
+                sessionStorage.setItem('hasSeenEventPopup', 'true');
+            }, 1000); // Trigger after 1s
+            return () => clearTimeout(timer);
+        }
+    }, []);
 
     const filteredProducts = products.filter(p => {
         const matchesSearch = p.name.toLowerCase().includes(searchTerm.toLowerCase());
@@ -1135,6 +1147,53 @@ export default function Storefront({ transactions, onPlaceOrder }) {
                             <p className="text-[10px] text-slate-500 mt-4 text-center italic">
                                 * This will find your most recent order.
                             </p>
+                        </motion.div>
+                    </div>
+                )}
+            </AnimatePresence>
+
+            {/* Event Promo Popup */}
+            <AnimatePresence>
+                {showEventPopup && (
+                    <div className="fixed inset-0 z-[100] flex items-center justify-center p-4 bg-black/80 backdrop-blur-md" onClick={() => setShowEventPopup(false)}>
+                        <motion.div
+                            initial={{ scale: 0.9, opacity: 0, y: 20 }}
+                            animate={{ scale: 1, opacity: 1, y: 0 }}
+                            exit={{ scale: 0.9, opacity: 0, y: 20 }}
+                            transition={{ type: "spring", damping: 25, stiffness: 300 }}
+                            className="glass-panel max-w-lg w-full overflow-hidden relative shadow-[0_0_50px_rgba(251,191,36,0.15)] ring-1 ring-white/20"
+                            onClick={e => e.stopPropagation()}
+                        >
+                            <button 
+                                onClick={() => setShowEventPopup(false)} 
+                                className="absolute top-4 right-4 z-10 w-8 h-8 rounded-full bg-black/50 text-white flex items-center justify-center hover:bg-black/80 transition-colors border border-white/10"
+                            >
+                                <X size={18} />
+                            </button>
+
+                            <div 
+                                className="relative cursor-pointer group"
+                                onClick={() => window.location.href = '/event'}
+                            >
+                                <img 
+                                    src="https://dmmydgioujpablalezsn.supabase.co/storage/v1/object/public/product-images/event-banner-1774863208854.png" 
+                                    alt="Tournament Promo" 
+                                    className="w-full h-auto transition-transform duration-700 group-hover:scale-105"
+                                />
+                                <div className="absolute inset-0 bg-gradient-to-t from-slate-900/90 via-transparent to-transparent flex flex-col justify-end p-6 md:p-8">
+                                    <h2 className="text-2xl md:text-3xl font-black text-white italic uppercase tracking-tighter mb-2 transform -skew-x-6">
+                                        Compete for <span className="text-primary italic">FREE</span>
+                                    </h2>
+                                    <p className="text-sm text-slate-300 font-medium mb-6 max-w-xs leading-relaxed">
+                                        Join the Sports Tech Referral Event and get your tournament fees covered!
+                                    </p>
+                                    <button 
+                                        className="btn-primary w-fit px-8 py-3 text-sm font-black uppercase tracking-widest flex items-center gap-3 group/btn hover:scale-105 transition-all shadow-xl"
+                                    >
+                                        Join Now <Trophy size={18} className="group-hover/btn:rotate-12 transition-transform" />
+                                    </button>
+                                </div>
+                            </div>
                         </motion.div>
                     </div>
                 )}
