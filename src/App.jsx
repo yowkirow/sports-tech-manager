@@ -12,7 +12,7 @@ import Sales from './components/Sales';
 import VoucherManager from './components/Vouchers/VoucherManager';
 import SupplierManager from './components/Supplier/SupplierManager';
 import AdsReporting from './components/Reports/AdsReporting';
-import { LayoutDashboard, Store, ShoppingBag, Receipt, Package, LogOut, X, Wallet, Banknote, Menu, Globe, Link, Ticket, Settings as SettingsIcon, Lock, ClipboardList, TrendingUp } from 'lucide-react';
+import { LayoutDashboard, Store, ShoppingBag, Receipt, Package, LogOut, X, Wallet, Banknote, Menu, Globe, Link, Ticket, Settings as SettingsIcon, Lock, ClipboardList, TrendingUp, Trophy } from 'lucide-react';
 import clsx from 'clsx';
 import { motion, AnimatePresence } from 'framer-motion';
 import { useToast } from './components/ui/Toast';
@@ -24,6 +24,7 @@ import OrderTracking from './components/Shop/OrderTracking';
 import { sendSMS } from './lib/textbee';
 import EventRegistration from './components/Event/EventRegistration';
 import ReferrerDashboard from './components/Event/ReferrerDashboard';
+import ReferrerManager from './components/Event/ReferrerManager';
 
 
 function App() {
@@ -285,6 +286,7 @@ function App() {
                             <NavItem id="supplier" label="Supplier Order" icon={ClipboardList} />
                             <NavItem id="vouchers" label="Vouchers" icon={Ticket} />
                             <NavItem id="reports" label="Reports" icon={TrendingUp} />
+                            <NavItem id="event" label="Event Portal" icon={Trophy} />
                         </>
                     )}
                     <NavItem id="dashboard" label="Dashboard" icon={LayoutDashboard} />
@@ -339,6 +341,7 @@ function App() {
                             {activeTab === 'vouchers' && 'Vouchers'}
                             {activeTab === 'reports' && 'Reports'}
                             {activeTab === 'settings' && 'Settings'}
+                            {activeTab === 'event' && 'Referral Challenge'}
                             {activeTab === 'add-stock' && 'Receive Stock'}
                         </h2>
                     </div>
@@ -453,6 +456,16 @@ function App() {
                                         onLogout={() => supabase.auth.signOut()}
                                         transactions={transactions}
                                         onAddTransaction={addTransaction}
+                                    />
+                                </div>
+                            )}
+
+                            {activeTab === 'event' && (
+                                <div className="animate-fade-in h-full">
+                                    <ReferrerManager 
+                                        transactions={transactions}
+                                        onAddTransaction={addTransaction}
+                                        onDeleteTransaction={deleteTransaction}
                                     />
                                 </div>
                             )}
