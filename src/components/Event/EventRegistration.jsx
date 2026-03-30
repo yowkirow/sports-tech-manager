@@ -9,7 +9,7 @@ export default function EventRegistration() {
     const { showToast } = useToast();
     const [loading, setLoading] = useState(false);
     const [leaderboard, setLeaderboard] = useState([]);
-    const [showRegister, setShowRegister] = useState(false);
+    const [showRegister, setShowRegister] = useState(false); // Default to leaderboard
     const [registeredVoucher, setRegisteredVoucher] = useState(null);
 
     // Form State
@@ -89,7 +89,7 @@ export default function EventRegistration() {
             if (error) throw error;
 
             // Also insert into transactions as a "voucher" so the storefront recognizes it
-            await supabase.from('transactions').insert([{
+            const { error: voucherError } = await supabase.from('transactions').insert([{
                 type: 'voucher',
                 amount: 0,
                 date: new Date().toISOString(),
@@ -98,11 +98,17 @@ export default function EventRegistration() {
                     code: finalCode,
                     discountType: 'percent',
                     value: 10,
-                    active: true,
+                    active: true, // Boolean in DB, will be 'true' in string filter
                     isReferral: true,
                     referrerName: name
                 }
             }]);
+
+            if (voucherError) {
+                console.error('Voucher creation failed:', voucherError);
+                // We'll still proceed since the referrer record was created, 
+                // but this explains why it might not "reflect" in the storefront.
+            }
 
             setRegisteredVoucher(finalCode);
             showToast('Registration Successful!', 'success');
@@ -161,21 +167,21 @@ export default function EventRegistration() {
                         </p>
 
                         <div className="flex flex-wrap gap-4 pt-4">
-                            {!showRegister ? (
                                 <button 
                                     onClick={() => setShowRegister(true)}
-                                    className="px-8 py-4 rounded-2xl bg-primary text-white font-bold text-lg hover:shadow-2xl hover:shadow-primary/20 transition-all flex items-center gap-3 group"
+                                    className="px-8 py-4 rounded-2xl bg-white/5 border border-white/10 text-white font-bold text-lg hover:bg-white/10 transition-all flex items-center gap-3 group"
                                 >
-                                    Start Competing <ArrowRight className="group-hover:translate-x-1 transition-transform" />
+                                    Join the Competition <ArrowRight className="group-hover:translate-x-1 transition-transform" />
                                 </button>
-                            ) : (
                                 <button 
-                                    onClick={() => setShowRegister(false)}
-                                    className="px-8 py-4 rounded-2xl bg-white/5 border border-white/10 text-white font-bold text-lg"
+                                    onClick={() => {
+                                        const sections = document.getElementById('rules');
+                                        sections?.scrollIntoView({ behavior: 'smooth' });
+                                    } }
+                                    className="px-8 py-4 rounded-2xl text-slate-400 font-bold text-lg hover:text-white transition-colors"
                                 >
-                                    View Leaderboard
+                                    How it Works
                                 </button>
-                            )}
                         </div>
 
                         <div className="grid grid-cols-3 gap-6 pt-8 border-t border-white/5">
@@ -203,11 +209,18 @@ export default function EventRegistration() {
                             {showRegister ? (
                                 <motion.div 
                                     key="form"
-                                    initial={{ opacity: 0, y: 10 }}
-                                    animate={{ opacity: 1, y: 0 }}
-                                    exit={{ opacity: 0, y: -10 }}
-                                    className="glass-panel p-8 lg:p-10 relative overflow-hidden"
+                                    initial={{ opacity: 0, scale: 0.9 }}
+                                    animate={{ opacity: 1, scale: 1 }}
+                                    exit={{ opacity: 0, scale: 0.9 }}
+                                    className="fixed inset-0 z-[100] flex items-center justify-center p-6 bg-slate-950/80 backdrop-blur-sm"
                                 >
+                                    <div className="glass-panel p-8 lg:p-10 relative overflow-hidden max-w-md w-full shadow-2xl border-white/10">
+                                        <button 
+                                            onClick={() => setShowRegister(false)}
+                                            className="absolute top-6 right-6 p-2 rounded-full hover:bg-white/5 transition-colors text-slate-500 hover:text-white"
+                                        >
+                                            <X size={20} />
+                                        </button>
                                     {/* Success State */}
                                     {registeredVoucher ? (
                                         <div className="text-center py-8 space-y-6">
@@ -290,22 +303,34 @@ export default function EventRegistration() {
                                             </p>
                                         </form>
                                     )}
+                                    </div>
                                 </motion.div>
                             ) : (
                                 <motion.div 
                                     key="leaderboard"
                                     initial={{ opacity: 0, y: 10 }}
                                     animate={{ opacity: 1, y: 0 }}
-                                    exit={{ opacity: 0, y: -10 }}
-                                    className="glass-panel p-1 border-white/5 relative bg-white/5 backdrop-blur-3xl overflow-hidden"
+                                    className="glass-panel p-1 border-white/10 relative bg-white/5 backdrop-blur-3xl overflow-hidden shadow-2xl shadow-primary/10"
                                 >
-                                    <div className="p-6 border-b border-white/5 bg-white/5 flex items-center justify-between">
-                                        <h2 className="font-bold flex items-center gap-3">
-                                            <Trophy size={18} className="text-yellow-500" /> Top Ranked Referrers
-                                        </h2>
-                                        <span className="text-[10px] bg-white/5 border border-white/10 px-2 py-1 rounded text-slate-400 uppercase font-bold tracking-widest">
-                                            Live Stats
-                                        </span>
+                                    <div className="p-8 border-b border-white/5 bg-gradient-to-br from-primary/10 to-transparent flex flex-col sm:flex-row items-center justify-between gap-6">
+                                        <div className="space-y-1">
+                                            <h2 className="text-2xl font-bold flex items-center gap-3 text-white">
+                                                <Trophy size={24} className="text-yellow-500" /> Active Leaderboard
+                                            </h2>
+                                            <p className="text-xs text-slate-500 font-medium uppercase tracking-widest">March 2026 Season Coverage</p>
+                                        </div>
+                                        <div className="flex items-center gap-3">
+                                            <div className="px-4 py-2 rounded-xl bg-black/40 border border-white/10 text-center">
+                                                <p className="text-[9px] text-slate-500 font-bold uppercase tracking-tighter">Total Pot</p>
+                                                <p className="text-sm font-bold text-primary">₱1,500+</p>
+                                            </div>
+                                            <button 
+                                                onClick={() => setShowRegister(true)}
+                                                className="px-6 py-3 rounded-xl bg-primary text-white text-xs font-bold uppercase hover:shadow-lg hover:shadow-primary/20 transition-all border border-primary/50"
+                                            >
+                                                Register Now
+                                            </button>
+                                        </div>
                                     </div>
                                     <div className="p-2 overflow-y-auto max-h-[500px]">
                                         {leaderboard.length > 0 ? (
@@ -363,7 +388,7 @@ export default function EventRegistration() {
             </main>
 
             {/* Steps / Info */}
-            <section className="bg-white/2 bg-slate-900 border-t border-white/5 py-20">
+            <section id="rules" className="bg-white/2 bg-slate-900 border-t border-white/5 py-20">
                 <div className="max-w-7xl mx-auto px-6 lg:px-12 grid md:grid-cols-3 gap-12">
                     <div className="space-y-4 group">
                         <div className="w-12 h-12 rounded-xl bg-primary/10 text-primary flex items-center justify-center group-hover:scale-110 transition-transform">
