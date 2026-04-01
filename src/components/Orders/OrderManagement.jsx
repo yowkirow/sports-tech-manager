@@ -149,6 +149,15 @@ export default function OrderManagement({ transactions, onAddTransaction, onDele
 
     const startEditing = (order) => {
         setEditingId(order.id);
+        
+        // Ensure order is expanded so user sees the shipping details edit form
+        const newSet = new Set(expandedOrderIds);
+        newSet.add(order.id);
+        setExpandedOrderIds(newSet);
+
+        const firstItemDetails = order.items[0]?.details || {};
+        const shipping = firstItemDetails.shippingDetails || {};
+
         setEditForm({
             customerName: order.customerName,
             fulfillmentStatus: order.fulfillmentStatus,
@@ -156,6 +165,11 @@ export default function OrderManagement({ transactions, onAddTransaction, onDele
             paymentMode: order.paymentMode,
             trackingNumber: order.items[0]?.details?.trackingNumber || '',
             date: new Date(order.date).toISOString().split('T')[0],
+            contactNumber: shipping.contactNumber || firstItemDetails.customerContact || firstItemDetails.contactNumber || '',
+            address: shipping.address || firstItemDetails.customerAddress || '',
+            city: shipping.city || firstItemDetails.customerCity || '',
+            province: shipping.province || firstItemDetails.customerProvince || '',
+            barangay: shipping.barangay || firstItemDetails.customerBarangay || '',
             items: order.items.map(item => ({
                 id: item.id,
                 amount: item.amount,
@@ -193,6 +207,23 @@ export default function OrderManagement({ transactions, onAddTransaction, onDele
                     trackingNumber: editForm.trackingNumber,
                     status: finalFulfillmentStatus
                 };
+
+                if (updatedDetails.shippingDetails) {
+                    updatedDetails.shippingDetails = {
+                        ...updatedDetails.shippingDetails,
+                        contactNumber: editForm.contactNumber,
+                        address: editForm.address,
+                        city: editForm.city,
+                        province: editForm.province,
+                        barangay: editForm.barangay
+                    };
+                } else {
+                    updatedDetails.customerContact = editForm.contactNumber;
+                    updatedDetails.customerAddress = editForm.address;
+                    updatedDetails.customerCity = editForm.city;
+                    updatedDetails.customerProvince = editForm.province;
+                    updatedDetails.customerBarangay = editForm.barangay;
+                }
 
                 const { error } = await supabase
                     .from('transactions')
@@ -878,52 +909,106 @@ export default function OrderManagement({ transactions, onAddTransaction, onDele
                                             </div>
 
                                             {/* Shipping Information for POS and Online Orders */}
-                                            {(order.items[0]?.details?.shippingDetails || order.items[0]?.details?.customerProvince) && (
-                                                <div className="mt-4 p-3 bg-white/5 rounded-xl border border-white/5">
+                                            {(order.items[0]?.details?.shippingDetails || order.items[0]?.details?.customerProvince || editingId === order.id) && (
+                                                <div className="mt-4 p-3 bg-white/5 rounded-xl border border-white/5" onClick={e => e.stopPropagation()}>
                                                     <p className="text-xs font-bold text-slate-500 uppercase mb-2 flex items-center gap-2"><Truck size={12} /> Shipping Information</p>
-                                                    <div className="grid grid-cols-1 md:grid-cols-2 gap-4 text-sm">
-                                                        <div>
-                                                            <p className="text-slate-400 text-xs text-uppercase font-bold mb-1">Address</p>
-                                                            <p
-                                                                className="text-white hover:text-primary transition-colors cursor-pointer flex items-center gap-2 group/address"
-                                                                onClick={() => handleCopyToClipboard(order.items[0].details.shippingDetails?.address || order.items[0].details.customerAddress, 'Address')}
-                                                                title="Click to copy address"
-                                                            >
-                                                                {order.items[0].details.shippingDetails?.address || order.items[0].details.customerAddress || 'No address provided'}
-                                                                <Copy size={12} className="opacity-0 group-hover/address:opacity-100 transition-opacity" />
-                                                            </p>
-                                                        </div>
-                                                        <div>
-                                                            <p className="text-slate-400 text-xs text-uppercase font-bold mb-1">Contact</p>
-                                                            <p
-                                                                className="text-white hover:text-primary transition-colors cursor-pointer flex items-center gap-2 group/contact"
-                                                                onClick={() => {
-                                                                    const raw = order.items[0].details.shippingDetails?.contactNumber || order.items[0].details.customerContact || order.items[0].details.contactNumber;
-                                                                    handleCopyToClipboard(formatContactForCopy(raw), 'Contact number');
-                                                                }}
-                                                                title="Click to copy contact (starts with 9)"
-                                                            >
-                                                                {order.items[0].details.shippingDetails?.contactNumber || order.items[0].details.customerContact || order.items[0].details.contactNumber || 'N/A'}
-                                                                <Copy size={12} className="opacity-0 group-hover/contact:opacity-100 transition-opacity" />
-                                                            </p>
-                                                        </div>
-                                                        <div className="col-span-1 md:col-span-2">
-                                                            <p className="text-slate-400 text-xs text-uppercase font-bold mb-1">Details (Barangay, City, Province)</p>
-                                                            <p className="text-white">
-                                                                {order.items[0].details.shippingDetails ? (
-                                                                    `${order.items[0].details.shippingDetails.barangay ? order.items[0].details.shippingDetails.barangay + ', ' : ''}${order.items[0].details.shippingDetails.city}, ${order.items[0].details.shippingDetails.province}`
-                                                                ) : (
-                                                                    `${order.items[0].details.customerBarangay ? order.items[0].details.customerBarangay + ', ' : ''}${order.items[0].details.customerCity ? order.items[0].details.customerCity + ', ' : ''}${order.items[0].details.customerProvince || ''}`
-                                                                )}
-                                                            </p>
-                                                        </div>
-                                                        {order.items[0].details.trackingNumber && (
-                                                            <div className="col-span-1 md:col-span-2 mt-2 pt-2 border-t border-white/5">
-                                                                <p className="text-slate-400 text-xs flex items-center gap-2 mb-1"><Truck size={10} /> Tracking Number</p>
-                                                                <p className="text-primary font-mono font-bold tracking-wider">{order.items[0].details.trackingNumber}</p>
+                                                    {editingId === order.id ? (
+                                                        <div className="grid grid-cols-1 md:grid-cols-2 gap-4 text-sm">
+                                                            <div>
+                                                                <p className="text-slate-400 text-xs text-uppercase font-bold mb-1">Address</p>
+                                                                <input
+                                                                    type="text"
+                                                                    className="glass-input py-1.5 px-3 text-sm w-full"
+                                                                    value={editForm.address || ''}
+                                                                    onChange={e => setEditForm({ ...editForm, address: e.target.value })}
+                                                                    placeholder="Street address / House No."
+                                                                />
                                                             </div>
-                                                        )}
-                                                    </div>
+                                                            <div>
+                                                                <p className="text-slate-400 text-xs text-uppercase font-bold mb-1">Contact Number</p>
+                                                                <input
+                                                                    type="text"
+                                                                    className="glass-input py-1.5 px-3 text-sm w-full"
+                                                                    value={editForm.contactNumber || ''}
+                                                                    onChange={e => setEditForm({ ...editForm, contactNumber: e.target.value })}
+                                                                    placeholder="e.g. 09123456789"
+                                                                />
+                                                            </div>
+                                                            <div className="col-span-1 md:col-span-2 grid grid-cols-1 sm:grid-cols-3 gap-4">
+                                                                <div>
+                                                                    <p className="text-slate-400 text-xs text-uppercase font-bold mb-1">Barangay</p>
+                                                                    <input
+                                                                        type="text"
+                                                                        className="glass-input py-1.5 px-3 text-sm w-full"
+                                                                        value={editForm.barangay || ''}
+                                                                        onChange={e => setEditForm({ ...editForm, barangay: e.target.value })}
+                                                                    />
+                                                                </div>
+                                                                <div>
+                                                                    <p className="text-slate-400 text-xs text-uppercase font-bold mb-1">City/Municipality</p>
+                                                                    <input
+                                                                        type="text"
+                                                                        className="glass-input py-1.5 px-3 text-sm w-full"
+                                                                        value={editForm.city || ''}
+                                                                        onChange={e => setEditForm({ ...editForm, city: e.target.value })}
+                                                                    />
+                                                                </div>
+                                                                <div>
+                                                                    <p className="text-slate-400 text-xs text-uppercase font-bold mb-1">Province</p>
+                                                                    <input
+                                                                        type="text"
+                                                                        className="glass-input py-1.5 px-3 text-sm w-full"
+                                                                        value={editForm.province || ''}
+                                                                        onChange={e => setEditForm({ ...editForm, province: e.target.value })}
+                                                                    />
+                                                                </div>
+                                                            </div>
+                                                        </div>
+                                                    ) : (
+                                                        <div className="grid grid-cols-1 md:grid-cols-2 gap-4 text-sm">
+                                                            <div>
+                                                                <p className="text-slate-400 text-xs text-uppercase font-bold mb-1">Address</p>
+                                                                <p
+                                                                    className="text-white hover:text-primary transition-colors cursor-pointer flex items-center gap-2 group/address"
+                                                                    onClick={() => handleCopyToClipboard(order.items[0].details.shippingDetails?.address || order.items[0].details.customerAddress, 'Address')}
+                                                                    title="Click to copy address"
+                                                                >
+                                                                    {order.items[0].details.shippingDetails?.address || order.items[0].details.customerAddress || 'No address provided'}
+                                                                    <Copy size={12} className="opacity-0 group-hover/address:opacity-100 transition-opacity" />
+                                                                </p>
+                                                            </div>
+                                                            <div>
+                                                                <p className="text-slate-400 text-xs text-uppercase font-bold mb-1">Contact</p>
+                                                                <p
+                                                                    className="text-white hover:text-primary transition-colors cursor-pointer flex items-center gap-2 group/contact"
+                                                                    onClick={() => {
+                                                                        const raw = order.items[0].details.shippingDetails?.contactNumber || order.items[0].details.customerContact || order.items[0].details.contactNumber;
+                                                                        handleCopyToClipboard(formatContactForCopy(raw), 'Contact number');
+                                                                    }}
+                                                                    title="Click to copy contact (starts with 9)"
+                                                                >
+                                                                    {order.items[0].details.shippingDetails?.contactNumber || order.items[0].details.customerContact || order.items[0].details.contactNumber || 'N/A'}
+                                                                    <Copy size={12} className="opacity-0 group-hover/contact:opacity-100 transition-opacity" />
+                                                                </p>
+                                                            </div>
+                                                            <div className="col-span-1 md:col-span-2">
+                                                                <p className="text-slate-400 text-xs text-uppercase font-bold mb-1">Details (Barangay, City, Province)</p>
+                                                                <p className="text-white">
+                                                                    {order.items[0].details.shippingDetails ? (
+                                                                        `${order.items[0].details.shippingDetails.barangay ? order.items[0].details.shippingDetails.barangay + ', ' : ''}${order.items[0].details.shippingDetails.city ? order.items[0].details.shippingDetails.city + ', ' : ''}${order.items[0].details.shippingDetails.province || ''}`
+                                                                    ) : (
+                                                                        `${order.items[0].details.customerBarangay ? order.items[0].details.customerBarangay + ', ' : ''}${order.items[0].details.customerCity ? order.items[0].details.customerCity + ', ' : ''}${order.items[0].details.customerProvince || ''}`
+                                                                    )}
+                                                                </p>
+                                                            </div>
+                                                            {order.items[0].details.trackingNumber && (
+                                                                <div className="col-span-1 md:col-span-2 mt-2 pt-2 border-t border-white/5">
+                                                                    <p className="text-slate-400 text-xs flex items-center gap-2 mb-1"><Truck size={10} /> Tracking Number</p>
+                                                                    <p className="text-primary font-mono font-bold tracking-wider">{order.items[0].details.trackingNumber}</p>
+                                                                </div>
+                                                            )}
+                                                        </div>
+                                                    )}
                                                 </div>
                                             )}
 
