@@ -24,10 +24,33 @@ export const getMMCities = async () => {
 };
 
 export const getAllProvinces = async () => {
-    return fetchWithCache('all-provinces', `${PSGC_API}/provinces/`);
+    let data = await fetchWithCache('all-provinces', `${PSGC_API}/provinces/`);
+    
+    // Add special independent cities that are not under any province in the API
+    const specialCities = [
+        { code: '129804000', name: 'Cotabato City (Special)', regionCode: '120000000' },
+        { code: '099701000', name: 'Isabela City (Special)', regionCode: '090000000' }
+    ];
+    
+    specialCities.forEach(city => {
+        if (!data.some(p => p.code === city.code)) {
+            data.push(city);
+        }
+    });
+    
+    data.sort((a, b) => a.name.localeCompare(b.name));
+    return data;
 };
 
 export const getCitiesByProvince = async (provinceCode) => {
+    // Handle our special injected cities
+    if (provinceCode === '129804000') {
+        return [{ code: '129804000', name: 'City of Cotabato' }];
+    }
+    if (provinceCode === '099701000') {
+        return [{ code: '099701000', name: 'City of Isabela' }];
+    }
+
     return fetchWithCache(`cities-${provinceCode}`, `${PSGC_API}/provinces/${provinceCode}/cities-municipalities/`);
 };
 
