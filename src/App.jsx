@@ -54,9 +54,9 @@ function App() {
     const isReseller = userRole === 'reseller';
     const isStaff = userRole === 'staff';
 
-    // Force staff to orders tab
+    // Force staff out of the default POS tab to orders tab initially
     React.useEffect(() => {
-        if (isStaff && activeTab !== 'orders') {
+        if (isStaff && activeTab === 'pos') {
             setActiveTab('orders');
         }
     }, [isStaff, activeTab]);
