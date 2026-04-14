@@ -52,6 +52,14 @@ function App() {
     // Priority: DB Role > Metadata Role > Default 'admin'
     const userRole = dbRole || session?.user?.user_metadata?.role || 'admin';
     const isReseller = userRole === 'reseller';
+    const isStaff = userRole === 'staff';
+
+    // Force staff to orders tab
+    React.useEffect(() => {
+        if (isStaff && activeTab !== 'orders') {
+            setActiveTab('orders');
+        }
+    }, [isStaff, activeTab]);
 
     // Transactions Filtering (Security: Client Side)
     // If reseller, only show transactions created by them (or no filter if they view global products?)
@@ -276,9 +284,9 @@ function App() {
                 </div>
 
                 <nav className="flex-1 px-4 space-y-2 mt-4 overflow-y-auto">
-                    <NavItem id="pos" label="Point of Sale" icon={Store} />
+                    {!isStaff && <NavItem id="pos" label="Point of Sale" icon={Store} />}
                     <NavItem id="orders" label="Orders" icon={Package} />
-                    {!isReseller && (
+                    {!(isReseller || isStaff) && (
                         <>
                             <NavItem id="sales" label="Sales" icon={Banknote} />
                             <NavItem id="expenses" label="Expenses" icon={Wallet} />
@@ -289,9 +297,9 @@ function App() {
                             <NavItem id="event" label="Event Portal" icon={Trophy} />
                         </>
                     )}
-                    <NavItem id="dashboard" label="Dashboard" icon={LayoutDashboard} />
+                    {!isStaff && <NavItem id="dashboard" label="Dashboard" icon={LayoutDashboard} />}
                     <div className="border-t border-white/5 my-2 mx-4"></div>
-                    {!isReseller && <NavItem id="settings" label="Settings" icon={SettingsIcon} />}
+                    {!(isReseller || isStaff) && <NavItem id="settings" label="Settings" icon={SettingsIcon} />}
                 </nav>
 
                 <div className="p-4 border-t border-white/5 space-y-2">
@@ -366,7 +374,7 @@ function App() {
                         </div>
                     ) : (
                         <div className="max-w-7xl mx-auto h-full">
-                            {activeTab === 'pos' && (
+                            {!isStaff && activeTab === 'pos' && (
                                 <POSInterface
                                     transactions={transactions} // POS needs ALL transactions to calculate Inventory/Products correctly
                                     onAddTransaction={addTransaction}
