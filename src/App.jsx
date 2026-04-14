@@ -299,7 +299,7 @@ function App() {
                     )}
                     {!isStaff && <NavItem id="dashboard" label="Dashboard" icon={LayoutDashboard} />}
                     <div className="border-t border-white/5 my-2 mx-4"></div>
-                    {!(isReseller || isStaff) && <NavItem id="settings" label="Settings" icon={SettingsIcon} />}
+                    <NavItem id="settings" label="Settings" icon={SettingsIcon} />
                 </nav>
 
                 <div className="p-4 border-t border-white/5 space-y-2">
