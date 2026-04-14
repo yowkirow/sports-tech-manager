@@ -443,7 +443,7 @@ export default function OrderTracking() {
                                             <div className="flex-1">
                                                 <h4 className="font-bold text-white leading-tight">{item.details.itemName}</h4>
                                                 <p className="text-xs text-slate-400 mt-1">Size: {item.details.size} • Qty: {item.details.quantity}</p>
-                                                <p className="text-primary font-mono text-sm mt-1">₱{(item.details.price || 0).toLocaleString()}</p>
+                                                <p className="text-primary font-mono text-sm mt-1">₱{(item.details.originalAmount || item.amount).toLocaleString()}</p>
                                             </div>
                                         </div>
                                     ))}

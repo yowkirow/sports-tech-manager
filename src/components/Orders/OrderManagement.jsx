@@ -871,7 +871,7 @@ export default function OrderManagement({ transactions, onAddTransaction, onDele
                                                                 </div>
                                                             ) : (
                                                                 <>
-                                                                    <p className="font-mono font-bold text-white text-base">₱{item.amount.toLocaleString()}</p>
+                                                                    <p className="font-mono font-bold text-white text-base">₱{(item.details?.originalAmount || item.amount).toLocaleString()}</p>
                                                                     <p className="text-xs text-slate-500 font-bold">QTY: {item.details?.quantity}</p>
                                                                 </>
                                                             )}
