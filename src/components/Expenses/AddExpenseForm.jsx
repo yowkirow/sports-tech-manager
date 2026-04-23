@@ -1,6 +1,7 @@
 import React, { useState, useEffect } from 'react';
 import { useToast } from '../ui/Toast';
 import { Plus, Loader2, X, Save } from 'lucide-react';
+import clsx from 'clsx';
 import { useActivityLog } from '../../hooks/useActivityLog';
 import { supabase } from '../../lib/supabaseClient';
 
