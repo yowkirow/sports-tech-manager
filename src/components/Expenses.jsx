@@ -1,5 +1,5 @@
 import React, { useState, useMemo } from 'react';
-import { Search, Trash2, Calendar, DollarSign, Filter, Plus, User, Edit2 } from 'lucide-react';
+import { Search, Trash2, Calendar, DollarSign, Filter, Plus, User, Edit2, Check } from 'lucide-react';
 import clsx from 'clsx';
 import { createPortal } from 'react-dom';
 import AddExpenseForm from './Expenses/AddExpenseForm';
@@ -89,6 +89,7 @@ const Expenses = ({ transactions, onDeleteTransaction, onAddTransaction, onUpdat
                                 <th className="p-4 font-medium">Description</th>
                                 <th className="p-4 font-medium">Category</th>
                                 <th className="p-4 font-medium">Date</th>
+                                <th className="p-4 font-medium text-center">Status</th>
                                 <th className="p-4 font-medium text-right">Amount</th>
                                 <th className="p-4 font-medium text-center">Action</th>
                             </tr>
@@ -124,11 +125,41 @@ const Expenses = ({ transactions, onDeleteTransaction, onAddTransaction, onUpdat
                                             </span>
                                         </td>
                                         <td className="p-4 text-slate-400">{formatDate(t.date)}</td>
+                                        <td className="p-4 text-center">
+                                            {t.details?.reimbursed ? (
+                                                <span className="px-2 py-1 rounded-md text-[10px] bg-emerald-500/20 text-emerald-400 font-bold uppercase tracking-wider">
+                                                    Reimbursed
+                                                </span>
+                                            ) : (
+                                                <span className="px-2 py-1 rounded-md text-[10px] bg-slate-500/20 text-slate-500 font-bold uppercase tracking-wider">
+                                                    Pending
+                                                </span>
+                                            )}
+                                        </td>
                                         <td className="p-4 text-right text-rose-400 font-bold">
                                             ₱{t.amount?.toLocaleString()}
                                         </td>
                                         <td className="p-4 text-center">
                                             <div className="flex gap-2 justify-center opacity-0 group-hover:opacity-100 focus-within:opacity-100 transition-opacity">
+                                                <button
+                                                    onClick={async () => {
+                                                        const isReimbursed = !t.details?.reimbursed;
+                                                        const updates = {
+                                                            details: {
+                                                                ...t.details,
+                                                                reimbursed: isReimbursed
+                                                            }
+                                                        };
+                                                        await onUpdateTransaction(t.id, updates);
+                                                    }}
+                                                    className={clsx(
+                                                        "p-2 rounded-lg transition-colors",
+                                                        t.details?.reimbursed ? "text-emerald-400 hover:bg-emerald-500/10" : "text-slate-500 hover:text-white hover:bg-white/10"
+                                                    )}
+                                                    title={t.details?.reimbursed ? "Unmark Reimbursed" : "Mark as Reimbursed"}
+                                                >
+                                                    <Check size={16} />
+                                                </button>
                                                 <button
                                                     onClick={() => {
                                                         setEditingTransaction(t);

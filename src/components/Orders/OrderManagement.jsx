@@ -1,6 +1,6 @@
 import React, { useState, useMemo } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
-import { Package, Clock, CheckCircle, Truck, User, Search, Edit2, Save, X, Trash2, Layers, ChevronDown, ChevronUp, ShoppingBag, Loader2, AlertCircle, Banknote, Filter, Copy } from 'lucide-react';
+import { Package, Clock, CheckCircle, Truck, User, Search, Edit2, Save, X, Trash2, Layers, ChevronDown, ChevronUp, ShoppingBag, Loader2, AlertCircle, Banknote, Filter, Copy, MessageSquare, Send } from 'lucide-react';
 import { useToast } from '../ui/Toast';
 import { supabase } from '../../lib/supabaseClient';
 import { useProducts } from '../../hooks/useInventory';
@@ -74,6 +74,8 @@ export default function OrderManagement({ transactions, onAddTransaction, onDele
                     paymentStatus: payment,
                     paymentMode: t.details?.paymentMode || 'Cash',
                     isOnlineOrder: t.details?.isOnlineOrder || false,
+                    isRushOrder: t.details?.isRushOrder || false,
+                    comments: t.details?.comments || [],
                     items: [],
                     totalAmount: 0
                 };
@@ -337,6 +339,46 @@ export default function OrderManagement({ transactions, onAddTransaction, onDele
         } catch (err) {
             console.error(err);
             showToast('Bulk update failed', 'error');
+        } finally {
+            setLoading(false);
+        }
+    };
+    
+    const handleSaveComment = async (orderId, commentText) => {
+        if (!commentText.trim()) return;
+        setLoading(true);
+        try {
+            const { data: { user } } = await supabase.auth.getUser();
+            const order = groupedOrders.find(o => o.id === orderId);
+            if (!order) return;
+
+            const newComment = {
+                id: crypto.randomUUID(),
+                text: commentText.trim(),
+                author: user?.email || 'Unknown',
+                date: new Date().toISOString()
+            };
+
+            const updates = order.items.map(async (item) => {
+                const currentComments = item.details?.comments || [];
+                const updatedDetails = {
+                    ...item.details,
+                    comments: [...currentComments, newComment]
+                };
+
+                const { error } = await supabase
+                    .from('transactions')
+                    .update({ details: updatedDetails })
+                    .eq('id', item.id);
+                if (error) throw error;
+            });
+
+            await Promise.all(updates);
+            showToast('Comment added', 'success');
+            if (refetch) await refetch();
+        } catch (err) {
+            console.error(err);
+            showToast('Failed to add comment', 'error');
         } finally {
             setLoading(false);
         }
@@ -1028,6 +1070,55 @@ export default function OrderManagement({ transactions, onAddTransaction, onDele
                                                     </div>
                                                 </div>
                                             )}
+
+                                            {/* Order Comments Section */}
+                                            <div className="mt-4 p-3 bg-white/5 rounded-xl border border-white/5" onClick={e => e.stopPropagation()}>
+                                                <p className="text-xs font-bold text-slate-500 uppercase mb-3 flex items-center gap-2">
+                                                    <MessageSquare size={12} /> Order Notes & Comments
+                                                </p>
+                                                
+                                                <div className="space-y-3 mb-4 max-h-48 overflow-y-auto pr-1 custom-scrollbar">
+                                                    {order.comments && order.comments.length > 0 ? (
+                                                        order.comments.map((comment) => (
+                                                            <div key={comment.id} className="bg-black/20 p-2.5 rounded-lg border border-white/5 relative group/comment">
+                                                                <div className="flex justify-between items-start mb-1">
+                                                                    <span className="text-[10px] font-bold text-primary">{comment.author.split('@')[0]}</span>
+                                                                    <span className="text-[9px] text-slate-500">{new Date(comment.date).toLocaleString()}</span>
+                                                                </div>
+                                                                <p className="text-xs text-slate-300 leading-relaxed">{comment.text}</p>
+                                                            </div>
+                                                        ))
+                                                    ) : (
+                                                        <p className="text-[11px] text-slate-500 italic text-center py-2">No comments yet. Add a note below.</p>
+                                                    )}
+                                                </div>
+
+                                                <div className="flex gap-2">
+                                                    <input 
+                                                        type="text" 
+                                                        placeholder="Write a note..."
+                                                        className="glass-input py-1.5 px-3 text-xs flex-1"
+                                                        onKeyDown={(e) => {
+                                                            if (e.key === 'Enter' && e.target.value.trim()) {
+                                                                handleSaveComment(order.id, e.target.value);
+                                                                e.target.value = '';
+                                                            }
+                                                        }}
+                                                    />
+                                                    <button 
+                                                        onClick={(e) => {
+                                                            const input = e.currentTarget.previousSibling;
+                                                            if (input.value.trim()) {
+                                                                handleSaveComment(order.id, input.value);
+                                                                input.value = '';
+                                                            }
+                                                        }}
+                                                        className="p-2 bg-primary/20 text-primary hover:bg-primary hover:text-white rounded-lg transition-all"
+                                                    >
+                                                        <Send size={14} />
+                                                    </button>
+                                                </div>
+                                            </div>
                                         </div>
                                     </motion.div>
                                 )}

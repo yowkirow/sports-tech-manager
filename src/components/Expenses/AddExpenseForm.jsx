@@ -24,6 +24,7 @@ export default function AddExpenseForm({ onAddTransaction, onUpdateTransaction, 
     const [category, setCategory] = useState('Rent');
     const [customCategory, setCustomCategory] = useState('');
     const [date, setDate] = useState(new Date().toISOString().split('T')[0]);
+    const [isReimbursed, setIsReimbursed] = useState(false);
 
     useEffect(() => {
         if (initialData) {
@@ -53,6 +54,8 @@ export default function AddExpenseForm({ onAddTransaction, onUpdateTransaction, 
                 const d = new Date(initialData.date);
                 setDate(d.toISOString().split('T')[0]);
             }
+
+            setIsReimbursed(initialData.details?.reimbursed || false);
         }
     }, [initialData]);
 
@@ -83,6 +86,7 @@ export default function AddExpenseForm({ onAddTransaction, onUpdateTransaction, 
                     details: {
                         ...initialData.details,
                         subCategory: finalCategory,
+                        reimbursed: isReimbursed,
                         updatedBy: user?.email || 'Unknown',
                         updatedAt: new Date().toISOString()
                     }
@@ -105,6 +109,7 @@ export default function AddExpenseForm({ onAddTransaction, onUpdateTransaction, 
                     details: {
                         subCategory: finalCategory,
                         isGeneral: true,
+                        reimbursed: isReimbursed,
                         platform: isAdSpend ? customCategory : undefined, // Reuse customCategory for ad platform
                         createdBy: user?.email || 'Unknown'
                     }
@@ -205,6 +210,16 @@ export default function AddExpenseForm({ onAddTransaction, onUpdateTransaction, 
                             className="glass-input appearance-none w-full"
                             required
                         />
+                    </div>
+
+                    <div className="flex items-center gap-3 p-3 bg-white/5 rounded-xl border border-white/5 cursor-pointer hover:bg-white/10 transition-all" onClick={() => setIsReimbursed(!isReimbursed)}>
+                        <div className={clsx(
+                            "w-5 h-5 rounded border-2 flex items-center justify-center transition-all",
+                            isReimbursed ? "bg-emerald-500 border-emerald-500" : "border-slate-500"
+                        )}>
+                            {isReimbursed && <Save size={12} className="text-white" />}
+                        </div>
+                        <span className="text-sm font-medium text-slate-200">Mark as Reimbursed</span>
                     </div>
 
                     <div className="pt-2">
