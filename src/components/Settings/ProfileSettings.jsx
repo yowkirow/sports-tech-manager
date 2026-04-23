@@ -6,6 +6,7 @@ import { motion } from 'framer-motion';
 import ActivityLogViewer from './ActivityLogViewer';
 import ColorSettings from './ColorSettings';
 import BrandSettings from './BrandSettings';
+import ExpenseCategorySettings from './ExpenseCategorySettings';
 import { sendSMS } from '../../lib/textbee';
 
 export default function ProfileSettings({ user, onLogout, transactions = [], onAddTransaction }) {
@@ -460,11 +461,19 @@ export default function ProfileSettings({ user, onLogout, transactions = [], onA
                         />
                     </motion.div>
 
-                    {/* Audit Logs Section */}
                     <motion.div
                         initial={{ opacity: 0, y: 20 }}
                         animate={{ opacity: 1, y: 0 }}
                         transition={{ delay: 0.3 }}
+                    >
+                        <ExpenseCategorySettings />
+                    </motion.div>
+
+                    {/* Audit Logs Section */}
+                    <motion.div
+                        initial={{ opacity: 0, y: 20 }}
+                        animate={{ opacity: 1, y: 0 }}
+                        transition={{ delay: 0.4 }}
                     >
                         <ActivityLogViewer user={user} userRole={userRole} />
                     </motion.div>

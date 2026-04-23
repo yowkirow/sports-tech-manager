@@ -5,7 +5,7 @@ import clsx from 'clsx';
 import { useActivityLog } from '../../hooks/useActivityLog';
 import { supabase } from '../../lib/supabaseClient';
 
-const EXPENSE_CATEGORIES = [
+const DEFAULT_CATEGORIES = [
     'Rent',
     'Utilities',
     'Marketing/Ads',
@@ -19,32 +19,44 @@ export default function AddExpenseForm({ onAddTransaction, onUpdateTransaction, 
     const { showToast } = useToast();
     const { logActivity } = useActivityLog();
     const [loading, setLoading] = useState(false);
+    const [expenseCategories, setExpenseCategories] = useState(DEFAULT_CATEGORIES);
 
     const [description, setDescription] = useState('');
     const [amount, setAmount] = useState('');
-    const [category, setCategory] = useState('Rent');
+    const [category, setCategory] = useState(DEFAULT_CATEGORIES[0]);
     const [customCategory, setCustomCategory] = useState('');
     const [date, setDate] = useState(new Date().toISOString().split('T')[0]);
     const [isReimbursed, setIsReimbursed] = useState(false);
+
+    useEffect(() => {
+        const fetchMeta = async () => {
+            const { data: { user } } = await supabase.auth.getUser();
+            if (user?.user_metadata?.expense_categories) {
+                setExpenseCategories(user.user_metadata.expense_categories);
+                if (!initialData) setCategory(user.user_metadata.expense_categories[0]);
+            }
+        };
+        fetchMeta();
+    }, [initialData]);
 
     useEffect(() => {
         if (initialData) {
             setDescription(initialData.description || '');
             setAmount(initialData.amount || '');
 
-            const isCustom = !EXPENSE_CATEGORIES.includes(initialData.category) && initialData.category !== 'general';
+            const isCustom = !expenseCategories.includes(initialData.category) && initialData.category !== 'general';
             // Actually, existing categories in DB might be 'general' with subCategory
             const cat = initialData.category;
             const subCat = initialData.details?.subCategory;
 
-            if (EXPENSE_CATEGORIES.includes(subCat)) {
+            if (expenseCategories.includes(subCat)) {
                 setCategory(subCat);
             } else if (subCat) {
                 setCategory('Other');
                 setCustomCategory(subCat);
             } else {
                 // Fallback
-                if (EXPENSE_CATEGORIES.includes(cat)) setCategory(cat);
+                if (expenseCategories.includes(cat)) setCategory(cat);
                 else {
                     setCategory('Other');
                     setCustomCategory(cat);
@@ -157,7 +169,7 @@ export default function AddExpenseForm({ onAddTransaction, onUpdateTransaction, 
                             onChange={(e) => setCategory(e.target.value)}
                             className="glass-input appearance-none"
                         >
-                            {EXPENSE_CATEGORIES.map(c => <option key={c} value={c} className="bg-slate-900">{c}</option>)}
+                            {expenseCategories.map(c => <option key={c} value={c} className="bg-slate-900">{c}</option>)}
                         </select>
                     </div>
 
