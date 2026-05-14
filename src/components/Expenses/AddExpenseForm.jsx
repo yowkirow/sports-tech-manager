@@ -26,7 +26,8 @@ export default function AddExpenseForm({ onAddTransaction, onUpdateTransaction, 
     const [category, setCategory] = useState(DEFAULT_CATEGORIES[0]);
     const [customCategory, setCustomCategory] = useState('');
     const [date, setDate] = useState(new Date().toISOString().split('T')[0]);
-    const [isReimbursed, setIsReimbursed] = useState(false);
+    const [reimbursementStatus, setReimbursementStatus] = useState('none');
+    const [reimbursedAmount, setReimbursedAmount] = useState('');
 
     useEffect(() => {
         const fetchMeta = async () => {
@@ -68,7 +69,27 @@ export default function AddExpenseForm({ onAddTransaction, onUpdateTransaction, 
                 setDate(d.toISOString().split('T')[0]);
             }
 
-            setIsReimbursed(initialData.details?.reimbursed || false);
+            const rAmt = initialData.details?.reimbursedAmount;
+            const rStatusBool = initialData.details?.reimbursed;
+            
+            if (rAmt !== undefined) {
+                if (rAmt === 0) {
+                    setReimbursementStatus('none');
+                    setReimbursedAmount('');
+                } else if (rAmt >= (initialData.amount || 0)) {
+                    setReimbursementStatus('full');
+                    setReimbursedAmount(rAmt.toString());
+                } else {
+                    setReimbursementStatus('partial');
+                    setReimbursedAmount(rAmt.toString());
+                }
+            } else if (rStatusBool) {
+                setReimbursementStatus('full');
+                setReimbursedAmount(initialData.amount ? initialData.amount.toString() : '');
+            } else {
+                setReimbursementStatus('none');
+                setReimbursedAmount('');
+            }
         }
     }, [initialData]);
 
@@ -86,8 +107,15 @@ export default function AddExpenseForm({ onAddTransaction, onUpdateTransaction, 
             newDate.setMonth(m - 1);
             newDate.setDate(d);
 
-            // Check if user is logged in
             const { data: { user } } = await supabase.auth.getUser();
+
+            let finalReimbursedAmount = 0;
+            if (reimbursementStatus === 'full') {
+                finalReimbursedAmount = parseFloat(amount) || 0;
+            } else if (reimbursementStatus === 'partial') {
+                finalReimbursedAmount = parseFloat(reimbursedAmount) || 0;
+            }
+            const isReimbursedBool = finalReimbursedAmount > 0;
 
             if (initialData) {
                 // Update
@@ -99,7 +127,8 @@ export default function AddExpenseForm({ onAddTransaction, onUpdateTransaction, 
                     details: {
                         ...initialData.details,
                         subCategory: finalCategory,
-                        reimbursed: isReimbursed,
+                        reimbursed: isReimbursedBool,
+                        reimbursedAmount: finalReimbursedAmount,
                         updatedBy: user?.email || 'Unknown',
                         updatedAt: new Date().toISOString()
                     }
@@ -122,7 +151,8 @@ export default function AddExpenseForm({ onAddTransaction, onUpdateTransaction, 
                     details: {
                         subCategory: finalCategory,
                         isGeneral: true,
-                        reimbursed: isReimbursed,
+                        reimbursed: isReimbursedBool,
+                        reimbursedAmount: finalReimbursedAmount,
                         platform: isAdSpend ? customCategory : undefined, // Reuse customCategory for ad platform
                         createdBy: user?.email || 'Unknown'
                     }
@@ -225,14 +255,34 @@ export default function AddExpenseForm({ onAddTransaction, onUpdateTransaction, 
                         />
                     </div>
 
-                    <div className="flex items-center gap-3 p-3 bg-white/5 rounded-xl border border-white/5 cursor-pointer hover:bg-white/10 transition-all" onClick={() => setIsReimbursed(!isReimbursed)}>
-                        <div className={clsx(
-                            "w-5 h-5 rounded border-2 flex items-center justify-center transition-all",
-                            isReimbursed ? "bg-emerald-500 border-emerald-500" : "border-slate-500"
-                        )}>
-                            {isReimbursed && <Save size={12} className="text-white" />}
+                    <div className="space-y-4 p-4 bg-white/5 rounded-xl border border-white/5">
+                        <div className="space-y-2">
+                            <label className="text-sm text-slate-400">Reimbursement Status</label>
+                            <select
+                                value={reimbursementStatus}
+                                onChange={(e) => setReimbursementStatus(e.target.value)}
+                                className="glass-input appearance-none"
+                            >
+                                <option value="none" className="bg-slate-900">Not Reimbursed</option>
+                                <option value="partial" className="bg-slate-900">Partially Reimbursed</option>
+                                <option value="full" className="bg-slate-900">Fully Reimbursed</option>
+                            </select>
                         </div>
-                        <span className="text-sm font-medium text-slate-200">Mark as Reimbursed</span>
+                        {reimbursementStatus === 'partial' && (
+                            <div className="space-y-2">
+                                <label className="text-sm text-slate-400">Reimbursed Amount (₱)</label>
+                                <input
+                                    type="number"
+                                    value={reimbursedAmount}
+                                    onChange={(e) => setReimbursedAmount(e.target.value)}
+                                    className="glass-input"
+                                    placeholder="0.00"
+                                    min="0"
+                                    step="0.01"
+                                    required
+                                />
+                            </div>
+                        )}
                     </div>
 
                     <div className="pt-2">
