@@ -83,7 +83,7 @@ const Expenses = ({ transactions, onDeleteTransaction, onAddTransaction, onUpdat
                 </div>
 
                 <div className="overflow-x-auto">
-                    <table className="w-full text-left border-collapse">
+                    <table className="w-full min-w-[780px] text-left border-collapse">
                         <thead>
                             <tr className="text-slate-400 text-sm border-b border-white/5">
                                 <th className="p-4 font-medium">Description</th>
@@ -91,13 +91,13 @@ const Expenses = ({ transactions, onDeleteTransaction, onAddTransaction, onUpdat
                                 <th className="p-4 font-medium">Date</th>
                                 <th className="p-4 font-medium text-center">Status</th>
                                 <th className="p-4 font-medium text-right">Amount</th>
-                                <th className="p-4 font-medium text-center">Action</th>
+                                <th className="sticky right-0 z-10 bg-slate-900/95 p-4 font-medium text-center backdrop-blur">Action</th>
                             </tr>
                         </thead>
                         <tbody className="text-sm">
                             {expenses.length === 0 ? (
                                 <tr>
-                                    <td colSpan="5" className="p-8 text-center text-slate-500">
+                                    <td colSpan="6" className="p-8 text-center text-slate-500">
                                         No expenses found.
                                     </td>
                                 </tr>
@@ -161,8 +161,8 @@ const Expenses = ({ transactions, onDeleteTransaction, onAddTransaction, onUpdat
                                         <td className="p-4 text-right text-rose-400 font-bold">
                                             ₱{t.amount?.toLocaleString()}
                                         </td>
-                                        <td className="p-4 text-center">
-                                            <div className="flex gap-2 justify-center opacity-0 group-hover:opacity-100 focus-within:opacity-100 transition-opacity">
+                                        <td className="sticky right-0 z-10 bg-slate-900/95 p-4 text-center backdrop-blur group-hover:bg-slate-800/95">
+                                            <div className="flex min-w-[120px] gap-2 justify-center opacity-100 transition-opacity sm:opacity-0 sm:group-hover:opacity-100 sm:focus-within:opacity-100">
                                                 <button
                                                     onClick={async () => {
                                                         const rAmt = t.details?.reimbursedAmount;
