@@ -30,6 +30,90 @@ const Expenses = ({ transactions, onDeleteTransaction, onAddTransaction, onUpdat
         });
     };
 
+    const isFullyReimbursed = (transaction) => {
+        const rAmt = transaction.details?.reimbursedAmount;
+        const amount = transaction.amount || 0;
+        return (rAmt !== undefined && rAmt >= amount) || (rAmt === undefined && transaction.details?.reimbursed);
+    };
+
+    const toggleReimbursed = async (transaction) => {
+        const amount = transaction.amount || 0;
+        const newReimbursedAmount = isFullyReimbursed(transaction) ? 0 : amount;
+
+        await onUpdateTransaction(transaction.id, {
+            details: {
+                ...transaction.details,
+                reimbursedAmount: newReimbursedAmount,
+                reimbursed: newReimbursedAmount > 0
+            }
+        });
+    };
+
+    const renderStatus = (transaction) => {
+        const rAmt = transaction.details?.reimbursedAmount;
+        const amount = transaction.amount || 0;
+
+        if (rAmt !== undefined) {
+            if (rAmt >= amount) {
+                return (
+                    <span className="px-2 py-1 rounded-md text-[10px] bg-emerald-500/20 text-emerald-400 font-bold uppercase tracking-wider">
+                        Reimbursed
+                    </span>
+                );
+            } else if (rAmt > 0) {
+                return (
+                    <span className="px-2 py-1 rounded-md text-[10px] bg-amber-500/20 text-amber-400 font-bold uppercase tracking-wider">
+                        Partial (₱{rAmt.toLocaleString()})
+                    </span>
+                );
+            }
+        } else if (transaction.details?.reimbursed) {
+            return (
+                <span className="px-2 py-1 rounded-md text-[10px] bg-emerald-500/20 text-emerald-400 font-bold uppercase tracking-wider">
+                    Reimbursed
+                </span>
+            );
+        }
+
+        return (
+            <span className="px-2 py-1 rounded-md text-[10px] bg-slate-500/20 text-slate-500 font-bold uppercase tracking-wider">
+                Pending
+            </span>
+        );
+    };
+
+    const renderActions = (transaction, className = '') => (
+        <div className={clsx("flex min-w-[120px] gap-2 justify-center", className)}>
+            <button
+                onClick={() => toggleReimbursed(transaction)}
+                className={clsx(
+                    "p-2 rounded-lg transition-colors",
+                    isFullyReimbursed(transaction) ? "text-emerald-400 hover:bg-emerald-500/10" : "text-slate-400 hover:text-white hover:bg-white/10"
+                )}
+                title={isFullyReimbursed(transaction) ? "Unmark Reimbursed" : "Mark as Fully Reimbursed"}
+            >
+                <Check size={16} />
+            </button>
+            <button
+                onClick={() => {
+                    setEditingTransaction(transaction);
+                    setShowAddModal(true);
+                }}
+                className="p-2 text-slate-400 hover:text-white hover:bg-white/10 rounded-lg transition-colors"
+                title="Edit"
+            >
+                <Edit2 size={16} />
+            </button>
+            <button
+                onClick={() => onDeleteTransaction(transaction.id)}
+                className="p-2 text-slate-400 hover:text-rose-400 hover:bg-rose-500/10 rounded-lg transition-colors"
+                title="Delete"
+            >
+                <Trash2 size={16} />
+            </button>
+        </div>
+    );
+
     return (
         <div className="space-y-6">
             {/* Stats Card */}
@@ -52,7 +136,7 @@ const Expenses = ({ transactions, onDeleteTransaction, onAddTransaction, onUpdat
                         <Calendar className="text-primary" /> Expense History
                     </h2>
 
-                    <div className="flex gap-2 w-full sm:w-auto">
+                    <div className="flex flex-col gap-2 w-full sm:w-auto sm:flex-row">
                         <div className="relative flex-1 sm:flex-none">
                             <Search className="absolute left-3 top-1/2 -translate-y-1/2 text-slate-400" size={16} />
                             <input
@@ -82,7 +166,50 @@ const Expenses = ({ transactions, onDeleteTransaction, onAddTransaction, onUpdat
                     </div>
                 </div>
 
-                <div className="overflow-x-auto">
+                <div className="space-y-3 sm:hidden">
+                    {expenses.length === 0 ? (
+                        <div className="p-8 text-center text-slate-500">
+                            No expenses found.
+                        </div>
+                    ) : (
+                        expenses.map(t => (
+                            <div key={t.id} className="rounded-xl border border-white/10 bg-white/5 p-4">
+                                <div className="flex items-start justify-between gap-3">
+                                    <div className="min-w-0">
+                                        <p className="break-words font-medium text-slate-100">{t.description}</p>
+                                        <div className="mt-2 flex flex-wrap items-center gap-2">
+                                            <span className={clsx(
+                                                "px-2 py-1 rounded-md text-xs capitalize",
+                                                t.category === 'blanks' ? "bg-indigo-500/20 text-indigo-300" :
+                                                    t.category === 'general' ? "bg-rose-500/20 text-rose-300" : "bg-orange-500/20 text-orange-300"
+                                            )}>
+                                                {t.category}
+                                            </span>
+                                            {renderStatus(t)}
+                                        </div>
+                                    </div>
+                                    <p className="shrink-0 text-right font-bold text-rose-400">₱{t.amount?.toLocaleString()}</p>
+                                </div>
+
+                                <div className="mt-3 flex flex-wrap items-center gap-2 text-xs text-slate-500">
+                                    <span>{formatDate(t.date)}</span>
+                                    {t.details?.quantity && <span>QTY: {t.details.quantity}</span>}
+                                    {t.details?.createdBy && (
+                                        <span className="flex items-center gap-1 rounded bg-white/10 px-1.5 py-0.5 text-[10px] text-slate-400">
+                                            <User size={10} /> {t.details.createdBy.split('@')[0]}
+                                        </span>
+                                    )}
+                                </div>
+
+                                <div className="mt-4 flex justify-end border-t border-white/5 pt-3">
+                                    {renderActions(t)}
+                                </div>
+                            </div>
+                        ))
+                    )}
+                </div>
+
+                <div className="hidden overflow-x-auto sm:block">
                     <table className="w-full min-w-[780px] text-left border-collapse">
                         <thead>
                             <tr className="text-slate-400 text-sm border-b border-white/5">
@@ -126,87 +253,13 @@ const Expenses = ({ transactions, onDeleteTransaction, onAddTransaction, onUpdat
                                         </td>
                                         <td className="p-4 text-slate-400">{formatDate(t.date)}</td>
                                         <td className="p-4 text-center">
-                                            {(() => {
-                                                const rAmt = t.details?.reimbursedAmount;
-                                                const amount = t.amount || 0;
-                                                
-                                                if (rAmt !== undefined) {
-                                                    if (rAmt >= amount) {
-                                                        return (
-                                                            <span className="px-2 py-1 rounded-md text-[10px] bg-emerald-500/20 text-emerald-400 font-bold uppercase tracking-wider">
-                                                                Reimbursed
-                                                            </span>
-                                                        );
-                                                    } else if (rAmt > 0) {
-                                                        return (
-                                                            <span className="px-2 py-1 rounded-md text-[10px] bg-amber-500/20 text-amber-400 font-bold uppercase tracking-wider">
-                                                                Partial (₱{rAmt.toLocaleString()})
-                                                            </span>
-                                                        );
-                                                    }
-                                                } else if (t.details?.reimbursed) {
-                                                    return (
-                                                        <span className="px-2 py-1 rounded-md text-[10px] bg-emerald-500/20 text-emerald-400 font-bold uppercase tracking-wider">
-                                                            Reimbursed
-                                                        </span>
-                                                    );
-                                                }
-                                                return (
-                                                    <span className="px-2 py-1 rounded-md text-[10px] bg-slate-500/20 text-slate-500 font-bold uppercase tracking-wider">
-                                                        Pending
-                                                    </span>
-                                                );
-                                            })()}
+                                            {renderStatus(t)}
                                         </td>
                                         <td className="p-4 text-right text-rose-400 font-bold">
                                             ₱{t.amount?.toLocaleString()}
                                         </td>
                                         <td className="sticky right-0 z-10 bg-slate-900/95 p-4 text-center backdrop-blur group-hover:bg-slate-800/95">
-                                            <div className="flex min-w-[120px] gap-2 justify-center opacity-100 transition-opacity sm:opacity-0 sm:group-hover:opacity-100 sm:focus-within:opacity-100">
-                                                <button
-                                                    onClick={async () => {
-                                                        const rAmt = t.details?.reimbursedAmount;
-                                                        const amount = t.amount || 0;
-                                                        const isCurrentlyFull = (rAmt !== undefined && rAmt >= amount) || (rAmt === undefined && t.details?.reimbursed);
-                                                        
-                                                        const newReimbursedAmount = isCurrentlyFull ? 0 : amount;
-                                                        const newReimbursed = newReimbursedAmount > 0;
-                                                        
-                                                        const updates = {
-                                                            details: {
-                                                                ...t.details,
-                                                                reimbursedAmount: newReimbursedAmount,
-                                                                reimbursed: newReimbursed
-                                                            }
-                                                        };
-                                                        await onUpdateTransaction(t.id, updates);
-                                                    }}
-                                                    className={clsx(
-                                                        "p-2 rounded-lg transition-colors",
-                                                        ((t.details?.reimbursedAmount !== undefined && t.details?.reimbursedAmount >= (t.amount || 0)) || (t.details?.reimbursedAmount === undefined && t.details?.reimbursed)) ? "text-emerald-400 hover:bg-emerald-500/10" : "text-slate-500 hover:text-white hover:bg-white/10"
-                                                    )}
-                                                    title={((t.details?.reimbursedAmount !== undefined && t.details?.reimbursedAmount >= (t.amount || 0)) || (t.details?.reimbursedAmount === undefined && t.details?.reimbursed)) ? "Unmark Reimbursed" : "Mark as Fully Reimbursed"}
-                                                >
-                                                    <Check size={16} />
-                                                </button>
-                                                <button
-                                                    onClick={() => {
-                                                        setEditingTransaction(t);
-                                                        setShowAddModal(true);
-                                                    }}
-                                                    className="p-2 text-slate-500 hover:text-white hover:bg-white/10 rounded-lg transition-colors"
-                                                    title="Edit"
-                                                >
-                                                    <Edit2 size={16} />
-                                                </button>
-                                                <button
-                                                    onClick={() => onDeleteTransaction(t.id)}
-                                                    className="p-2 text-slate-500 hover:text-rose-400 hover:bg-rose-500/10 rounded-lg transition-colors"
-                                                    title="Delete"
-                                                >
-                                                    <Trash2 size={16} />
-                                                </button>
-                                            </div>
+                                            {renderActions(t, "opacity-0 transition-opacity group-hover:opacity-100 focus-within:opacity-100")}
                                         </td>
                                     </tr>
                                 ))
