@@ -9,6 +9,7 @@ import POSInterface from './components/POS/POSInterface';
 import OrderManagement from './components/Orders/OrderManagement';
 import Expenses from './components/Expenses';
 import Sales from './components/Sales';
+import DowntownDinks from './components/DowntownDinks';
 import VoucherManager from './components/Vouchers/VoucherManager';
 import SupplierManager from './components/Supplier/SupplierManager';
 import AdsReporting from './components/Reports/AdsReporting';
@@ -290,6 +291,7 @@ function App() {
                         <>
                             <NavItem id="sales" label="Sales" icon={Banknote} />
                             <NavItem id="expenses" label="Expenses" icon={Wallet} />
+                            <NavItem id="downtown-dinks" label="Downtown Dinks" icon={Trophy} />
                             <NavItem id="inventory" label="Inventory" icon={ShoppingBag} />
                             <NavItem id="supplier" label="Supplier Order" icon={ClipboardList} />
                             <NavItem id="vouchers" label="Vouchers" icon={Ticket} />
@@ -343,6 +345,7 @@ function App() {
                             {activeTab === 'orders' && 'Orders'}
                             {activeTab === 'sales' && 'Sales'}
                             {activeTab === 'expenses' && 'Expenses'}
+                            {activeTab === 'downtown-dinks' && 'Downtown Dinks'}
                             {activeTab === 'dashboard' && 'Dashboard'}
                             {activeTab === 'inventory' && 'Inventory'}
                             {activeTab === 'supplier' && 'Supplier Order'}
@@ -418,6 +421,17 @@ function App() {
                                         onDeleteTransaction={deleteTransaction}
                                         onAddTransaction={addTransaction}
                                         onUpdateTransaction={updateTransaction}
+                                    />
+                                </div>
+                            )}
+
+                            {activeTab === 'downtown-dinks' && (
+                                <div className="animate-fade-in">
+                                    <DowntownDinks
+                                        transactions={transactions}
+                                        onAddTransaction={addTransaction}
+                                        onUpdateTransaction={updateTransaction}
+                                        onDeleteTransaction={deleteTransaction}
                                     />
                                 </div>
                             )}
