@@ -15,6 +15,8 @@ const DEFAULT_CATEGORIES = [
     'Other'
 ];
 
+const CLUB_SLUG = 'downtown-dinks';
+
 export default function AddExpenseForm({ onAddTransaction, onUpdateTransaction, onClose, initialData = null }) {
     const { showToast } = useToast();
     const { logActivity } = useActivityLog();
@@ -24,6 +26,7 @@ export default function AddExpenseForm({ onAddTransaction, onUpdateTransaction, 
     const [description, setDescription] = useState('');
     const [amount, setAmount] = useState('');
     const [category, setCategory] = useState(DEFAULT_CATEGORIES[0]);
+    const [owner, setOwner] = useState('business');
     const [customCategory, setCustomCategory] = useState('');
     const [date, setDate] = useState(new Date().toISOString().split('T')[0]);
     const [reimbursementStatus, setReimbursementStatus] = useState('none');
@@ -44,6 +47,7 @@ export default function AddExpenseForm({ onAddTransaction, onUpdateTransaction, 
         if (initialData) {
             setDescription(initialData.description || '');
             setAmount(initialData.amount || '');
+            setOwner(initialData.details?.club === CLUB_SLUG ? CLUB_SLUG : 'business');
 
             const isCustom = !expenseCategories.includes(initialData.category) && initialData.category !== 'general';
             // Actually, existing categories in DB might be 'general' with subCategory
@@ -127,6 +131,7 @@ export default function AddExpenseForm({ onAddTransaction, onUpdateTransaction, 
                     details: {
                         ...initialData.details,
                         subCategory: finalCategory,
+                        club: owner === CLUB_SLUG ? CLUB_SLUG : null,
                         reimbursed: isReimbursedBool,
                         reimbursedAmount: finalReimbursedAmount,
                         updatedBy: user?.email || 'Unknown',
@@ -151,6 +156,7 @@ export default function AddExpenseForm({ onAddTransaction, onUpdateTransaction, 
                     details: {
                         subCategory: finalCategory,
                         isGeneral: true,
+                        club: owner === CLUB_SLUG ? CLUB_SLUG : null,
                         reimbursed: isReimbursedBool,
                         reimbursedAmount: finalReimbursedAmount,
                         platform: isAdSpend ? customCategory : undefined, // Reuse customCategory for ad platform
@@ -191,6 +197,17 @@ export default function AddExpenseForm({ onAddTransaction, onUpdateTransaction, 
 
             <div className="p-6">
                 <form onSubmit={handleSubmit} className="space-y-4">
+                    <div className="space-y-2">
+                        <label className="text-sm text-slate-400">Assign To</label>
+                        <select
+                            value={owner}
+                            onChange={(e) => setOwner(e.target.value)}
+                            className="glass-input appearance-none"
+                        >
+                            <option value="business" className="bg-slate-900">SportsTech</option>
+                            <option value={CLUB_SLUG} className="bg-slate-900">Downtown Dinks</option>
+                        </select>
+                    </div>
 
                     <div className="space-y-2">
                         <label className="text-sm text-slate-400">Category</label>

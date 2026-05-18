@@ -4,6 +4,8 @@ import clsx from 'clsx';
 import { createPortal } from 'react-dom';
 import AddExpenseForm from './Expenses/AddExpenseForm';
 
+const CLUB_SLUG = 'downtown-dinks';
+
 const Expenses = ({ transactions, onDeleteTransaction, onAddTransaction, onUpdateTransaction }) => {
     const [searchTerm, setSearchTerm] = useState('');
     const [filterCategory, setFilterCategory] = useState('all');
@@ -16,7 +18,8 @@ const Expenses = ({ transactions, onDeleteTransaction, onAddTransaction, onUpdat
             .filter(t => t.type === 'expense')
             .filter(t => {
                 const matchesSearch = t.description.toLowerCase().includes(searchTerm.toLowerCase());
-                const matchesCategory = filterCategory === 'all' || t.category === filterCategory;
+                const matchesCategory = filterCategory === 'all' ||
+                    (filterCategory === 'downtown_dinks' ? t.details?.club === CLUB_SLUG : t.category === filterCategory);
                 return matchesSearch && matchesCategory;
             })
             .sort((a, b) => new Date(b.date) - new Date(a.date));
@@ -156,6 +159,7 @@ const Expenses = ({ transactions, onDeleteTransaction, onAddTransaction, onUpdat
                             <option value="blanks" className="bg-slate-900">Blanks</option>
                             <option value="accessories" className="bg-slate-900">Accessories</option>
                             <option value="general" className="bg-slate-900">General</option>
+                            <option value="downtown_dinks" className="bg-slate-900">Downtown Dinks</option>
                         </select>
                         <button
                             onClick={() => { setEditingTransaction(null); setShowAddModal(true); }}
@@ -180,10 +184,11 @@ const Expenses = ({ transactions, onDeleteTransaction, onAddTransaction, onUpdat
                                         <div className="mt-2 flex flex-wrap items-center gap-2">
                                             <span className={clsx(
                                                 "px-2 py-1 rounded-md text-xs capitalize",
-                                                t.category === 'blanks' ? "bg-indigo-500/20 text-indigo-300" :
+                                                t.details?.club === CLUB_SLUG ? "bg-emerald-500/20 text-emerald-300" :
+                                                    t.category === 'blanks' ? "bg-indigo-500/20 text-indigo-300" :
                                                     t.category === 'general' ? "bg-rose-500/20 text-rose-300" : "bg-orange-500/20 text-orange-300"
                                             )}>
-                                                {t.category}
+                                                {t.details?.club === CLUB_SLUG ? 'Downtown Dinks' : t.category}
                                             </span>
                                             {renderStatus(t)}
                                         </div>
@@ -245,10 +250,11 @@ const Expenses = ({ transactions, onDeleteTransaction, onAddTransaction, onUpdat
                                         <td className="p-4">
                                             <span className={clsx(
                                                 "px-2 py-1 rounded-md text-xs capitalize",
-                                                t.category === 'blanks' ? "bg-indigo-500/20 text-indigo-300" :
+                                                t.details?.club === CLUB_SLUG ? "bg-emerald-500/20 text-emerald-300" :
+                                                    t.category === 'blanks' ? "bg-indigo-500/20 text-indigo-300" :
                                                     t.category === 'general' ? "bg-rose-500/20 text-rose-300" : "bg-orange-500/20 text-orange-300"
                                             )}>
-                                                {t.category}
+                                                {t.details?.club === CLUB_SLUG ? 'Downtown Dinks' : t.category}
                                             </span>
                                         </td>
                                         <td className="p-4 text-slate-400">{formatDate(t.date)}</td>

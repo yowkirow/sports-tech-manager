@@ -1,7 +1,7 @@
 import React, { useMemo, useState } from 'react';
 import { createPortal } from 'react-dom';
 import clsx from 'clsx';
-import { Banknote, Calendar, Edit2, Filter, Loader2, Plus, Save, Search, Trash2, Trophy, X } from 'lucide-react';
+import { Banknote, Calendar, Edit2, Filter, Loader2, Plus, Save, Search, Trash2, TrendingDown, Trophy, X } from 'lucide-react';
 import { supabase } from '../lib/supabaseClient';
 import { useToast } from './ui/Toast';
 
@@ -71,7 +71,7 @@ const EarningModal = ({ initialData, onAddTransaction, onUpdateTransaction, onCl
 
             if (initialData) {
                 await onUpdateTransaction(initialData.id, {
-                    type: 'club_income',
+                    type: 'sale',
                     category: 'downtown_dinks',
                     amount: parsedAmount,
                     date: nextDate.toISOString(),
@@ -88,7 +88,7 @@ const EarningModal = ({ initialData, onAddTransaction, onUpdateTransaction, onCl
             } else {
                 await onAddTransaction({
                     id: crypto.randomUUID(),
-                    type: 'club_income',
+                    type: 'sale',
                     category: 'downtown_dinks',
                     amount: parsedAmount,
                     date: nextDate.toISOString(),
@@ -202,7 +202,7 @@ export default function DowntownDinks({ transactions, onAddTransaction, onUpdate
 
     const earnings = useMemo(() => {
         return transactions
-            .filter(t => t.type === 'club_income' && t.details?.club === CLUB_SLUG)
+            .filter(t => ['sale', 'club_income'].includes(t.type) && t.details?.club === CLUB_SLUG)
             .filter(t => {
                 const matchesSearch = (t.description || '').toLowerCase().includes(searchTerm.toLowerCase());
                 const matchesType = filterType === 'all' || t.details?.incomeType === filterType;
@@ -212,18 +212,26 @@ export default function DowntownDinks({ transactions, onAddTransaction, onUpdate
     }, [transactions, searchTerm, filterType]);
 
     const allClubEarnings = useMemo(() => {
-        return transactions.filter(t => t.type === 'club_income' && t.details?.club === CLUB_SLUG);
+        return transactions.filter(t => ['sale', 'club_income'].includes(t.type) && t.details?.club === CLUB_SLUG);
+    }, [transactions]);
+
+    const allClubExpenses = useMemo(() => {
+        return transactions.filter(t => t.type === 'expense' && t.details?.club === CLUB_SLUG);
     }, [transactions]);
 
     const totals = useMemo(() => {
-        return allClubEarnings.reduce((acc, earning) => {
+        const incomeTotals = allClubEarnings.reduce((acc, earning) => {
             const amount = Number(earning.amount || 0);
             acc.total += amount;
             if (earning.details?.incomeType === 'tournaments') acc.tournaments += amount;
             else acc.openPlays += amount;
             return acc;
-        }, { total: 0, openPlays: 0, tournaments: 0 });
-    }, [allClubEarnings]);
+        }, { total: 0, openPlays: 0, tournaments: 0, expenses: 0, net: 0 });
+
+        incomeTotals.expenses = allClubExpenses.reduce((sum, expense) => sum + Number(expense.amount || 0), 0);
+        incomeTotals.net = incomeTotals.total - incomeTotals.expenses;
+        return incomeTotals;
+    }, [allClubEarnings, allClubExpenses]);
 
     const handleDelete = async (id) => {
         if (!window.confirm('Delete this Downtown Dinks earning?')) return;
@@ -290,8 +298,10 @@ export default function DowntownDinks({ transactions, onAddTransaction, onUpdate
                 </button>
             </div>
 
-            <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
+            <div className="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-5 gap-6">
                 <StatCard title="Total Earnings" amount={totals.total} icon={Banknote} tone="bg-emerald-500/10 text-emerald-400" />
+                <StatCard title="Club Expenses" amount={totals.expenses} icon={TrendingDown} tone="bg-rose-500/10 text-rose-400" />
+                <StatCard title="Net Earnings" amount={totals.net} icon={Banknote} tone={totals.net >= 0 ? "bg-cyan-500/10 text-cyan-400" : "bg-rose-500/10 text-rose-400"} />
                 <StatCard title="Open Plays" amount={totals.openPlays} icon={Calendar} tone="bg-cyan-500/10 text-cyan-400" />
                 <StatCard title="Tournaments" amount={totals.tournaments} icon={Trophy} tone="bg-purple-500/10 text-purple-400" />
             </div>

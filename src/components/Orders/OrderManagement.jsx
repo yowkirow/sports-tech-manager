@@ -35,7 +35,7 @@ export default function OrderManagement({ transactions, onAddTransaction, onDele
 
     // 1. Group Transactions & Migrate Data
     const groupedOrders = useMemo(() => {
-        const sales = transactions.filter(t => t.type === 'sale');
+        const sales = transactions.filter(t => t.type === 'sale' && t.details?.club !== 'downtown-dinks');
         const groups = {};
 
         sales.forEach(t => {

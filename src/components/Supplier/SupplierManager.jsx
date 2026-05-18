@@ -12,7 +12,7 @@ export default function SupplierManager({ transactions }) {
 
     // 1. Group transactions into logical orders (Sale types)
     const orders = useMemo(() => {
-        const sales = transactions.filter(t => t.type === 'sale');
+        const sales = transactions.filter(t => t.type === 'sale' && t.details?.club !== 'downtown-dinks');
         const grouped = sales.reduce((acc, t) => {
             const orderId = t.details?.orderId || t.id;
             if (!acc[orderId]) {

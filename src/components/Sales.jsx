@@ -69,11 +69,12 @@ const Sales = ({ transactions, onDeleteTransaction, onUpdateTransaction }) => {
     // Filter only sale transactions
     const sales = useMemo(() => {
         return transactions
-            .filter(t => t.type === 'sale')
+            .filter(t => t.type === 'sale' || t.type === 'club_income')
             .filter(t => {
                 const matchesSearch =
                     t.description.toLowerCase().includes(searchTerm.toLowerCase()) ||
-                    (t.details?.customerName || '').toLowerCase().includes(searchTerm.toLowerCase());
+                    (t.details?.customerName || '').toLowerCase().includes(searchTerm.toLowerCase()) ||
+                    (t.details?.club || '').toLowerCase().includes(searchTerm.toLowerCase());
                 return matchesSearch;
             })
             .sort((a, b) => new Date(b.date) - new Date(a.date));
@@ -156,7 +157,7 @@ const Sales = ({ transactions, onDeleteTransaction, onUpdateTransaction }) => {
                                             </div>
                                         </td>
                                         <td className="p-4 text-slate-300">
-                                            {t.details?.customerName || 'Unknown'}
+                                            {t.details?.club === 'downtown-dinks' ? 'Downtown Dinks' : (t.details?.customerName || 'Unknown')}
                                         </td>
                                         <td className="p-4 text-slate-400">{formatDate(t.date)}</td>
                                         <td className="p-4 text-right text-emerald-400 font-bold">

@@ -54,7 +54,7 @@ const AdsReporting = ({ transactions }) => {
 
         filtered.forEach(t => {
             const amount = Number(t.amount) || 0;
-            if (t.type === 'sale') {
+            if (t.type === 'sale' && t.details?.club !== 'downtown-dinks') {
                 totalSales += amount;
 
                 // Count quantity of items sold
