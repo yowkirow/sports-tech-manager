@@ -9,6 +9,12 @@ import { getMMCities, getAllProvinces, getCitiesByProvince, getBarangays } from 
 import { getSizeGuideForBrand } from '../../data/sizeGuides';
 
 const SIZES = ['XS', 'S', 'M', 'L', 'XL', '2XL'];
+const BALL_QUANTITIES = [1, 5, 10, 20, 50, 100];
+
+const isBallProduct = (product) => {
+    const category = product?.category?.toLowerCase();
+    return category === 'balls' || product?.name?.toLowerCase().includes('ball');
+};
 
 export default function Storefront({ transactions, onPlaceOrder }) {
     const { showToast } = useToast();
@@ -19,6 +25,7 @@ export default function Storefront({ transactions, onPlaceOrder }) {
     const [cart, setCart] = useState([]);
     const [isCartOpen, setIsCartOpen] = useState(false);
     const [activeProduct, setActiveProduct] = useState(null); // For size selection
+    const [activeBallProduct, setActiveBallProduct] = useState(null);
     const [activeImageIdx, setActiveImageIdx] = useState(0); // For gallery
     const [searchTerm, setSearchTerm] = useState('');
     const [selectedBrand, setSelectedBrand] = useState('All');
@@ -137,16 +144,17 @@ export default function Storefront({ transactions, onPlaceOrder }) {
         return 999;
     };
 
-    const addToCart = (product, size) => {
+    const addToCart = (product, size, quantity = 1) => {
         const cartId = `${product.name}-${size}`;
         setCart(prev => {
             const existing = prev.find(i => i.cartId === cartId);
             if (existing) {
-                return prev.map(i => i.cartId === cartId ? { ...i, quantity: i.quantity + 1 } : i);
+                return prev.map(i => i.cartId === cartId ? { ...i, quantity: i.quantity + quantity } : i);
             }
-            return [...prev, { ...product, size, cartId, quantity: 1 }];
+            return [...prev, { ...product, size, cartId, quantity }];
         });
         setActiveProduct(null);
+        setActiveBallProduct(null);
         setShowSizeGuide(false);
         showToast('Added to cart', 'success');
     };
@@ -317,7 +325,8 @@ export default function Storefront({ transactions, onPlaceOrder }) {
                 const ratio = itemTotal / subtotalSafe;
                 const itemDiscount = discountAmount * ratio;
                 const product = products.find(p => p.name === item.name);
-                const isShirt = !product || !product.category || product.category === 'shirts';
+                const itemCategory = product?.category || item.category || 'shirts';
+                const isShirt = itemCategory === 'shirts';
                 const itemRushFee = (isRushOrder && isShirt) ? itemQty * 100 : 0;
 
                 // Add rush fee to the final amount so it gets tallied correctly as revenue
@@ -334,7 +343,7 @@ export default function Storefront({ transactions, onPlaceOrder }) {
                     date,
                     amount: finalAmount, // Discounted amount for revenue tracking
                     type: 'sale',
-                    category: 'shirts', // Default
+                    category: itemCategory,
                     description: `Online Order: ${item.name} (${item.size})`,
                     details: {
                         orderId,
@@ -342,6 +351,7 @@ export default function Storefront({ transactions, onPlaceOrder }) {
                         contactNumber,
                         itemName: item.name,
                         brand: item.brand || 'Sypik',
+                        category: itemCategory,
                         size: item.size,
                         color: item.linkedColor || 'Varied',
                         quantity: item.quantity,
@@ -564,7 +574,9 @@ export default function Storefront({ transactions, onPlaceOrder }) {
                             animate={{ opacity: 1, y: 0 }}
                             className="glass-card p-0 overflow-hidden group cursor-pointer flex flex-col text-left"
                             onClick={() => {
-                                if (product.category && product.category !== 'shirts') {
+                                if (isBallProduct(product)) {
+                                    setActiveBallProduct(product);
+                                } else if (product.category && product.category !== 'shirts') {
                                     addToCart(product, 'N/A');
                                 } else {
                                     setActiveProduct(product);
@@ -717,6 +729,54 @@ export default function Storefront({ transactions, onPlaceOrder }) {
                 )}
             </AnimatePresence>
 
+            {/* Ball Quantity Selection Modal */}
+            <AnimatePresence>
+                {activeBallProduct && (
+                    <div className="fixed inset-0 z-[60] flex items-center justify-center bg-black/80 backdrop-blur-sm p-4" onClick={() => setActiveBallProduct(null)}>
+                        <motion.div
+                            initial={{ scale: 0.9, opacity: 0 }}
+                            animate={{ scale: 1, opacity: 1 }}
+                            exit={{ scale: 0.9, opacity: 0 }}
+                            className="glass-panel p-6 max-w-sm w-full relative"
+                            onClick={e => e.stopPropagation()}
+                        >
+                            <button onClick={() => setActiveBallProduct(null)} className="absolute top-4 right-4 text-slate-400 hover:text-white"><X size={24} /></button>
+
+                            <div className="flex gap-4 mb-6">
+                                <div className="w-20 h-20 rounded-xl bg-black/40 overflow-hidden ring-1 ring-white/10 shrink-0">
+                                    {activeBallProduct.imageUrl ? (
+                                        <img src={activeBallProduct.imageUrl} className="w-full h-full object-cover" />
+                                    ) : (
+                                        <div className="w-full h-full flex items-center justify-center text-slate-600">
+                                            <Package size={28} />
+                                        </div>
+                                    )}
+                                </div>
+                                <div className="min-w-0">
+                                    <p className="text-[10px] text-slate-500 font-bold uppercase tracking-[0.2em] mb-1">{activeBallProduct.brand}</p>
+                                    <h3 className="font-bold text-lg text-white leading-tight mb-2">{activeBallProduct.name}</h3>
+                                    <p className="text-primary font-bold text-xl">₱{Number(activeBallProduct.price) || 0}</p>
+                                </div>
+                            </div>
+
+                            <p className="text-xs font-bold text-slate-400 uppercase mb-3">Select Quantity</p>
+                            <div className="grid grid-cols-3 gap-2">
+                                {BALL_QUANTITIES.map(quantity => (
+                                    <button
+                                        key={quantity}
+                                        onClick={() => addToCart(activeBallProduct, 'N/A', quantity)}
+                                        className="p-4 rounded-xl border border-white/10 hover:border-primary hover:bg-primary/20 text-white transition-all"
+                                    >
+                                        <div className="font-bold">{quantity}</div>
+                                        <div className="text-[10px] mt-1 text-slate-500">balls</div>
+                                    </button>
+                                ))}
+                            </div>
+                        </motion.div>
+                    </div>
+                )}
+            </AnimatePresence>
+
             {/* Cart Modal */}
             <AnimatePresence>
                 {isCartOpen && (
@@ -794,7 +854,9 @@ export default function Storefront({ transactions, onPlaceOrder }) {
                                                             <p className="text-xs text-primary font-bold mb-3 mt-auto">₱{Number(product.price) || 0}</p>
                                                             <button
                                                                 onClick={() => {
-                                                                    if (product.category && product.category !== 'shirts') {
+                                                                    if (isBallProduct(product)) {
+                                                                        setActiveBallProduct(product);
+                                                                    } else if (product.category && product.category !== 'shirts') {
                                                                         addToCart(product, 'N/A');
                                                                     } else {
                                                                         setActiveProduct(product);

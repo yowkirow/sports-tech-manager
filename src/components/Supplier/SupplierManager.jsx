@@ -68,13 +68,25 @@ export default function SupplierManager({ transactions }) {
     const aggregatedData = useMemo(() => {
         const selectedOrdersList = orders.filter(o => selectedOrderIds.has(o.id));
         const colorMap = {}; // { Color: { Size: Quantity } }
+        const itemMap = {}; // { Product Name: Quantity }
 
         selectedOrdersList.forEach(order => {
             // Helper to process a single item (or flat transaction)
             const processItem = (item) => {
-                const color = item.details?.linkedColor || item.details?.color || "Unknown";
-                const size = item.details?.size || "Unknown";
-                const qty = item.details?.quantity || 1;
+                const details = item.details || item;
+                const category = details.category || item.category;
+                const name = details.itemName || details.name || item.description || "Unknown Item";
+                const size = details.size || "N/A";
+                const qty = details.quantity || 1;
+                const isShirt = category === 'shirts' || (!category && size && size !== 'N/A');
+
+                if (!isShirt || size === 'N/A') {
+                    if (!itemMap[name]) itemMap[name] = 0;
+                    itemMap[name] += qty;
+                    return;
+                }
+
+                const color = details.linkedColor || details.color || "Unknown";
 
                 if (!colorMap[color]) colorMap[color] = {};
                 if (!colorMap[color][size]) colorMap[color][size] = 0;
@@ -92,22 +104,27 @@ export default function SupplierManager({ transactions }) {
             });
         });
 
-        return colorMap;
+        return { shirts: colorMap, items: itemMap };
     }, [orders, selectedOrderIds]);
 
     // 4. Formatting Engine
     const generatedText = useMemo(() => {
-        const colors = Object.keys(aggregatedData);
-        if (colors.length === 0) return "No items selected.";
+        const colors = Object.keys(aggregatedData.shirts);
+        const items = Object.keys(aggregatedData.items);
+        if (colors.length === 0 && items.length === 0) return "No items selected.";
 
-        return colors.map(color => {
-            const sizes = aggregatedData[color];
+        const shirtText = colors.map(color => {
+            const sizes = aggregatedData.shirts[color];
             const sizeLines = Object.keys(sizes)
                 .map(size => `${size} - ${sizes[size]}`)
                 .join('\n');
 
             return `${color}\n${sizeLines}`;
-        }).join('\n\n');
+        });
+
+        const itemText = items.map(item => `${item} - ${aggregatedData.items[item]}`);
+
+        return [...shirtText, ...itemText].join('\n\n');
     }, [aggregatedData]);
 
     const handleCopy = () => {
@@ -218,7 +235,7 @@ export default function SupplierManager({ transactions }) {
                 {/* Right Column: Preview & Output */}
                 <div className="flex flex-col gap-6 h-full">
                     {/* Data Quality Check */}
-                    {selectedOrderIds.size > 0 && Object.keys(aggregatedData).includes('Unknown') && (
+                    {selectedOrderIds.size > 0 && Object.keys(aggregatedData.shirts).includes('Unknown') && (
                         <motion.div
                             initial={{ opacity: 0, x: 20 }}
                             animate={{ opacity: 1, x: 0 }}
@@ -279,14 +296,14 @@ export default function SupplierManager({ transactions }) {
                                     <div>
                                         <p className="text-slate-500 text-[10px] uppercase font-bold tracking-widest mb-1">Total Items</p>
                                         <p className="text-2xl font-bold font-mono">
-                                            {Object.values(aggregatedData).reduce((sum, sizes) =>
+                                            {Object.values(aggregatedData.shirts).reduce((sum, sizes) =>
                                                 sum + Object.values(sizes).reduce((a, b) => a + b, 0), 0
-                                            )}
+                                            ) + Object.values(aggregatedData.items).reduce((a, b) => a + b, 0)}
                                         </p>
                                     </div>
                                     <div className="text-right">
                                         <p className="text-slate-500 text-[10px] uppercase font-bold tracking-widest mb-1">Colors</p>
-                                        <p className="text-2xl font-bold font-mono">{Object.keys(aggregatedData).length}</p>
+                                        <p className="text-2xl font-bold font-mono">{Object.keys(aggregatedData.shirts).length}</p>
                                     </div>
                                 </motion.div>
                             )}

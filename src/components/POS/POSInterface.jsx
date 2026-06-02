@@ -282,6 +282,7 @@ export default function POSInterface({ transactions, onAddTransaction, onDeleteT
                         id: item.id,
                         name: item.name,
                         brand: item.brand,
+                        category: item.category,
                         price: item.price,
                         quantity: item.quantity,
                         size: item.size,
@@ -730,7 +731,7 @@ const ProductDefinitionModal = ({ editingProduct, onClose, onSave, onDelete, col
                         </div>
                         <div>
                             <label className="text-[10px] text-slate-400 font-bold uppercase">Category</label>
-                            <select className="glass-input mt-1" value={form.category} onChange={e => setForm({ ...form, category: e.target.value })}>{['shirts', 'accessories', 'equipment'].map(c => <option key={c} value={c} className="bg-slate-900 capitalize">{c}</option>)}</select>
+                            <select className="glass-input mt-1" value={form.category} onChange={e => setForm({ ...form, category: e.target.value })}>{['shirts', 'balls', 'accessories', 'equipment'].map(c => <option key={c} value={c} className="bg-slate-900 capitalize">{c}</option>)}</select>
                         </div>
                     </div>
                     {form.category === 'shirts' && (
