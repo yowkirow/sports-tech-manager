@@ -125,3 +125,21 @@ CREATE POLICY "Allow public read" ON customers FOR SELECT USING (true);
 -- Allow all access for now (or restrict to authenticated if you prefer)
 CREATE POLICY "Allow all access" ON customers FOR ALL USING (true) WITH CHECK (true);
 ```
+
+## Create Messenger / Leads Tables
+
+The Messenger automation module uses a dedicated migration:
+
+```text
+supabase/migrations/202606020001_messenger_leads.sql
+```
+
+It creates:
+
+- `messenger_leads`
+- `messenger_messages`
+- `auto_reply_rules`
+
+Apply it with Supabase CLI or paste the SQL into the Supabase SQL Editor. The webhook must use a server-side service role key from a Supabase Edge Function; never expose the service role key in frontend code.
+
+See `MESSENGER_AUTOMATION_SETUP.md` for Meta Messenger, webhook, and deployment steps.
