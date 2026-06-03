@@ -1,6 +1,6 @@
 import React, { useState, useMemo } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
-import { Component, Loader2, Upload, ShoppingCart, X, Plus, Minus, CheckCircle, Store, Search, Package, Clock, Ticket, Copy, ExternalLink, SearchCode, Phone, Trophy } from 'lucide-react';
+import { Component, Loader2, Upload, ShoppingCart, X, Plus, Minus, CheckCircle, Store, Search, Package, Clock, Ticket, Copy, ExternalLink, SearchCode, Phone } from 'lucide-react';
 import { supabase } from '../../lib/supabaseClient';
 import { useProducts, useRawInventory, useBrands } from '../../hooks/useInventory';
 import clsx from 'clsx';
@@ -14,6 +14,19 @@ const BALL_QUANTITIES = [1, 5, 10, 20, 50, 100];
 const isBallProduct = (product) => {
     const category = product?.category?.toLowerCase();
     return category === 'balls' || product?.name?.toLowerCase().includes('ball');
+};
+
+const getBallUnitPrice = (quantity) => {
+    const qty = Number(quantity) || 0;
+    if (qty >= 100) return 70;
+    if (qty >= 50) return 80;
+    if (qty >= 21) return 90;
+    return 100;
+};
+
+const getCartUnitPrice = (item, quantity = item.quantity) => {
+    if (isBallProduct(item)) return getBallUnitPrice(quantity);
+    return Number(item.price) || 0;
 };
 
 export default function Storefront({ transactions, onPlaceOrder }) {
@@ -34,7 +47,6 @@ export default function Storefront({ transactions, onPlaceOrder }) {
     const [isTrackModalOpen, setIsTrackModalOpen] = useState(false);
     const [trackingContact, setTrackingContact] = useState('');
     const [isSearchingOrder, setIsSearchingOrder] = useState(false);
-    const [showEventPopup, setShowEventPopup] = useState(false);
 
     // Checkout State
     const [firstName, setFirstName] = useState('');
@@ -115,17 +127,6 @@ export default function Storefront({ transactions, onPlaceOrder }) {
         }
     }, [cityCode]);
 
-    React.useEffect(() => {
-        const hasSeenPopup = sessionStorage.getItem('hasSeenEventPopup');
-        if (!hasSeenPopup) {
-            const timer = setTimeout(() => {
-                setShowEventPopup(true);
-                sessionStorage.setItem('hasSeenEventPopup', 'true');
-            }, 1000); // Trigger after 1s
-            return () => clearTimeout(timer);
-        }
-    }, []);
-
     const filteredProducts = products.filter(p => {
         const matchesSearch = p.name.toLowerCase().includes(searchTerm.toLowerCase());
         const matchesBrand = selectedBrand === 'All' || p.brand === selectedBrand;
@@ -149,9 +150,13 @@ export default function Storefront({ transactions, onPlaceOrder }) {
         setCart(prev => {
             const existing = prev.find(i => i.cartId === cartId);
             if (existing) {
-                return prev.map(i => i.cartId === cartId ? { ...i, quantity: i.quantity + quantity } : i);
+                return prev.map(i => {
+                    if (i.cartId !== cartId) return i;
+                    const nextQuantity = i.quantity + quantity;
+                    return { ...i, quantity: nextQuantity, price: getCartUnitPrice(i, nextQuantity) };
+                });
             }
-            return [...prev, { ...product, size, cartId, quantity }];
+            return [...prev, { ...product, size, cartId, quantity, price: getCartUnitPrice(product, quantity) }];
         });
         setActiveProduct(null);
         setActiveBallProduct(null);
@@ -163,7 +168,7 @@ export default function Storefront({ transactions, onPlaceOrder }) {
         setCart(prev => prev.map(item => {
             if (item.cartId === cartId) {
                 const newQty = Math.max(0, item.quantity + delta);
-                return { ...item, quantity: newQty };
+                return { ...item, quantity: newQty, price: getCartUnitPrice(item, newQty) };
             }
             return item;
         }).filter(i => i.quantity > 0));
@@ -173,7 +178,7 @@ export default function Storefront({ transactions, onPlaceOrder }) {
     const [voucherCode, setVoucherCode] = useState('');
     const [appliedVoucher, setAppliedVoucher] = useState(null);
 
-    const subtotal = useMemo(() => cart.reduce((a, b) => a + ((Number(b.price) || 0) * (Number(b.quantity) || 0)), 0), [cart]);
+    const subtotal = useMemo(() => cart.reduce((a, b) => a + (getCartUnitPrice(b) * (Number(b.quantity) || 0)), 0), [cart]);
     const totalItems = useMemo(() => cart.reduce((a, b) => a + (Number(b.quantity) || 0), 0), [cart]);
     const rushableItemsCount = useMemo(() => cart.reduce((total, item) => {
         const product = products.find(p => p.name === item.name);
@@ -318,8 +323,8 @@ export default function Storefront({ transactions, onPlaceOrder }) {
 
             // Create transactions for each item
             const newTransactions = cart.map(item => {
-                const itemPrice = Number(item.price) || 0;
                 const itemQty = Number(item.quantity) || 0;
+                const itemPrice = getCartUnitPrice(item, itemQty);
                 const itemTotal = itemPrice * itemQty;
                 const subtotalSafe = subtotal || 1;
                 const ratio = itemTotal / subtotalSafe;
@@ -490,15 +495,6 @@ export default function Storefront({ transactions, onPlaceOrder }) {
                 </div>
 
                 <div className="flex items-center gap-4">
-                    <button
-                        onClick={() => window.location.href = '/event'}
-                        className="p-2 text-primary hover:text-white transition-colors flex items-center gap-2 border border-primary/20 bg-primary/5 px-4 py-1.5 rounded-full"
-                        title="Referral Event"
-                    >
-                        <Trophy size={20} />
-                        <span className="hidden sm:inline text-[10px] font-bold uppercase tracking-widest">Join Event</span>
-                    </button>
-
                     <button
                         onClick={() => setIsTrackModalOpen(true)}
                         className="p-2 text-slate-400 hover:text-white transition-colors flex items-center gap-2"
@@ -755,7 +751,7 @@ export default function Storefront({ transactions, onPlaceOrder }) {
                                 <div className="min-w-0">
                                     <p className="text-[10px] text-slate-500 font-bold uppercase tracking-[0.2em] mb-1">{activeBallProduct.brand}</p>
                                     <h3 className="font-bold text-lg text-white leading-tight mb-2">{activeBallProduct.name}</h3>
-                                    <p className="text-primary font-bold text-xl">₱{Number(activeBallProduct.price) || 0}</p>
+                                    <p className="text-primary font-bold text-xl">₱100/pc</p>
                                 </div>
                             </div>
 
@@ -768,7 +764,8 @@ export default function Storefront({ transactions, onPlaceOrder }) {
                                         className="p-4 rounded-xl border border-white/10 hover:border-primary hover:bg-primary/20 text-white transition-all"
                                     >
                                         <div className="font-bold">{quantity}</div>
-                                        <div className="text-[10px] mt-1 text-slate-500">balls</div>
+                                        <div className="text-[10px] mt-1 text-slate-500">₱{getBallUnitPrice(quantity)}/pc</div>
+                                        <div className="text-[10px] text-primary font-bold">₱{(getBallUnitPrice(quantity) * quantity).toLocaleString()}</div>
                                     </button>
                                 ))}
                             </div>
@@ -813,10 +810,13 @@ export default function Storefront({ transactions, onPlaceOrder }) {
                                             <div className="flex-1 min-w-0">
                                                 <div className="flex justify-between items-start mb-1">
                                                     <h4 className="font-bold text-slate-200 truncate pr-2">{item.name}</h4>
-                                                    <p className="text-white font-mono">₱{(Number(item.price) || 0) * (Number(item.quantity) || 0)}</p>
+                                                    <p className="text-white font-mono">₱{(getCartUnitPrice(item) * (Number(item.quantity) || 0)).toLocaleString()}</p>
                                                 </div>
                                                 {item.size !== 'N/A' && (
                                                     <p className="text-xs text-slate-400 mb-2">Size: {item.size}</p>
+                                                )}
+                                                {isBallProduct(item) && (
+                                                    <p className="text-xs text-slate-400 mb-2">₱{getCartUnitPrice(item)} per pc</p>
                                                 )}
 
                                                 <div className="flex items-center gap-3">
@@ -1209,53 +1209,6 @@ export default function Storefront({ transactions, onPlaceOrder }) {
                             <p className="text-[10px] text-slate-500 mt-4 text-center italic">
                                 * This will find your most recent order.
                             </p>
-                        </motion.div>
-                    </div>
-                )}
-            </AnimatePresence>
-
-            {/* Event Promo Popup */}
-            <AnimatePresence>
-                {showEventPopup && (
-                    <div className="fixed inset-0 z-[100] flex items-center justify-center p-4 bg-black/80 backdrop-blur-md" onClick={() => setShowEventPopup(false)}>
-                        <motion.div
-                            initial={{ scale: 0.9, opacity: 0, y: 20 }}
-                            animate={{ scale: 1, opacity: 1, y: 0 }}
-                            exit={{ scale: 0.9, opacity: 0, y: 20 }}
-                            transition={{ type: "spring", damping: 25, stiffness: 300 }}
-                            className="glass-panel max-w-lg w-full overflow-hidden relative shadow-[0_0_50px_rgba(251,191,36,0.15)] ring-1 ring-white/20"
-                            onClick={e => e.stopPropagation()}
-                        >
-                            <button 
-                                onClick={() => setShowEventPopup(false)} 
-                                className="absolute top-4 right-4 z-10 w-8 h-8 rounded-full bg-black/50 text-white flex items-center justify-center hover:bg-black/80 transition-colors border border-white/10"
-                            >
-                                <X size={18} />
-                            </button>
-
-                            <div 
-                                className="relative cursor-pointer group"
-                                onClick={() => window.location.href = '/event'}
-                            >
-                                <img 
-                                    src="/STEvent.jpg" 
-                                    alt="Tournament Promo" 
-                                    className="w-full h-auto transition-transform duration-700 group-hover:scale-105"
-                                />
-                                <div className="absolute inset-0 bg-gradient-to-t from-slate-900/90 via-transparent to-transparent flex flex-col justify-end p-6 md:p-8">
-                                    <h2 className="text-2xl md:text-3xl font-black text-white italic uppercase tracking-tighter mb-2 transform -skew-x-6">
-                                        Compete for <span className="text-primary italic">FREE</span>
-                                    </h2>
-                                    <p className="text-sm text-slate-300 font-medium mb-6 max-w-xs leading-relaxed">
-                                        Join the Sports Tech Referral Event and get your tournament fees covered!
-                                    </p>
-                                    <button 
-                                        className="btn-primary w-fit px-8 py-3 text-sm font-black uppercase tracking-widest flex items-center gap-3 group/btn hover:scale-105 transition-all shadow-xl"
-                                    >
-                                        Join Now <Trophy size={18} className="group-hover/btn:rotate-12 transition-transform" />
-                                    </button>
-                                </div>
-                            </div>
                         </motion.div>
                     </div>
                 )}

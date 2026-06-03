@@ -23,9 +23,6 @@ import { supabase } from './lib/supabaseClient';
 import ProfileSettings from './components/Settings/ProfileSettings';
 import OrderTracking from './components/Shop/OrderTracking';
 import { sendSMS } from './lib/textbee';
-import EventRegistration from './components/Event/EventRegistration';
-import ReferrerDashboard from './components/Event/ReferrerDashboard';
-import ReferrerManager from './components/Event/ReferrerManager';
 import MessengerLeads from './components/Inbox/MessengerLeads';
 
 
@@ -214,18 +211,9 @@ function App() {
     // Simplified Path-Based Routing
     const isAdminPath = window.location.pathname.startsWith('/admin');
     const isTrackPath = window.location.pathname.startsWith('/track');
-    const isEventPath = window.location.pathname.startsWith('/event');
 
     // Tracking Route
     if (isTrackPath) return <OrderTracking />;
-    
-    // Event Route
-    if (isEventPath) {
-        if (window.location.pathname.includes('/dashboard')) {
-            return <ReferrerDashboard />;
-        }
-        return <EventRegistration />;
-    }
 
     // Default to Storefront unless on /admin path
     if (!isAdminPath) {
@@ -298,7 +286,6 @@ function App() {
                             <NavItem id="vouchers" label="Vouchers" icon={Ticket} />
                             <NavItem id="messenger" label="Messenger / Leads" icon={MessageCircle} />
                             <NavItem id="reports" label="Reports" icon={TrendingUp} />
-                            <NavItem id="event" label="Event Portal" icon={Trophy} />
                         </>
                     )}
                     {!isStaff && <NavItem id="dashboard" label="Dashboard" icon={LayoutDashboard} />}
@@ -355,7 +342,6 @@ function App() {
                             {activeTab === 'messenger' && 'Messenger / Leads'}
                             {activeTab === 'reports' && 'Reports'}
                             {activeTab === 'settings' && 'Settings'}
-                            {activeTab === 'event' && 'Referral Challenge'}
                             {activeTab === 'add-stock' && 'Receive Stock'}
                         </h2>
                     </div>
@@ -487,16 +473,6 @@ function App() {
                                         onLogout={() => supabase.auth.signOut()}
                                         transactions={transactions}
                                         onAddTransaction={addTransaction}
-                                    />
-                                </div>
-                            )}
-
-                            {activeTab === 'event' && (
-                                <div className="animate-fade-in h-full">
-                                    <ReferrerManager 
-                                        transactions={transactions}
-                                        onAddTransaction={addTransaction}
-                                        onDeleteTransaction={deleteTransaction}
                                     />
                                 </div>
                             )}

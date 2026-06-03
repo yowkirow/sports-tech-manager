@@ -10,6 +10,24 @@ import { useActivityLog } from '../../hooks/useActivityLog';
 
 const SIZES = ['XS', 'S', 'M', 'L', 'XL', '2XL'];
 
+const isBallProduct = (product) => {
+    const category = product?.category?.toLowerCase();
+    return category === 'balls' || product?.name?.toLowerCase().includes('ball');
+};
+
+const getBallUnitPrice = (quantity) => {
+    const qty = Number(quantity) || 0;
+    if (qty >= 100) return 70;
+    if (qty >= 50) return 80;
+    if (qty >= 21) return 90;
+    return 100;
+};
+
+const getCartUnitPrice = (item, quantity = item.quantity) => {
+    if (isBallProduct(item)) return getBallUnitPrice(quantity);
+    return Number(item.price) || 0;
+};
+
 export default function POSInterface({ transactions, onAddTransaction, onDeleteTransaction, userRole }) {
     const { showToast } = useToast();
     const { logActivity } = useActivityLog();
@@ -211,7 +229,10 @@ export default function POSInterface({ transactions, onAddTransaction, onDeleteT
         setCart(prev => {
             if (delta === -999) return prev.filter(item => item.cartId !== id);
             return prev.map(item => {
-                if (item.cartId === id) return { ...item, quantity: Math.max(1, item.quantity + delta) };
+                if (item.cartId === id) {
+                    const nextQuantity = Math.max(1, item.quantity + delta);
+                    return { ...item, quantity: nextQuantity, price: getCartUnitPrice(item, nextQuantity) };
+                }
                 return item;
             });
         });
@@ -230,10 +251,15 @@ export default function POSInterface({ transactions, onAddTransaction, onDeleteT
         setCart(prev => {
             const existing = prev.find(i => i.cartId === cartId);
             if (existing) {
-                return prev.map(i => i.cartId === cartId ? { ...i, quantity: i.quantity + 1 } : i);
+                return prev.map(i => {
+                    if (i.cartId !== cartId) return i;
+                    const nextQuantity = i.quantity + 1;
+                    return { ...i, quantity: nextQuantity, price: getCartUnitPrice(i, nextQuantity) };
+                });
             }
             return [...prev, {
                 ...product,
+                price: getCartUnitPrice(product, 1),
                 size,
                 cartId,
                 quantity: 1,
@@ -257,7 +283,7 @@ export default function POSInterface({ transactions, onAddTransaction, onDeleteT
         try {
             const { data: { user } } = await supabase.auth.getUser();
 
-            const totalAmount = cart.reduce((a, b) => a + (b.price * b.quantity), 0);
+            const totalAmount = cart.reduce((a, b) => a + (getCartUnitPrice(b) * b.quantity), 0);
 
             // Upsert Customer (Save for next time)
             if (customerName) {
@@ -283,7 +309,7 @@ export default function POSInterface({ transactions, onAddTransaction, onDeleteT
                         name: item.name,
                         brand: item.brand,
                         category: item.category,
-                        price: item.price,
+                        price: getCartUnitPrice(item),
                         quantity: item.quantity,
                         size: item.size,
                         color: item.linkedColor,
@@ -582,7 +608,7 @@ export default function POSInterface({ transactions, onAddTransaction, onDeleteT
             <div className="fixed bottom-4 left-4 right-4 lg:hidden z-40">
                 <button onClick={() => setCartOpenMobile(true)} disabled={cart.length === 0} className="w-full btn-primary py-4 shadow-2xl flex justify-between px-6 items-center">
                     <div className="flex items-center gap-3"><ShoppingCart size={20} /> <span className="font-bold">{cart.reduce((a, b) => a + b.quantity, 0)} items</span></div>
-                    <span className="font-bold text-lg">₱{cart.reduce((a, b) => a + (b.price * b.quantity), 0).toLocaleString()}</span>
+                    <span className="font-bold text-lg">₱{cart.reduce((a, b) => a + (getCartUnitPrice(b) * b.quantity), 0).toLocaleString()}</span>
                 </button>
             </div>
 
@@ -795,7 +821,7 @@ const CartContent = ({ cart, updateCartQuantity, handleCheckout, checkoutLoading
                         <h4 className="font-medium text-slate-200 text-sm truncate">{item.name}</h4>
                         <div className="flex gap-2 items-center mt-1">
                             {item.size !== 'N/A' && <span className="text-[9px] bg-primary/20 text-primary px-1.5 py-0.5 rounded font-bold">{item.size}</span>}
-                            <span className="text-[10px] text-slate-400">₱{item.price}</span>
+                            <span className="text-[10px] text-slate-400">₱{getCartUnitPrice(item)}/pc</span>
                         </div>
                     </div>
                     <div className="flex items-center gap-2 bg-black/40 rounded-lg p-1 border border-white/5">
@@ -809,7 +835,7 @@ const CartContent = ({ cart, updateCartQuantity, handleCheckout, checkoutLoading
             {cart.length === 0 && <div className="text-center py-20 text-slate-600 flex flex-col items-center gap-3"><ShoppingCart size={40} className="opacity-20" /><p className="text-sm">Your cart is feeling lonely</p></div>}
         </div>
         <div className="p-6 border-t border-white/10 bg-black/40 space-y-6">
-            <div className="flex justify-between items-end border-b border-white/10 pb-4"><span className="text-slate-400 font-medium">Order Total</span><span className="text-2xl font-bold text-white">₱{cart.reduce((a, b) => a + (b.price * b.quantity), 0).toLocaleString()}</span></div>
+            <div className="flex justify-between items-end border-b border-white/10 pb-4"><span className="text-slate-400 font-medium">Order Total</span><span className="text-2xl font-bold text-white">₱{cart.reduce((a, b) => a + (getCartUnitPrice(b) * b.quantity), 0).toLocaleString()}</span></div>
             <div className="space-y-4">
                 <div className="flex items-center justify-between"><h3 className="text-[10px] font-bold text-slate-500 uppercase tracking-[0.2em]">Customer Profile</h3><button onClick={() => updateCartQuantity('clear')} className="text-[10px] text-red-400/60 hover:text-red-400 uppercase font-bold transition-colors">Clear Order</button></div>
                 <div className="grid grid-cols-2 gap-3">
