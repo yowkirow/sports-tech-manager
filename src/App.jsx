@@ -13,7 +13,7 @@ import DowntownDinks from './components/DowntownDinks';
 import VoucherManager from './components/Vouchers/VoucherManager';
 import SupplierManager from './components/Supplier/SupplierManager';
 import AdsReporting from './components/Reports/AdsReporting';
-import { LayoutDashboard, Store, ShoppingBag, Package, LogOut, X, Wallet, Banknote, Menu, Globe, Ticket, Settings as SettingsIcon, Lock, ClipboardList, TrendingUp, Trophy, MessageCircle } from 'lucide-react';
+import { LayoutDashboard, Store, ShoppingBag, Package, LogOut, X, Wallet, Banknote, Menu, Globe, Ticket, Settings as SettingsIcon, Lock, ClipboardList, TrendingUp, Trophy } from 'lucide-react';
 import clsx from 'clsx';
 import { motion, AnimatePresence } from 'framer-motion';
 import { useToast } from './components/ui/Toast';
@@ -23,7 +23,6 @@ import { supabase } from './lib/supabaseClient';
 import ProfileSettings from './components/Settings/ProfileSettings';
 import OrderTracking from './components/Shop/OrderTracking';
 import { sendSMS } from './lib/textbee';
-import MessengerLeads from './components/Inbox/MessengerLeads';
 
 
 function App() {
@@ -284,7 +283,6 @@ function App() {
                             <NavItem id="inventory" label="Inventory" icon={ShoppingBag} />
                             <NavItem id="supplier" label="Supplier Order" icon={ClipboardList} />
                             <NavItem id="vouchers" label="Vouchers" icon={Ticket} />
-                            <NavItem id="messenger" label="Messenger / Leads" icon={MessageCircle} />
                             <NavItem id="reports" label="Reports" icon={TrendingUp} />
                         </>
                     )}
@@ -339,7 +337,6 @@ function App() {
                             {activeTab === 'inventory' && 'Inventory'}
                             {activeTab === 'supplier' && 'Supplier Order'}
                             {activeTab === 'vouchers' && 'Vouchers'}
-                            {activeTab === 'messenger' && 'Messenger / Leads'}
                             {activeTab === 'reports' && 'Reports'}
                             {activeTab === 'settings' && 'Settings'}
                             {activeTab === 'add-stock' && 'Receive Stock'}
@@ -451,12 +448,6 @@ function App() {
                                     <SupplierManager
                                         transactions={effectiveTransactions}
                                     />
-                                </div>
-                            )}
-
-                            {activeTab === 'messenger' && !(isReseller || isStaff) && (
-                                <div className="animate-fade-in h-full">
-                                    <MessengerLeads />
                                 </div>
                             )}
 
