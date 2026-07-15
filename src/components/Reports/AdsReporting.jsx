@@ -1,6 +1,7 @@
 import React, { useState, useMemo } from 'react';
 import { Target } from 'lucide-react';
 import clsx from 'clsx';
+import { isReturnedSale } from '../../lib/transactionStatus';
 
 const FilterButton = ({ active, onClick, children }) => (
     <button
@@ -54,7 +55,7 @@ const AdsReporting = ({ transactions }) => {
 
         filtered.forEach(t => {
             const amount = Number(t.amount) || 0;
-            if (t.type === 'sale' && t.details?.club !== 'downtown-dinks') {
+            if (t.type === 'sale' && !isReturnedSale(t) && t.details?.club !== 'downtown-dinks') {
                 totalSales += amount;
 
                 // Count quantity of items sold

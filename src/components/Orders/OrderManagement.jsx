@@ -1,6 +1,6 @@
 import React, { useState, useMemo } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
-import { Package, Clock, CheckCircle, Truck, User, Search, Edit2, Save, X, Trash2, Layers, ChevronDown, ChevronUp, ShoppingBag, Loader2, AlertCircle, Banknote, Filter, Copy, MessageSquare, Send } from 'lucide-react';
+import { Package, Clock, CheckCircle, Truck, User, Search, Edit2, Save, X, Trash2, Layers, ChevronDown, ChevronUp, ShoppingBag, Loader2, AlertCircle, Banknote, Filter, Copy, MessageSquare, Send, RotateCcw } from 'lucide-react';
 import { useToast } from '../ui/Toast';
 import { supabase } from '../../lib/supabaseClient';
 import { useProducts } from '../../hooks/useInventory';
@@ -8,7 +8,7 @@ import { sendSMS } from '../../lib/textbee';
 
 const SIZES = ['XS', 'S', 'M', 'L', 'XL', '2XL'];
 
-const FULFILLMENT_STATUSES = ['pending', 'in_progress', 'ready', 'shipped', 'cancelled'];
+const FULFILLMENT_STATUSES = ['pending', 'in_progress', 'ready', 'shipped', 'returned', 'cancelled'];
 const PAYMENT_STATUSES = ['unpaid', 'paid'];
 const PAYMENT_MODES = ['Cash', 'Gcash', 'Bank Transfer', 'COD'];
 
@@ -210,6 +210,15 @@ export default function OrderManagement({ transactions, onAddTransaction, onDele
                     status: finalFulfillmentStatus
                 };
 
+                if (finalFulfillmentStatus === 'returned') {
+                    updatedDetails.returnedAt = originalItem.details?.returnedAt || new Date().toISOString();
+                    updatedDetails.previousFulfillmentStatus = originalItem.details?.previousFulfillmentStatus ||
+                        originalItem.details?.fulfillmentStatus || originalItem.details?.status || order.fulfillmentStatus;
+                } else if (originalItem.details?.fulfillmentStatus === 'returned') {
+                    delete updatedDetails.returnedAt;
+                    delete updatedDetails.previousFulfillmentStatus;
+                }
+
                 if (updatedDetails.shippingDetails) {
                     updatedDetails.shippingDetails = {
                         ...updatedDetails.shippingDetails,
@@ -312,6 +321,42 @@ export default function OrderManagement({ transactions, onAddTransaction, onDele
         }
     }
 
+    const handleMarkReturned = async (orderId) => {
+        const order = groupedOrders.find(o => o.id === orderId);
+        if (!order || order.fulfillmentStatus === 'returned') return;
+
+        if (!confirm(`Mark ${order.customerName}'s order as returned?\n\nThis only tags the order. Payment and inventory will stay unchanged.`)) return;
+
+        setLoading(true);
+        try {
+            const returnedAt = new Date().toISOString();
+            const updates = order.items.map(async (item) => {
+                const updatedDetails = {
+                    ...item.details,
+                    previousFulfillmentStatus: item.details?.fulfillmentStatus || item.details?.status || order.fulfillmentStatus,
+                    fulfillmentStatus: 'returned',
+                    status: 'returned',
+                    returnedAt
+                };
+
+                const { error } = await supabase
+                    .from('transactions')
+                    .update({ details: updatedDetails })
+                    .eq('id', item.id);
+                if (error) throw error;
+            });
+
+            await Promise.all(updates);
+            showToast('Order marked as returned', 'success');
+            if (refetch) await refetch();
+        } catch (err) {
+            console.error(err);
+            showToast('Failed to mark order as returned', 'error');
+        } finally {
+            setLoading(false);
+        }
+    };
+
     const handleBulkUpdate = async (updates) => {
         if (!confirm(`Update ${selectedOrderIds.size} orders?`)) return;
         setLoading(true);
@@ -323,7 +368,18 @@ export default function OrderManagement({ transactions, onAddTransaction, onDele
                 const dbUpdates = order.items.map(item => {
                     const newDetails = { ...item.details, ...updates };
                     // Sync legacy field
-                    if (updates.fulfillmentStatus) newDetails.status = updates.fulfillmentStatus;
+                    if (updates.fulfillmentStatus) {
+                        newDetails.status = updates.fulfillmentStatus;
+
+                        if (updates.fulfillmentStatus === 'returned') {
+                            newDetails.returnedAt = item.details?.returnedAt || new Date().toISOString();
+                            newDetails.previousFulfillmentStatus = item.details?.previousFulfillmentStatus ||
+                                item.details?.fulfillmentStatus || item.details?.status || order.fulfillmentStatus;
+                        } else if (item.details?.fulfillmentStatus === 'returned') {
+                            delete newDetails.returnedAt;
+                            delete newDetails.previousFulfillmentStatus;
+                        }
+                    }
 
                     return supabase.from('transactions')
                         .update({ details: newDetails })
@@ -607,12 +663,14 @@ export default function OrderManagement({ transactions, onAddTransaction, onDele
                                 <div className={`w-12 h-12 rounded-full flex items-center justify-center shrink-0 ${order.fulfillmentStatus === 'shipped' ? 'bg-blue-500/10 text-blue-400' :
                                     order.fulfillmentStatus === 'ready' ? 'bg-purple-500/10 text-purple-400' :
                                         order.fulfillmentStatus === 'in_progress' ? 'bg-orange-500/10 text-orange-400' :
+                                            order.fulfillmentStatus === 'returned' ? 'bg-amber-500/10 text-amber-400' :
                                             order.fulfillmentStatus === 'cancelled' ? 'bg-red-500/10 text-red-400' :
                                                 'bg-slate-500/10 text-slate-400'
                                     }`}>
                                     {order.fulfillmentStatus === 'shipped' ? <Truck size={20} /> :
                                         order.fulfillmentStatus === 'ready' ? <Package size={20} /> :
                                             order.fulfillmentStatus === 'in_progress' ? <Loader2 size={20} className="animate-spin" /> :
+                                                order.fulfillmentStatus === 'returned' ? <RotateCcw size={20} /> :
                                                 order.fulfillmentStatus === 'cancelled' ? <X size={20} /> :
                                                     <Clock size={20} />
                                     }
@@ -768,6 +826,7 @@ export default function OrderManagement({ transactions, onAddTransaction, onDele
                                                 <span className={`px-3 py-1 rounded-full text-xs font-bold capitalize border ${order.fulfillmentStatus === 'shipped' ? 'bg-blue-500/10 border-blue-500/20 text-blue-400' :
                                                     order.fulfillmentStatus === 'ready' ? 'bg-purple-500/10 border-purple-500/20 text-purple-400' :
                                                         order.fulfillmentStatus === 'in_progress' ? 'bg-orange-500/10 border-orange-500/20 text-orange-400' :
+                                                            order.fulfillmentStatus === 'returned' ? 'bg-amber-500/10 border-amber-500/20 text-amber-400' :
                                                             order.fulfillmentStatus === 'cancelled' ? 'bg-red-500/10 border-red-500/20 text-red-400' :
                                                                 'bg-slate-500/10 border-slate-500/20 text-slate-400'
                                                     }`}>
@@ -775,6 +834,16 @@ export default function OrderManagement({ transactions, onAddTransaction, onDele
                                                 </span>
                                                 {!isSelectionMode && (
                                                     <div className="flex gap-1 lg:opacity-0 lg:group-hover:opacity-100 transition-opacity">
+                                                        {!isReseller && order.fulfillmentStatus !== 'returned' && (
+                                                            <button
+                                                                onClick={(e) => { e.stopPropagation(); handleMarkReturned(order.id); }}
+                                                                className="p-2 hover:bg-amber-500/20 rounded-lg text-slate-400 hover:text-amber-400"
+                                                                title="Mark as returned"
+                                                                aria-label="Mark order as returned"
+                                                            >
+                                                                <RotateCcw size={16} />
+                                                            </button>
+                                                        )}
                                                         <button onClick={(e) => { e.stopPropagation(); startEditing(order); }} className="p-2 hover:bg-white/10 rounded-lg text-slate-400 hover:text-white"><Edit2 size={16} /></button>
                                                         <button onClick={(e) => { e.stopPropagation(); handleDeleteOrder(order.id); }} className="p-2 hover:bg-red-500/20 rounded-lg text-slate-400 hover:text-red-400"><Trash2 size={16} /></button>
                                                     </div>

@@ -4,6 +4,7 @@ import { supabase } from '../../lib/supabaseClient';
 import { Trophy, Users, Zap, CheckCircle, Smartphone, Award, ExternalLink, ArrowRight, UserPlus, Info, Ticket, X, Copy, Phone, LogOut, Loader2, Clock, CheckCircle2, ChevronRight, Share2 } from 'lucide-react';
 import { useToast } from '../ui/Toast';
 import clsx from 'clsx';
+import { isReturnedSale } from '../../lib/transactionStatus';
 
 export default function ReferrerDashboard() {
     const { showToast } = useToast();
@@ -39,7 +40,7 @@ export default function ReferrerDashboard() {
 
             if (error) throw error;
 
-            const list = data || [];
+            const list = (data || []).filter(t => !isReturnedSale(t));
             setReferrals(list);
 
             // Calculate stats

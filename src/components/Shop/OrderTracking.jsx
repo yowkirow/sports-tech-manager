@@ -1,6 +1,6 @@
 import React, { useState, useEffect, useMemo } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
-import { Package, CheckCircle, Clock, Truck, ShieldCheck, Search, ArrowLeft, Copy, ShoppingCart, MapPin, Phone, User, ExternalLink, X, Plus, Minus } from 'lucide-react';
+import { Package, CheckCircle, Clock, Truck, ShieldCheck, Search, ArrowLeft, Copy, ShoppingCart, MapPin, Phone, User, ExternalLink, X, Plus, Minus, RotateCcw } from 'lucide-react';
 import { supabase } from '../../lib/supabaseClient';
 import { useToast } from '../ui/Toast';
 
@@ -251,7 +251,10 @@ export default function OrderTracking() {
     };
 
     const currentStatus = order?.details?.fulfillmentStatus || 'pending';
-    const statusIdx = STATUS_STEPS.findIndex(s => s.key === currentStatus);
+    const timelineStatus = currentStatus === 'returned'
+        ? (order?.details?.previousFulfillmentStatus || 'shipped')
+        : currentStatus;
+    const statusIdx = Math.max(0, STATUS_STEPS.findIndex(s => s.key === timelineStatus));
     const canEdit = currentStatus === 'pending';
 
     if (!isVerified) {
@@ -360,12 +363,33 @@ export default function OrderTracking() {
                                 <p className="text-slate-400 text-sm mt-1">Placed on {new Date(order.date).toLocaleDateString('en-PH', { month: 'long', day: 'numeric', year: 'numeric' })}</p>
                             </div>
                             <div className="flex items-center gap-3 bg-white/5 px-4 py-2 rounded-full border border-white/5">
-                                <div className={`w-2 h-2 rounded-full animate-pulse ${currentStatus === 'shipped' ? 'bg-green-500' : 'bg-primary'}`} />
+                                <div className={`w-2 h-2 rounded-full animate-pulse ${currentStatus === 'returned' ? 'bg-amber-400' :
+                                    currentStatus === 'shipped' ? 'bg-green-500' : 'bg-primary'
+                                }`} />
                                 <span className="text-sm font-bold uppercase tracking-wider">
                                     {currentStatus.replace('_', ' ')}
                                 </span>
                             </div>
                         </motion.div>
+
+                        {currentStatus === 'returned' && (
+                            <motion.div
+                                initial={{ opacity: 0, y: 10 }}
+                                animate={{ opacity: 1, y: 0 }}
+                                className="rounded-2xl border border-amber-500/20 bg-amber-500/10 p-5 flex items-start gap-4"
+                            >
+                                <div className="p-2.5 rounded-xl bg-amber-500/20 text-amber-400">
+                                    <RotateCcw size={22} />
+                                </div>
+                                <div>
+                                    <h3 className="font-bold text-amber-300">Order returned</h3>
+                                    <p className="text-sm text-amber-100/70 mt-1">
+                                        This order was marked as returned
+                                        {order.details.returnedAt ? ` on ${new Date(order.details.returnedAt).toLocaleDateString('en-PH', { month: 'long', day: 'numeric', year: 'numeric' })}` : ''}.
+                                    </p>
+                                </div>
+                            </motion.div>
+                        )}
 
                         {/* Status Timeline */}
                         <section className="glass-panel p-6 md:p-8">

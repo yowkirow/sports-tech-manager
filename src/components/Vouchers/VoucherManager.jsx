@@ -2,6 +2,7 @@ import React, { useState } from 'react';
 import { Ticket, Plus, Trash2, Tag, Percent, DollarSign, Save, X, ToggleLeft, ToggleRight, Check } from 'lucide-react';
 import { motion, AnimatePresence } from 'framer-motion';
 import { useToast } from '../ui/Toast';
+import { isReturnedSale } from '../../lib/transactionStatus';
 
 export default function VoucherManager({ transactions, onAddTransaction, onDeleteTransaction }) {
     const { showToast } = useToast();
@@ -11,6 +12,7 @@ export default function VoucherManager({ transactions, onAddTransaction, onDelet
     const vouchers = transactions.filter(t => t.type === 'voucher').map(t => {
         const usageCount = transactions.filter(tr =>
             tr.type === 'sale' &&
+            !isReturnedSale(tr) &&
             tr.details?.voucherCode === t.details.code
         ).length; // Rough count based on items or orders? Storefront splits items.
         // Wait, storefront splits items into multiple transactions. Each has 'voucherCode'.
@@ -20,7 +22,7 @@ export default function VoucherManager({ transactions, onAddTransaction, onDelet
         // 'tr.details.orderId' is unique per order.
         const uniqueOrders = new Set(
             transactions
-                .filter(tr => tr.type === 'sale' && tr.details?.voucherCode === t.details.code)
+                .filter(tr => tr.type === 'sale' && !isReturnedSale(tr) && tr.details?.voucherCode === t.details.code)
                 .map(tr => tr.details.orderId)
         ).size;
 

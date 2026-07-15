@@ -7,6 +7,7 @@ import clsx from 'clsx';
 import { useToast } from '../ui/Toast';
 import { getMMCities, getAllProvinces, getCitiesByProvince, getBarangays } from '../../lib/phLocations';
 import { getSizeGuideForBrand } from '../../data/sizeGuides';
+import { isReturnedSale } from '../../lib/transactionStatus';
 
 const SIZES = ['XS', 'S', 'M', 'L', 'XL', '2XL'];
 const BALL_QUANTITIES = [1, 5, 10, 20, 50, 100];
@@ -244,7 +245,7 @@ export default function Storefront({ transactions, onPlaceOrder }) {
         if (details.usageLimit) {
             const uniqueUses = new Set(
                 transactions
-                    .filter(tr => tr.type === 'sale' && tr.details?.voucherCode === details.code)
+                    .filter(tr => tr.type === 'sale' && !isReturnedSale(tr) && tr.details?.voucherCode === details.code)
                     .map(tr => tr.details.orderId)
             ).size;
 

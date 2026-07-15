@@ -1,10 +1,13 @@
 import React from 'react';
 import { ArrowUpRight, ArrowDownLeft, Trash2, Calendar, ShoppingBag } from 'lucide-react';
 import clsx from 'clsx';
+import { isReturnedSale } from '../lib/transactionStatus';
 
 const TransactionList = ({ transactions, onDelete }) => {
     // Sort by date desc
-    const sorted = [...transactions].sort((a, b) => new Date(b.date) - new Date(a.date));
+    const sorted = transactions
+        .filter(t => !isReturnedSale(t))
+        .sort((a, b) => new Date(b.date) - new Date(a.date));
 
     const formatDate = (isoString) => {
         return new Date(isoString).toLocaleDateString('en-US', {

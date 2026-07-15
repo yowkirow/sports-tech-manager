@@ -3,6 +3,7 @@ import { Search, Trash2, Calendar, DollarSign, Filter, Edit2, User, Coins } from
 import clsx from 'clsx';
 import { createPortal } from 'react-dom';
 import AddExpenseForm from './Expenses/AddExpenseForm'; // Reusing form for editing? Or create new?
+import { isReturnedSale } from '../lib/transactionStatus';
 // For Sales, better to just edit simple fields or redirect to Orders.
 // User asked to "make it editable (Goal: summary of orders and amounts)"
 // I'll implement a simple Edit Modal for Sales that allows changing: Date, Description (Customer), Amount (Override).
@@ -69,7 +70,7 @@ const Sales = ({ transactions, onDeleteTransaction, onUpdateTransaction }) => {
     // Filter only sale transactions
     const sales = useMemo(() => {
         return transactions
-            .filter(t => t.type === 'sale' || t.type === 'club_income')
+            .filter(t => (t.type === 'sale' && !isReturnedSale(t)) || t.type === 'club_income')
             .filter(t => {
                 const matchesSearch =
                     t.description.toLowerCase().includes(searchTerm.toLowerCase()) ||

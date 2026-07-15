@@ -1,6 +1,7 @@
 import React, { useState } from 'react';
 import { TrendingUp, TrendingDown, DollarSign, Calendar, Trash2 } from 'lucide-react';
 import clsx from 'clsx';
+import { isReturnedSale } from '../lib/transactionStatus';
 
 const StatCard = ({ title, amount, icon: Icon, colorClass, gradient }) => (
     <div className="glass-card relative overflow-hidden group">
@@ -60,7 +61,7 @@ const DashboardStats = ({ transactions, onDeleteAll }) => {
     const filtered = getFilteredTransactions();
 
     const totalSales = filtered
-        .filter(t => t.type === 'sale')
+        .filter(t => t.type === 'sale' && !isReturnedSale(t))
         .reduce((acc, curr) => acc + Number(curr.amount), 0);
 
     const totalExpenses = filtered

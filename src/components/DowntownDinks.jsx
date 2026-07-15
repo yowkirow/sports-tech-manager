@@ -4,6 +4,7 @@ import clsx from 'clsx';
 import { Banknote, Calendar, Edit2, Filter, Loader2, Plus, Save, Search, Trash2, TrendingDown, Trophy, X } from 'lucide-react';
 import { supabase } from '../lib/supabaseClient';
 import { useToast } from './ui/Toast';
+import { isReturnedSale } from '../lib/transactionStatus';
 
 const CLUB_SLUG = 'downtown-dinks';
 const INCOME_TYPES = [
@@ -202,7 +203,7 @@ export default function DowntownDinks({ transactions, onAddTransaction, onUpdate
 
     const earnings = useMemo(() => {
         return transactions
-            .filter(t => ['sale', 'club_income'].includes(t.type) && t.details?.club === CLUB_SLUG)
+            .filter(t => ['sale', 'club_income'].includes(t.type) && !isReturnedSale(t) && t.details?.club === CLUB_SLUG)
             .filter(t => {
                 const matchesSearch = (t.description || '').toLowerCase().includes(searchTerm.toLowerCase());
                 const matchesType = filterType === 'all' || t.details?.incomeType === filterType;
@@ -212,7 +213,7 @@ export default function DowntownDinks({ transactions, onAddTransaction, onUpdate
     }, [transactions, searchTerm, filterType]);
 
     const allClubEarnings = useMemo(() => {
-        return transactions.filter(t => ['sale', 'club_income'].includes(t.type) && t.details?.club === CLUB_SLUG);
+        return transactions.filter(t => ['sale', 'club_income'].includes(t.type) && !isReturnedSale(t) && t.details?.club === CLUB_SLUG);
     }, [transactions]);
 
     const allClubExpenses = useMemo(() => {
