@@ -22,9 +22,10 @@ class ErrorBoundary extends React.Component {
     render() {
         if (this.state.hasError) {
             return (
-                <div style={{ padding: '20px', color: 'red', background: '#fff' }}>
-                    <h1>Something went wrong.</h1>
-                    <pre>{this.state.error.toString()}</pre>
+                <div role="alert" className="min-h-screen flex flex-col items-center justify-center gap-4 bg-slate-900 p-6 text-center text-slate-100">
+                    <h1 className="text-xl font-bold">Unable to open this screen</h1>
+                    <p className="max-w-md text-slate-300">Check your connection, then reload SportsTech. Unsaved changes may be lost.</p>
+                    <button type="button" className="btn-primary" onClick={() => window.location.reload()}>Reload SportsTech</button>
                 </div>
             );
         }

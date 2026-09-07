@@ -104,12 +104,7 @@ export default function AddExpenseForm({ onAddTransaction, onUpdateTransaction, 
         try {
             const finalCategory = category === 'Other' ? customCategory : category;
 
-            // Combine selected date with current time (Robust Method)
-            const [y, m, d] = date.split('-').map(Number);
-            const newDate = new Date(); // Current time capture
-            newDate.setFullYear(y);
-            newDate.setMonth(m - 1);
-            newDate.setDate(d);
+            const newDate = withLocalDate(date);
 
             const { data: { user } } = await supabase.auth.getUser();
 
@@ -318,3 +313,4 @@ export default function AddExpenseForm({ onAddTransaction, onUpdateTransaction, 
         </div >
     );
 }
+import { withLocalDate } from '../../lib/transactionDate';

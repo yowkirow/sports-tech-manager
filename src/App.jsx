@@ -1,46 +1,67 @@
-import React, { useState } from 'react';
+import React, { lazy, Suspense, useState } from 'react';
 import useSupabaseTransactions from './hooks/useSupabaseTransactions';
 import { createPortal } from 'react-dom';
-import DashboardStats from './components/DashboardStats';
-import TransactionList from './components/TransactionList';
-import InventoryList from './components/InventoryList';
-import AddStockForm from './components/Inventory/AddStockForm';
-import POSInterface from './components/POS/POSInterface';
-import OrderManagement from './components/Orders/OrderManagement';
-import Expenses from './components/Expenses';
-import Sales from './components/Sales';
-import DowntownDinks from './components/DowntownDinks';
-import VoucherManager from './components/Vouchers/VoucherManager';
-import SupplierManager from './components/Supplier/SupplierManager';
-import AdsReporting from './components/Reports/AdsReporting';
 import { LayoutDashboard, Store, ShoppingBag, Package, LogOut, X, Wallet, Banknote, Menu, Globe, Ticket, Settings as SettingsIcon, Lock, ClipboardList, TrendingUp, Trophy } from 'lucide-react';
 import clsx from 'clsx';
 import { motion, AnimatePresence } from 'framer-motion';
 import { useToast } from './components/ui/Toast';
-import Storefront from './components/Shop/Storefront';
-import Login from './components/Auth/Login';
 import { supabase } from './lib/supabaseClient';
-import ProfileSettings from './components/Settings/ProfileSettings';
-import OrderTracking from './components/Shop/OrderTracking';
+import LoadingState from './components/ui/LoadingState';
 import { sendSMS } from './lib/textbee';
 
+const DashboardStats = lazy(() => import('./components/DashboardStats'));
+const TransactionList = lazy(() => import('./components/TransactionList'));
+const InventoryList = lazy(() => import('./components/InventoryList'));
+const AddStockForm = lazy(() => import('./components/Inventory/AddStockForm'));
+const POSInterface = lazy(() => import('./components/POS/POSInterface'));
+const OrderManagement = lazy(() => import('./components/Orders/OrderManagement'));
+const Expenses = lazy(() => import('./components/Expenses'));
+const Sales = lazy(() => import('./components/Sales'));
+const DowntownDinks = lazy(() => import('./components/DowntownDinks'));
+const VoucherManager = lazy(() => import('./components/Vouchers/VoucherManager'));
+const SupplierManager = lazy(() => import('./components/Supplier/SupplierManager'));
+const AdsReporting = lazy(() => import('./components/Reports/AdsReporting'));
+const Storefront = lazy(() => import('./components/Shop/Storefront'));
+const Login = lazy(() => import('./components/Auth/Login'));
+const ProfileSettings = lazy(() => import('./components/Settings/ProfileSettings'));
+const OrderTracking = lazy(() => import('./components/Shop/OrderTracking'));
+
+const NavItem = ({ id, label, icon: Icon, activeTab, onNavigate }) => (
+    <button
+        onClick={() => onNavigate(id)}
+        aria-current={activeTab === id ? 'page' : undefined}
+        className={clsx(
+            "w-full flex items-center gap-3 px-4 py-3 rounded-xl transition-all duration-200",
+            activeTab === id
+                ? "bg-primary text-white shadow-lg shadow-primary/25"
+                : "text-slate-400 hover:bg-white/5 hover:text-slate-200"
+        )}
+    >
+        <Icon size={20} />
+        <span className="font-medium">{label}</span>
+    </button>
+);
 
 function App() {
+    const isAdminPath = window.location.pathname.startsWith('/admin');
+    const isTrackPath = window.location.pathname.startsWith('/track');
+    const [session, setSession] = useState(null);
+    const [authLoading, setAuthLoading] = useState(true);
     const {
         transactions,
         loading,
+        error,
         addTransaction: addToSupabase,
+        addTransactions,
         updateTransaction: updateInSupabase,
         deleteTransaction: deleteFromSupabase,
         deleteAllTransactions,
         refetch
-    } = useSupabaseTransactions();
+    } = useSupabaseTransactions({ enabled: !isTrackPath && (!isAdminPath || !!session) });
 
     const [activeTab, setActiveTab] = useState('pos'); // Default to POS for speed
     const [showAddStockModal, setShowAddStockModal] = useState(false);
     const [isSidebarOpen, setIsSidebarOpen] = useState(false);
-    const [session, setSession] = useState(null);
-    const [user, setUser] = useState(null);
     const [dbRole, setDbRole] = useState(null); // Role from DB
 
     // Lock Screen State
@@ -89,31 +110,36 @@ function App() {
 
     // Auth Listener & Role Fetcher
     React.useEffect(() => {
-        const fetchRole = async (email) => {
-            if (!email) return;
-            const { data } = await supabase
-                .from('admin_directory')
-                .select('role')
-                .eq('email', email)
-                .single();
-            if (data?.role) setDbRole(data.role);
-        };
-
-        supabase.auth.getSession().then(({ data: { session } }) => {
-            setSession(session);
-            if (session?.user?.email) fetchRole(session.user.email);
-        });
-
+        if (!isAdminPath) return;
         const {
             data: { subscription },
         } = supabase.auth.onAuthStateChange((_event, session) => {
             setSession(session);
-            if (session?.user?.email) fetchRole(session.user.email);
-            else setDbRole(null);
+            setAuthLoading(false);
         });
 
         return () => subscription.unsubscribe();
-    }, []);
+    }, [isAdminPath]);
+
+    React.useEffect(() => {
+        let active = true;
+        setDbRole(null);
+        const email = session?.user?.email;
+        if (!email) return;
+
+        const fetchRole = async () => {
+            const { data, error } = await supabase
+                .from('admin_directory')
+                .select('role')
+                .eq('email', email)
+                .maybeSingle();
+            if (!active) return;
+            if (error) console.error('Failed to load account role:', error);
+            else setDbRole(data?.role || null);
+        };
+        fetchRole();
+        return () => { active = false; };
+    }, [session?.user?.email]);
 
     // PWA Redirect Logic
     React.useEffect(() => {
@@ -192,37 +218,29 @@ function App() {
         }
     };
 
-    const NavItem = ({ id, label, icon: Icon }) => (
-        <button
-            onClick={() => { setActiveTab(id); setIsSidebarOpen(false); }}
-            className={clsx(
-                "w-full flex items-center gap-3 px-4 py-3 rounded-xl transition-all duration-200",
-                activeTab === id
-                    ? "bg-primary text-white shadow-lg shadow-primary/25"
-                    : "text-slate-400 hover:bg-white/5 hover:text-slate-200"
-            )}
-        >
-            <Icon size={20} />
-            <span className="font-medium">{label}</span>
-        </button>
-    );
-
-    // Simplified Path-Based Routing
-    const isAdminPath = window.location.pathname.startsWith('/admin');
-    const isTrackPath = window.location.pathname.startsWith('/track');
+    const navProps = {
+        activeTab,
+        onNavigate: (id) => { setActiveTab(id); setIsSidebarOpen(false); }
+    };
 
     // Tracking Route
     if (isTrackPath) return <OrderTracking />;
 
     // Default to Storefront unless on /admin path
     if (!isAdminPath) {
+        if (loading && transactions.length === 0) return <LoadingState label="Loading store..." />;
+        if (error && transactions.length === 0) {
+            return <LoadingState error={error} onRetry={refetch} />;
+        }
         return (
             <Storefront
                 transactions={transactions}
-                onPlaceOrder={addTransaction}
+                onPlaceOrder={addTransactions}
             />
         );
     }
+
+    if (authLoading) return <LoadingState label="Loading account..." />;
 
     if (!session) {
         return <Login />;
@@ -232,7 +250,7 @@ function App() {
         return (
             <Login
                 unlockMode={true}
-                user={user}
+                user={session.user}
                 onUnlock={() => setIsLocked(false)}
                 onLogout={() => {
                     setIsLocked(false);
@@ -267,28 +285,28 @@ function App() {
                     <div className="flex items-center gap-3">
                         <img src="/logo.png" alt="SportsTech" className="h-16 w-auto object-contain" />
                     </div>
-                    <button onClick={() => setIsSidebarOpen(false)} className="lg:hidden text-slate-400 hover:text-white">
+                    <button aria-label="Close navigation" onClick={() => setIsSidebarOpen(false)} className="lg:hidden text-slate-400 hover:text-white">
                         <X size={24} />
                     </button>
                 </div>
 
                 <nav className="flex-1 px-4 space-y-2 mt-4 overflow-y-auto">
-                    {!isStaff && <NavItem id="pos" label="Point of Sale" icon={Store} />}
-                    <NavItem id="orders" label="Orders" icon={Package} />
+                    {!isStaff && <NavItem {...navProps} id="pos" label="Point of Sale" icon={Store} />}
+                    <NavItem {...navProps} id="orders" label="Orders" icon={Package} />
                     {!(isReseller || isStaff) && (
                         <>
-                            <NavItem id="sales" label="Sales" icon={Banknote} />
-                            <NavItem id="expenses" label="Expenses" icon={Wallet} />
-                            <NavItem id="downtown-dinks" label="Downtown Dinks" icon={Trophy} />
-                            <NavItem id="inventory" label="Inventory" icon={ShoppingBag} />
-                            <NavItem id="supplier" label="Supplier Order" icon={ClipboardList} />
-                            <NavItem id="vouchers" label="Vouchers" icon={Ticket} />
-                            <NavItem id="reports" label="Reports" icon={TrendingUp} />
+                            <NavItem {...navProps} id="sales" label="Sales" icon={Banknote} />
+                            <NavItem {...navProps} id="expenses" label="Expenses" icon={Wallet} />
+                            <NavItem {...navProps} id="downtown-dinks" label="Downtown Dinks" icon={Trophy} />
+                            <NavItem {...navProps} id="inventory" label="Inventory" icon={ShoppingBag} />
+                            <NavItem {...navProps} id="supplier" label="Supplier Order" icon={ClipboardList} />
+                            <NavItem {...navProps} id="vouchers" label="Vouchers" icon={Ticket} />
+                            <NavItem {...navProps} id="reports" label="Reports" icon={TrendingUp} />
                         </>
                     )}
-                    {!isStaff && <NavItem id="dashboard" label="Dashboard" icon={LayoutDashboard} />}
+                    {!isStaff && <NavItem {...navProps} id="dashboard" label="Dashboard" icon={LayoutDashboard} />}
                     <div className="border-t border-white/5 my-2 mx-4"></div>
-                    <NavItem id="settings" label="Settings" icon={SettingsIcon} />
+                    <NavItem {...navProps} id="settings" label="Settings" icon={SettingsIcon} />
                 </nav>
 
                 <div className="p-4 border-t border-white/5 space-y-2">
@@ -324,7 +342,7 @@ function App() {
             <main className="flex-1 overflow-hidden relative flex flex-col">
                 <header className="h-16 border-b border-white/5 flex items-center justify-between px-4 lg:px-8 bg-slate-900/50 backdrop-blur-sm shrink-0">
                     <div className="flex items-center gap-4">
-                        <button onClick={() => setIsSidebarOpen(true)} className="lg:hidden text-slate-400 hover:text-white">
+                        <button aria-label="Open navigation" onClick={() => setIsSidebarOpen(true)} className="lg:hidden text-slate-400 hover:text-white">
                             <Menu size={24} />
                         </button>
                         <h2 className="text-lg lg:text-xl font-bold text-white truncate max-w-[200px] sm:max-w-none">
@@ -354,7 +372,13 @@ function App() {
                 </header>
 
                 <div className="flex-1 overflow-y-auto p-4 lg:p-8 relative">
-                    {loading && transactions.length === 0 ? (
+                    {error && (
+                        <div role="alert" className="mb-4 flex flex-wrap items-center justify-between gap-3 rounded-xl border border-red-500/20 bg-red-500/10 p-4 text-red-200">
+                            <span>Unable to sync data: {error}</span>
+                            <button onClick={refetch} disabled={loading} className="btn-secondary">Retry</button>
+                        </div>
+                    )}
+                    {error && transactions.length === 0 ? null : loading && transactions.length === 0 ? (
                         <div className="absolute inset-0 flex items-center justify-center">
                             <div className="flex flex-col items-center gap-4">
                                 <div className="w-12 h-12 border-4 border-primary/30 border-t-primary rounded-full animate-spin"></div>
@@ -363,6 +387,7 @@ function App() {
                         </div>
                     ) : (
                         <div className="max-w-7xl mx-auto h-full">
+                            <Suspense fallback={<LoadingState label="Loading workspace..." />}>
                             {!isStaff && activeTab === 'pos' && (
                                 <POSInterface
                                     transactions={transactions} // POS needs ALL transactions to calculate Inventory/Products correctly
@@ -437,8 +462,9 @@ function App() {
                                 <div className="animate-fade-in">
                                     <VoucherManager
                                         transactions={transactions}
-                                        onAddTransaction={addTransaction}
-                                        onDeleteTransaction={deleteTransaction}
+                                        onAddTransaction={addToSupabase}
+                                        onUpdateTransaction={updateInSupabase}
+                                        onDeleteTransaction={deleteFromSupabase}
                                     />
                                 </div>
                             )}
@@ -467,6 +493,7 @@ function App() {
                                     />
                                 </div>
                             )}
+                            </Suspense>
                         </div>
                     )}
                 </div>
@@ -476,14 +503,16 @@ function App() {
             {showAddStockModal && createPortal(
                 <div className="fixed inset-0 z-[9999] flex items-center justify-center bg-black/80 backdrop-blur-sm p-4">
                     <div className="w-full max-w-2xl relative">
-                        <AddStockForm
-                            onAddTransaction={(t) => {
-                                addTransaction(t);
-                                setShowAddStockModal(false);
-                            }}
-                            onClose={() => setShowAddStockModal(false)}
-                            transactions={transactions}
-                        />
+                        <Suspense fallback={<LoadingState label="Loading stock form..." />}>
+                            <AddStockForm
+                                onAddTransaction={(t) => {
+                                    addTransaction(t);
+                                    setShowAddStockModal(false);
+                                }}
+                                onClose={() => setShowAddStockModal(false)}
+                                transactions={transactions}
+                            />
+                        </Suspense>
                     </div>
                 </div>,
                 document.body
@@ -492,4 +521,6 @@ function App() {
     );
 }
 
-export default App;
+export default function AppLoader() {
+    return <Suspense fallback={<LoadingState />}><App /></Suspense>;
+}

@@ -14,3 +14,11 @@ For advanced database management, complex queries, or schema inspection beyond s
 3. Handle API keys and sensitive project references with extreme care as per the skill's security guidelines.
 
 Failure to use the `@git-pushing` or `@supabase-automation` workflows for their respective tasks is prohibited for this workspace.
+
+## Automatic Deployment
+
+After each completed code change set, run the relevant checks and production build, commit the changes, and push the working branch so the connected Vercel integration deploys them. Deploy completed change sets, not intermediate edits.
+
+Verify the deployment status for the exact pushed commit and report its URL and environment. A successful Git push alone does not confirm a successful deployment.
+
+Working branches use Vercel preview deployments. Production remains tied to `main`; do not merge or push to `main` solely to deploy unless the user explicitly requests a production release. Report deployment failures or missing Vercel integration instead of claiming the changes are live.

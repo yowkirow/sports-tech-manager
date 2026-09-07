@@ -32,12 +32,7 @@ const incomeTypeLabel = (value) => {
 };
 
 const makeDateWithCurrentTime = (date) => {
-    const [y, m, d] = date.split('-').map(Number);
-    const nextDate = new Date();
-    nextDate.setFullYear(y);
-    nextDate.setMonth(m - 1);
-    nextDate.setDate(d);
-    return nextDate;
+    return withLocalDate(date);
 };
 
 const StatCard = ({ title, amount, icon: Icon, tone }) => (
@@ -423,3 +418,4 @@ export default function DowntownDinks({ transactions, onAddTransaction, onUpdate
         </div>
     );
 }
+import { withLocalDate } from '../lib/transactionDate';

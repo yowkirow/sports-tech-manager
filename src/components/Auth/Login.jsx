@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import React, { useCallback, useRef, useState } from 'react';
 import { supabase } from '../../lib/supabaseClient';
 import { motion, AnimatePresence } from 'framer-motion';
 import { Lock, Loader2, User, Delete, KeyRound, ArrowLeft, LogOut } from 'lucide-react';
@@ -18,6 +18,8 @@ export default function Login({ unlockMode = false, user = null, onUnlock, onLog
     const [password, setPassword] = useState('');
 
     const [loading, setLoading] = useState(false);
+    const pinAttemptPending = useRef(false);
+    const autoSubmittedPin = useRef(null);
 
     const [adminList, setAdminList] = useState(ADMIN_ACCOUNTS);
 
@@ -54,28 +56,23 @@ export default function Login({ unlockMode = false, user = null, onUnlock, onLog
         setPin(prev => prev.slice(0, -1));
     };
 
-    const handleUnlock = async () => {
+    const handleUnlock = useCallback(() => {
         if (pin.length < 4) return showToast('PIN must be at least 4 digits', 'error');
-        setLoading(true);
-
-        // Simulating a delay for effect
-        setTimeout(async () => {
-            const storedPin = user?.user_metadata?.pos_pin;
-
-            if (storedPin && storedPin === pin) {
-                showToast('Unlocked', 'success');
-                if (onUnlock) onUnlock();
-            } else {
-                showToast('Invalid Quick PIN', 'error');
-                setPin('');
-            }
-            setLoading(false);
-        }, 500);
-    };
+        const storedPin = user?.user_metadata?.pos_pin;
+        if (storedPin && storedPin === pin) {
+            showToast('Unlocked', 'success');
+            if (onUnlock) onUnlock();
+        } else {
+            showToast('Invalid Quick PIN', 'error');
+            setPin('');
+        }
+    }, [pin, user, onUnlock, showToast]);
 
     // Login with PIN (Tries specific admin emails)
-    const handlePinLogin = async () => {
+    const handlePinLogin = useCallback(async () => {
+        if (pinAttemptPending.current) return;
         if (pin.length < 4) return showToast('PIN must be at least 4 digits', 'error');
+        pinAttemptPending.current = true;
         setLoading(true);
         try {
             let success = false;
@@ -97,9 +94,10 @@ export default function Login({ unlockMode = false, user = null, onUnlock, onLog
             showToast('Invalid PIN', 'error');
             setPin('');
         } finally {
+            pinAttemptPending.current = false;
             setLoading(false);
         }
-    };
+    }, [pin, adminList, showToast]);
 
     const handlePasswordLogin = async (e) => {
         e.preventDefault();
@@ -122,10 +120,15 @@ export default function Login({ unlockMode = false, user = null, onUnlock, onLog
 
     // Effects
     React.useEffect(() => {
+        if (autoSubmittedPin.current === pin) return;
         if (unlockMode && pin.length >= 4 && pin.length === (user?.user_metadata?.pos_pin?.length || 6)) {
+            autoSubmittedPin.current = pin;
             handleUnlock();
         } else if (!unlockMode && mode === 'pin' && pin.length === 6) {
+            autoSubmittedPin.current = pin;
             handlePinLogin();
+        } else {
+            autoSubmittedPin.current = null;
         }
     }, [pin, unlockMode, user, mode, handleUnlock, handlePinLogin]);
 
@@ -175,11 +178,13 @@ export default function Login({ unlockMode = false, user = null, onUnlock, onLog
 
                             <form onSubmit={handlePasswordLogin} className="space-y-4">
                                 <div>
-                                    <label className="text-xs font-bold text-slate-500 uppercase block mb-1.5">Email Address</label>
+                                    <label htmlFor="login-email" className="text-xs font-bold text-slate-500 uppercase block mb-1.5">Email Address</label>
                                     <div className="relative">
                                         <User className="absolute left-3 top-1/2 -translate-y-1/2 text-slate-500" size={18} />
                                         <input
                                             type="email"
+                                            id="login-email"
+                                            autoComplete="username"
                                             value={email}
                                             onChange={e => setEmail(e.target.value)}
                                             className="glass-input pl-10 w-full"
@@ -189,11 +194,13 @@ export default function Login({ unlockMode = false, user = null, onUnlock, onLog
                                     </div>
                                 </div>
                                 <div>
-                                    <label className="text-xs font-bold text-slate-500 uppercase block mb-1.5">Password</label>
+                                    <label htmlFor="login-password" className="text-xs font-bold text-slate-500 uppercase block mb-1.5">Password</label>
                                     <div className="relative">
                                         <Lock className="absolute left-3 top-1/2 -translate-y-1/2 text-slate-500" size={18} />
                                         <input
                                             type="password"
+                                            id="login-password"
+                                            autoComplete="current-password"
                                             value={password}
                                             onChange={e => setPassword(e.target.value)}
                                             className="glass-input pl-10 w-full"
@@ -251,6 +258,7 @@ export default function Login({ unlockMode = false, user = null, onUnlock, onLog
                                 </button>
                                 <button
                                     onClick={handleDelete}
+                                    aria-label="Delete last PIN digit"
                                     disabled={loading}
                                     className="h-16 w-16 rounded-full hover:bg-white/5 text-slate-400 hover:text-white transition-colors flex items-center justify-center mx-auto"
                                 >

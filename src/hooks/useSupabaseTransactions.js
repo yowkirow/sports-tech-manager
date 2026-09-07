@@ -1,53 +1,57 @@
-import { useState, useEffect } from 'react';
+import { useCallback, useEffect, useRef, useState } from 'react';
 import { supabase } from '../lib/supabaseClient';
+import { createTransactionSync, fetchTransactionHistory, insertTransactionBatch } from '../lib/transactionSync';
 
-const useSupabaseTransactions = () => {
+let nextChannelId = 0;
+let migrationPromise = null;
+
+const migrateFromLocalStorage = () => {
+    if (!migrationPromise) {
+        migrationPromise = (async () => {
+            const localData = window.localStorage.getItem('sports-tech-transactions');
+            if (!localData) return;
+
+            const parsedData = JSON.parse(localData);
+            if (!Array.isArray(parsedData)) throw new Error('Stored transactions are not a valid transaction array.');
+            if (parsedData.length === 0) return;
+
+            const { error } = await supabase.from('transactions').insert(parsedData);
+            if (error) throw error;
+            window.localStorage.removeItem('sports-tech-transactions');
+        })().finally(() => {
+            migrationPromise = null;
+        });
+    }
+    return migrationPromise;
+};
+
+const useSupabaseTransactions = ({ enabled = true } = {}) => {
     const [transactions, setTransactions] = useState([]);
-    const [loading, setLoading] = useState(true);
+    const [loading, setLoading] = useState(enabled);
     const [error, setError] = useState(null);
+    const syncRef = useRef(null);
 
-    // Fetch transactions from Supabase
-    const fetchTransactions = async () => {
+    const fetchTransactions = useCallback(() => syncRef.current?.refresh() ?? Promise.resolve(), []);
+
+    const addTransactions = useCallback(async (newTransactions) => {
+        const sync = syncRef.current;
         try {
-            setLoading(true);
-            const { data, error } = await supabase
-                .from('transactions')
-                .select('*')
-                .order('date', { ascending: false });
-
-            if (error) throw error;
-            setTransactions(data || []);
-        } catch (err) {
-            console.error('Error fetching transactions:', err);
-            setError(err.message);
-        } finally {
-            setLoading(false);
-        }
-    };
-
-    // Add a new transaction
-    const addTransaction = async (transaction) => {
-        try {
-            const { data, error } = await supabase
-                .from('transactions')
-                .insert([transaction])
-                .select()
-                .single();
-
-            if (error) throw error;
-
-            // Update local state with functional update to avoid stale closures
-            setTransactions(prev => [data, ...prev]);
+            const data = await insertTransactionBatch(supabase, newTransactions);
+            sync?.apply({ type: 'upsert', rows: data });
             return data;
         } catch (err) {
-            console.error('Error adding transaction:', err);
-            setError(err.message);
+            sync?.reportError(err);
             throw err;
         }
-    };
+    }, []);
 
-    // Update a transaction
-    const updateTransaction = async (id, updates) => {
+    const addTransaction = useCallback(async (transaction) => {
+        const [saved] = await addTransactions([transaction]);
+        return saved;
+    }, [addTransactions]);
+
+    const updateTransaction = useCallback(async (id, updates) => {
+        const sync = syncRef.current;
         try {
             const { data, error } = await supabase
                 .from('transactions')
@@ -57,172 +61,105 @@ const useSupabaseTransactions = () => {
                 .single();
 
             if (error) throw error;
-
-            // Update local state
-            setTransactions(prev => prev.map(t => t.id === id ? data : t));
+            if (!data || data.id !== id) throw new Error('The updated transaction could not be verified. Please refresh.');
+            sync?.apply({ type: 'upsert', rows: [data] });
             return data;
         } catch (err) {
-            console.error('Error updating transaction:', err);
-            setError(err.message);
+            sync?.reportError(err);
             throw err;
         }
-    };
+    }, []);
 
-    // Delete a transaction
-    const deleteTransaction = async (id) => {
+    const deleteTransaction = useCallback(async (id) => {
+        const sync = syncRef.current;
+        try {
+            const { error } = await supabase.from('transactions').delete().eq('id', id);
+            if (error) throw error;
+            sync?.apply({ type: 'delete', ids: [id] });
+        } catch (err) {
+            sync?.reportError(err);
+            throw err;
+        }
+    }, []);
+
+    const deleteAllTransactions = useCallback(async () => {
+        const sync = syncRef.current;
         try {
             const { error } = await supabase
                 .from('transactions')
                 .delete()
-                .eq('id', id);
-
+                .neq('id', '00000000-0000-0000-0000-000000000000');
             if (error) throw error;
-
-            // Update local state
-            setTransactions(prev => prev.filter(t => t.id !== id));
+            sync?.apply({ type: 'clear' });
         } catch (err) {
-            console.error('Error deleting transaction:', err);
-            setError(err.message);
+            sync?.reportError(err);
             throw err;
         }
-    };
+    }, []);
 
-    // Delete all transactions
-    const deleteAllTransactions = async () => {
-        try {
-            const { error } = await supabase
-                .from('transactions')
-                .delete()
-                .neq('id', '00000000-0000-0000-0000-000000000000'); // Delete all rows
-
-            if (error) throw error;
-
-            // Clear local state
-            setTransactions([]);
-        } catch (err) {
-            console.error('Error deleting all transactions:', err);
-            setError(err.message);
-            throw err;
-        }
-    };
-
-    // Migrate data from LocalStorage to Supabase
-    const migrateFromLocalStorage = async () => {
-        try {
-            const localData = window.localStorage.getItem('sports-tech-transactions');
-            if (!localData) return false;
-
-            const parsedData = JSON.parse(localData);
-            if (!Array.isArray(parsedData) || parsedData.length === 0) return false;
-
-            console.log(`Migrating ${parsedData.length} transactions from LocalStorage...`);
-
-            // Insert all transactions
-            const { error } = await supabase
-                .from('transactions')
-                .insert(parsedData);
-
-            if (error) throw error;
-
-            // Clear LocalStorage after successful migration
-            window.localStorage.removeItem('sports-tech-transactions');
-            console.log('Migration complete!');
-
-            return true;
-        } catch (err) {
-            console.error('Error migrating data:', err);
-            setError(err.message);
-            return false;
-        }
-    };
-
-    // Initial load
     useEffect(() => {
-        const init = async () => {
-            // First, try to migrate any existing LocalStorage data
-            const migrated = await migrateFromLocalStorage();
+        if (!enabled) {
+            setTransactions([]);
+            setLoading(false);
+            setError(null);
+            return;
+        }
 
-            // Then fetch all transactions
-            await fetchTransactions();
+        const sync = createTransactionSync({
+            // Share an in-progress migration across StrictMode setups, then fetch only once.
+            prepare: migrateFromLocalStorage,
+            read: signal => fetchTransactionHistory(supabase, { signal }),
+            onTransactions: setTransactions,
+            onLoading: setLoading,
+            onError: err => setError(err ? (err.message || String(err)) : null)
+        });
+        syncRef.current = sync;
+        sync.refresh();
 
-            if (migrated) {
-                // Reload to show migrated data
-                await fetchTransactions();
-            }
-        };
-
-        init();
-
-        // Real-time Subscription
         const channel = supabase
-            .channel('db-changes') // Unique channel name
+            .channel(`transaction-changes-${++nextChannelId}`)
             .on(
                 'postgres_changes',
                 { event: '*', schema: 'public', table: 'transactions' },
                 (payload) => {
-                    if (payload.eventType === 'INSERT') {
-                        setTransactions(prev => {
-                            if (prev.find(t => t.id === payload.new.id)) return prev;
-                            return [payload.new, ...prev];
-                        });
-                    } else if (payload.eventType === 'UPDATE') {
-                        setTransactions(prev => prev.map(t =>
-                            t.id === payload.new.id ? { ...t, ...payload.new } : t
-                        ));
-                    } else if (payload.eventType === 'DELETE') {
-                        setTransactions(prev => prev.filter(t => t.id !== payload.old.id));
+                    if ((payload.eventType === 'INSERT' || payload.eventType === 'UPDATE') && payload.new?.id != null) {
+                        sync.apply({ type: 'upsert', rows: [payload.new] });
+                    } else if (payload.eventType === 'DELETE' && payload.old?.id != null) {
+                        sync.apply({ type: 'delete', ids: [payload.old.id] });
                     }
                 }
             )
-            .subscribe((status, err) => {
-                if (status === 'SUBSCRIBED') {
-                    console.log('Successfully subscribed to real-time changes');
-                } else if (status === 'CHANNEL_ERROR') {
-                    console.error('Real-time channel error:', err);
-                } else if (status === 'TIMED_OUT') {
-                    console.error('Real-time connection timed out');
-                } else if (status === 'CLOSED') {
-                    console.log('Real-time connection closed');
+            .subscribe((status, subscriptionError) => {
+                if (status === 'CHANNEL_ERROR' || status === 'TIMED_OUT') {
+                    console.error('Transaction live updates disconnected:', subscriptionError || status);
                 }
             });
 
-        // Visibility Change (App foregrounded) - Auto-sync
         const handleVisibilityChange = () => {
-            if (document.visibilityState === 'visible') {
-                console.log('App became visible, refetching transactions...');
-                fetchTransactions();
-            }
+            if (document.visibilityState === 'visible') sync.refresh();
         };
+        const handleReload = () => sync.refresh();
 
-        // Window Focus - Auto-sync
-        const handleFocus = () => {
-            console.log('Window focused, refetching transactions...');
-            fetchTransactions();
-        };
-
-        // Online/Offline status
-        const handleOnline = () => {
-            console.log('Browser came back online, refetching transactions...');
-            fetchTransactions();
-        };
-
-        window.addEventListener('visibilitychange', handleVisibilityChange);
-        window.addEventListener('focus', handleFocus);
-        window.addEventListener('online', handleOnline);
+        document.addEventListener('visibilitychange', handleVisibilityChange);
+        window.addEventListener('focus', handleReload);
+        window.addEventListener('online', handleReload);
 
         return () => {
-            supabase.removeChannel(channel);
-            window.removeEventListener('visibilitychange', handleVisibilityChange);
-            window.removeEventListener('focus', handleFocus);
-            window.removeEventListener('online', handleOnline);
+            sync.dispose();
+            if (syncRef.current === sync) syncRef.current = null;
+            void supabase.removeChannel(channel);
+            document.removeEventListener('visibilitychange', handleVisibilityChange);
+            window.removeEventListener('focus', handleReload);
+            window.removeEventListener('online', handleReload);
         };
-    }, []);
+    }, [enabled]);
 
     return {
         transactions,
-        loading,
+        loading: enabled && loading,
         error,
         addTransaction,
+        addTransactions,
         updateTransaction,
         deleteTransaction,
         deleteAllTransactions,

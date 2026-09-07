@@ -1,73 +1,65 @@
-import * as XLSX from 'xlsx';
 import { Package, Download, Search, Plus, X } from 'lucide-react';
-import { useState } from 'react';
+import { useMemo, useState } from 'react';
 import clsx from 'clsx';
-import { motion, AnimatePresence } from 'framer-motion';
+import { useToast } from './ui/Toast';
 
 const InventoryList = ({ transactions, onAddTransaction, onDeleteTransaction, onOpenAddStock }) => {
     const [searchTerm, setSearchTerm] = useState('');
+    const [exporting, setExporting] = useState(false);
+    const { showToast } = useToast();
 
     // Calculate inventory
-    const inventory = {};
+    const inventoryItems = useMemo(() => {
+        const inventory = {};
+        transactions.forEach(t => {
+            if (!t.details || (!t.details.size && !t.details.subCategory) || t.category === 'general') return;
 
-    transactions.forEach(t => {
-        if (!t.details || (!t.details.size && !t.details.subCategory) || t.category === 'general') return;
+            let key, name, variant;
+            if (t.category === 'blanks') {
+                const { size, linkedColor, color, brand } = t.details;
+                const safeColor = (linkedColor || color || 'Unknown').trim();
+                const safeBrand = (brand || 'Sypik').trim();
+                key = `shirt-${safeBrand.toLowerCase()}-${safeColor.toLowerCase()}-${size.toLowerCase()}`;
+                name = `${safeColor} Shirt`;
+                variant = `${safeBrand} - ${size}`;
+            } else {
+                const sub = t.details.subCategory || t.category;
+                key = `misc-${sub.toLowerCase()}`;
+                name = sub;
+                variant = 'N/A';
+            }
 
-        // Key based on what it is
-        let key, name, variant;
-        if (t.category === 'blanks') {
-            const { size, linkedColor, color, brand } = t.details;
-            const safeColor = (linkedColor || color || 'Unknown').trim();
-            const safeBrand = (brand || 'Sypik').trim();
-            key = `shirt-${safeBrand.toLowerCase()}-${safeColor.toLowerCase()}-${size.toLowerCase()}`;
-
-            name = `${safeColor} Shirt`;
-            variant = `${safeBrand} - ${size}`;
-        } else {
-            // Accessories or others
-            const sub = t.details.subCategory || t.category;
-            key = `misc-${sub.toLowerCase()}`;
-            name = sub;
-            variant = 'N/A';
-        }
-
-        if (!inventory[key]) {
-            inventory[key] = {
-                id: key,
-                name,
-                variant,
-                count: 0
-            };
-        }
-
-        const quantity = t.details.quantity || 1;
-
-        if (t.type === 'expense' || t.type === 'update_stock') {
-            inventory[key].count += quantity;
-        } else if (t.type === 'sale') {
-            inventory[key].count -= quantity;
-        }
-    });
+            if (!inventory[key]) {
+                inventory[key] = { id: key, name, variant, count: 0 };
+            }
+            const quantity = t.details.quantity || 1;
+            if (t.type === 'expense' || t.type === 'update_stock') {
+                inventory[key].count += quantity;
+            } else if (t.type === 'sale') {
+                inventory[key].count -= quantity;
+            }
+        });
+        return Object.values(inventory).sort((a, b) => a.name.localeCompare(b.name));
+    }, [transactions]);
 
     // Convert to array and filter
-    const inventoryList = Object.values(inventory)
+    const inventoryList = inventoryItems
         .filter(item =>
             item.name.toLowerCase().includes(searchTerm.toLowerCase()) ||
             item.variant.toLowerCase().includes(searchTerm.toLowerCase())
-        )
-        .sort((a, b) => a.name.localeCompare(b.name));
+        );
 
-    const exportToExcel = () => {
-        const data = inventoryList.map(item => ({
-            Item: item.name,
-            Variant: item.variant,
-            Quantity: item.count
-        }));
-
-        const wb = XLSX.utils.book_new();
-        const ws = XLSX.utils.json_to_sheet(data);
-        XLSX.utils.book_append_sheet(wb, ws, "Inventory");
-        XLSX.writeFile(wb, "inventory_status.xlsx");
+    const exportToExcel = async () => {
+        setExporting(true);
+        try {
+            const { exportInventory } = await import('../lib/exportInventory');
+            exportInventory(inventoryList);
+        } catch (err) {
+            console.error('Failed to export inventory:', err);
+            showToast('Inventory export failed. Please try again.', 'error');
+        } finally {
+            setExporting(false);
+        }
     };
 
     return (
@@ -104,9 +96,10 @@ const InventoryList = ({ transactions, onAddTransaction, onDeleteTransaction, on
 
                     <button
                         onClick={exportToExcel}
+                        disabled={exporting}
                         className="btn-secondary py-2 px-4 text-sm whitespace-nowrap"
                     >
-                        <Download size={16} /> Export
+                        <Download size={16} /> {exporting ? 'Exporting...' : 'Export'}
                     </button>
                 </div>
             </div>
@@ -161,7 +154,8 @@ const InventoryList = ({ transactions, onAddTransaction, onDeleteTransaction, on
         // Identify transactions to delete
         const toDeleteIds = [];
         allTransactions.forEach(t => {
-            if (!t.details) return;
+            if (!t.details || (!t.details.size && !t.details.subCategory) || t.category === 'general') return;
+            let key;
 
             // Reconstruct key to match item.id
             if (t.category === 'blanks') {

@@ -4,6 +4,7 @@ import clsx from 'clsx';
 import { createPortal } from 'react-dom';
 import AddExpenseForm from './Expenses/AddExpenseForm'; // Reusing form for editing? Or create new?
 import { isReturnedSale } from '../lib/transactionStatus';
+import { withLocalDate } from '../lib/transactionDate';
 // For Sales, better to just edit simple fields or redirect to Orders.
 // User asked to "make it editable (Goal: summary of orders and amounts)"
 // I'll implement a simple Edit Modal for Sales that allows changing: Date, Description (Customer), Amount (Override).
@@ -18,11 +19,7 @@ const EditSaleModal = ({ transaction, onUpdate, onClose }) => {
         e.preventDefault();
         setLoading(true);
         try {
-            const [y, m, d] = date.split('-').map(Number);
-            const newDate = new Date();
-            newDate.setFullYear(y);
-            newDate.setMonth(m - 1);
-            newDate.setDate(d);
+            const newDate = withLocalDate(date);
 
             await onUpdate(transaction.id, {
                 date: newDate.toISOString(),

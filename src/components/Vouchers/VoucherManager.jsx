@@ -1,43 +1,29 @@
-import React, { useState } from 'react';
+import React, { useMemo, useState } from 'react';
 import { Ticket, Plus, Trash2, Tag, Percent, DollarSign, Save, X, ToggleLeft, ToggleRight, Check } from 'lucide-react';
 import { motion, AnimatePresence } from 'framer-motion';
 import { useToast } from '../ui/Toast';
-import { isReturnedSale } from '../../lib/transactionStatus';
+import { getVoucherUsage } from '../../lib/voucherUsage';
 
-export default function VoucherManager({ transactions, onAddTransaction, onDeleteTransaction }) {
+export default function VoucherManager({ transactions, onAddTransaction, onUpdateTransaction, onDeleteTransaction }) {
     const { showToast } = useToast();
     const [showAddModal, setShowAddModal] = useState(false);
     const [searchTerm, setSearchTerm] = useState('');
+    const [saving, setSaving] = useState(false);
 
-    const vouchers = transactions.filter(t => t.type === 'voucher').map(t => {
-        const usageCount = transactions.filter(tr =>
-            tr.type === 'sale' &&
-            !isReturnedSale(tr) &&
-            tr.details?.voucherCode === t.details.code
-        ).length; // Rough count based on items or orders? Storefront splits items.
-        // Wait, storefront splits items into multiple transactions. Each has 'voucherCode'.
-        // So 'usageCount' would be number of items sold with this voucher.
-        // BUT usually usage limit is per ORDER.
-        // If we split implementation, we need a way to count distinct ORDERS.
-        // 'tr.details.orderId' is unique per order.
-        const uniqueOrders = new Set(
-            transactions
-                .filter(tr => tr.type === 'sale' && !isReturnedSale(tr) && tr.details?.voucherCode === t.details.code)
-                .map(tr => tr.details.orderId)
-        ).size;
-
-        return {
+    const vouchers = useMemo(() => {
+        const usage = getVoucherUsage(transactions);
+        return transactions.filter(t => t.type === 'voucher').map(t => ({
             id: t.id,
             code: t.details.code,
             discountType: t.details.discountType,
             value: t.details.value,
             usageLimit: t.details.usageLimit,
             expiryDate: t.details.expiryDate,
-            usageCount: uniqueOrders,
+            usageCount: usage.get(t.details.code) || 0,
             active: t.details.active !== false,
             description: t.description
-        };
-    });
+        }));
+    }, [transactions]);
 
     const filteredVouchers = vouchers.filter(v =>
         v.code.toLowerCase().includes(searchTerm.toLowerCase())
@@ -46,37 +32,38 @@ export default function VoucherManager({ transactions, onAddTransaction, onDelet
     const toggleStatus = async (voucher) => {
         // Toggle active status
         const originalTransaction = transactions.find(t => t.id === voucher.id);
-        if (!originalTransaction) return;
+        if (!originalTransaction) {
+            showToast('Voucher no longer exists. Refresh and try again.', 'error');
+            return;
+        }
 
         const newStatus = !voucher.active;
-
-        // Use onAddTransaction to overwrite? No, we need an update mechanism. 
-        // Current App.js doesn't pass 'updateTransaction', but 'addTransaction' creates new. 
-        // We might need to delete and re-add or implement update in App.js.
-        // Assuming 'onAddTransaction' essentially does 'upsert' or we rely on delete+add.
-        // Wait, App.js 'addTransaction' calls 'addToSupabase'. 'addToSupabase' usually does insert.
-        // Let's rely on delete then add for update, or assume we can just add a new one? No, ID conflict.
-
-        // Actually, we don't have an update prop passed down to this component based on App.jsx.
-        // I should probably just Delete and Create New with same ID? 'addToSupabase' handles upsert? 
-        // Let's check 'useSupabaseTransactions' later. For now, I'll delete and re-create to be safe effectively updating.
-
+        setSaving(true);
         try {
-            await onDeleteTransaction(voucher.id, true); // Skip confirm
-            await onAddTransaction({
-                ...originalTransaction,
+            await onUpdateTransaction(voucher.id, {
                 details: { ...originalTransaction.details, active: newStatus }
             });
             showToast(`Voucher ${newStatus ? 'Activated' : 'Deactivated'}`, 'success');
         } catch (err) {
+            console.error('Failed to update voucher:', err);
             showToast('Failed to update voucher', 'error');
+        } finally {
+            setSaving(false);
         }
     };
 
     const handleDelete = async (id) => {
         if (confirm('Delete this voucher permanently?')) {
-            await onDeleteTransaction(id);
-            showToast('Voucher deleted', 'success');
+            setSaving(true);
+            try {
+                await onDeleteTransaction(id);
+                showToast('Voucher deleted', 'success');
+            } catch (err) {
+                console.error('Failed to delete voucher:', err);
+                showToast('Failed to delete voucher', 'error');
+            } finally {
+                setSaving(false);
+            }
         }
     };
 
@@ -120,6 +107,8 @@ export default function VoucherManager({ transactions, onAddTransaction, onDelet
                             </div>
                             <button
                                 onClick={() => handleDelete(voucher.id)}
+                                disabled={saving}
+                                aria-label={`Delete voucher ${voucher.code}`}
                                 className="text-slate-500 hover:text-red-400 transition-colors p-2"
                             >
                                 <Trash2 size={18} />
@@ -159,6 +148,8 @@ export default function VoucherManager({ transactions, onAddTransaction, onDelet
 
                             <button
                                 onClick={() => toggleStatus(voucher)}
+                                disabled={saving}
+                                aria-label={`${voucher.active ? 'Deactivate' : 'Activate'} voucher ${voucher.code}`}
                                 className={`flex items-center gap-2 px-3 py-1.5 rounded-full text-xs font-bold transition-all ${voucher.active
                                     ? 'bg-green-500/10 text-green-400 border border-green-500/20'
                                     : 'bg-slate-700 text-slate-400'
@@ -211,22 +202,32 @@ export default function VoucherManager({ transactions, onAddTransaction, onDelet
 }
 
 function AddVoucherModal({ onClose, onSave }) {
+    const { showToast } = useToast();
+    const [saving, setSaving] = useState(false);
     const [code, setCode] = useState('');
     const [type, setType] = useState('percent');
     const [value, setValue] = useState('');
     const [limit, setLimit] = useState('');
     const [expiry, setExpiry] = useState('');
 
-    const handleSubmit = (e) => {
+    const handleSubmit = async (e) => {
         e.preventDefault();
         if (!code || !value) return;
-        onSave({
-            code: code.toUpperCase(),
-            discountType: type,
-            value,
-            usageLimit: limit ? Number(limit) : null,
-            expiryDate: expiry || null
-        });
+        setSaving(true);
+        try {
+            await onSave({
+                code: code.toUpperCase(),
+                discountType: type,
+                value,
+                usageLimit: limit ? Number(limit) : null,
+                expiryDate: expiry || null
+            });
+        } catch (err) {
+            console.error('Failed to create voucher:', err);
+            showToast('Failed to create voucher. Please try again.', 'error');
+        } finally {
+            setSaving(false);
+        }
     };
 
     return (
@@ -241,7 +242,7 @@ function AddVoucherModal({ onClose, onSave }) {
                     <h3 className="text-xl font-bold text-white flex items-center gap-2">
                         <Plus size={20} className="text-primary" /> New Voucher
                     </h3>
-                    <button onClick={onClose} className="text-slate-400 hover:text-white"><X size={24} /></button>
+                    <button aria-label="Close voucher form" disabled={saving} onClick={onClose} className="text-slate-400 hover:text-white"><X size={24} /></button>
                 </div>
 
                 <form onSubmit={handleSubmit} className="space-y-4">
@@ -313,8 +314,8 @@ function AddVoucherModal({ onClose, onSave }) {
                         </div>
                     </div>
 
-                    <button type="submit" className="btn-primary w-full py-3 mt-4 flex items-center justify-center gap-2">
-                        <Save size={18} /> Save Voucher
+                    <button type="submit" disabled={saving} className="btn-primary w-full py-3 mt-4 flex items-center justify-center gap-2">
+                        <Save size={18} /> {saving ? 'Saving...' : 'Save Voucher'}
                     </button>
                 </form>
             </motion.div>

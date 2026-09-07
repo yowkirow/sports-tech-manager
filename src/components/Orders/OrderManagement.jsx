@@ -186,11 +186,7 @@ export default function OrderManagement({ transactions, onAddTransaction, onDele
             const order = groupedOrders.find(o => o.id === orderId);
             if (!order) throw new Error("Order not found");
 
-            const [y, m, d] = editForm.date.split('-').map(Number);
-            const newDate = new Date();
-            newDate.setFullYear(y);
-            newDate.setMonth(m - 1);
-            newDate.setDate(d);
+            const newDate = withLocalDate(editForm.date);
             const isoDate = newDate.toISOString();
 
             const isNewTracking = editForm.trackingNumber && editForm.trackingNumber !== (order.items[0]?.details?.trackingNumber || '');
@@ -385,7 +381,9 @@ export default function OrderManagement({ transactions, onAddTransaction, onDele
                         .update({ details: newDetails })
                         .eq('id', item.id)
                 });
-                await Promise.all(dbUpdates);
+                const results = await Promise.all(dbUpdates);
+                const failed = results.find(result => result.error);
+                if (failed) throw failed.error;
             }
             showToast('Bulk update complete', 'success');
             setIsSelectionMode(false);
@@ -394,7 +392,7 @@ export default function OrderManagement({ transactions, onAddTransaction, onDele
             if (refetch) await refetch();
         } catch (err) {
             console.error(err);
-            showToast('Bulk update failed', 'error');
+            showToast('Bulk update failed. Some items may have changed; refresh before retrying.', 'error');
         } finally {
             setLoading(false);
         }
@@ -1250,3 +1248,4 @@ export default function OrderManagement({ transactions, onAddTransaction, onDele
         </div>
     );
 }
+import { withLocalDate } from '../../lib/transactionDate';

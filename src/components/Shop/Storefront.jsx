@@ -7,7 +7,7 @@ import clsx from 'clsx';
 import { useToast } from '../ui/Toast';
 import { getMMCities, getAllProvinces, getCitiesByProvince, getBarangays } from '../../lib/phLocations';
 import { getSizeGuideForBrand } from '../../data/sizeGuides';
-import { isReturnedSale } from '../../lib/transactionStatus';
+import { getVoucherUsage } from '../../lib/voucherUsage';
 
 const SIZES = ['XS', 'S', 'M', 'L', 'XL', '2XL'];
 const BALL_QUANTITIES = [1, 5, 10, 20, 50, 100];
@@ -128,11 +128,13 @@ export default function Storefront({ transactions, onPlaceOrder }) {
         }
     }, [cityCode]);
 
-    const filteredProducts = products.filter(p => {
+    const filteredProducts = useMemo(() => products.filter(p => {
         const matchesSearch = p.name.toLowerCase().includes(searchTerm.toLowerCase());
         const matchesBrand = selectedBrand === 'All' || p.brand === selectedBrand;
         return matchesSearch && matchesBrand;
-    });
+    }), [products, searchTerm, selectedBrand]);
+    const productsByName = useMemo(() => new Map(products.map(product => [product.name, product])), [products]);
+    const voucherUsage = useMemo(() => getVoucherUsage(transactions), [transactions]);
 
     const getStock = (product, size) => {
         if (!product.linkedColor || product.category !== 'shirts') {
@@ -182,16 +184,17 @@ export default function Storefront({ transactions, onPlaceOrder }) {
     const subtotal = useMemo(() => cart.reduce((a, b) => a + (getCartUnitPrice(b) * (Number(b.quantity) || 0)), 0), [cart]);
     const totalItems = useMemo(() => cart.reduce((a, b) => a + (Number(b.quantity) || 0), 0), [cart]);
     const rushableItemsCount = useMemo(() => cart.reduce((total, item) => {
-        const product = products.find(p => p.name === item.name);
+        const product = productsByName.get(item.name);
         const isShirt = !product || !product.category || product.category === 'shirts';
         return isShirt ? total + (Number(item.quantity) || 0) : total;
-    }, 0), [cart, products]);
+    }, 0), [cart, productsByName]);
     const rushFeeAmount = isRushOrder ? rushableItemsCount * 100 : 0;
 
     // Suggestive selling
     const suggestedProducts = useMemo(() => {
+        const cartNames = new Set(cart.map(item => item.name));
         return products
-            .filter(p => !cart.some(item => item.name === p.name)) // Exclude items already in cart
+            .filter(p => !cartNames.has(p.name))
             .sort((a, b) => {
                 // Priority to non-shirts (accessories, equipment)
                 const aIsShirt = a.category === 'shirts' || !a.category;
@@ -243,11 +246,7 @@ export default function Storefront({ transactions, onPlaceOrder }) {
 
         // check usage limit
         if (details.usageLimit) {
-            const uniqueUses = new Set(
-                transactions
-                    .filter(tr => tr.type === 'sale' && !isReturnedSale(tr) && tr.details?.voucherCode === details.code)
-                    .map(tr => tr.details.orderId)
-            ).size;
+            const uniqueUses = voucherUsage.get(details.code) || 0;
 
             if (uniqueUses >= details.usageLimit) {
                 showToast('Voucher usage limit reached', 'error');
@@ -303,6 +302,7 @@ export default function Storefront({ transactions, onPlaceOrder }) {
     };
 
     const handleCheckout = async () => {
+        if (cart.length === 0) return showToast('Add an item before checking out.', 'error');
         if (!firstName.trim()) return showToast('Please enter your first name', 'error');
         if (!lastName.trim()) return showToast('Please enter your last name', 'error');
         if (!contactNumber.trim()) return showToast('Please enter your contact number', 'error');
@@ -323,14 +323,14 @@ export default function Storefront({ transactions, onPlaceOrder }) {
             const shippingFee = shippingRegion === 'MM' ? 100 : 200;
 
             // Create transactions for each item
-            const newTransactions = cart.map(item => {
+            const newTransactions = cart.map((item, index) => {
                 const itemQty = Number(item.quantity) || 0;
                 const itemPrice = getCartUnitPrice(item, itemQty);
                 const itemTotal = itemPrice * itemQty;
                 const subtotalSafe = subtotal || 1;
                 const ratio = itemTotal / subtotalSafe;
                 const itemDiscount = discountAmount * ratio;
-                const product = products.find(p => p.name === item.name);
+                const product = productsByName.get(item.name);
                 const itemCategory = product?.category || item.category || 'shirts';
                 const isShirt = itemCategory === 'shirts';
                 const itemRushFee = (isRushOrder && isShirt) ? itemQty * 100 : 0;
@@ -340,7 +340,7 @@ export default function Storefront({ transactions, onPlaceOrder }) {
 
                 // We'll add the shipping fee to the first item's final amount 
                 // to ensure the total of all transactions matches the total paid.
-                if (cart.indexOf(item) === 0) {
+                if (index === 0) {
                     finalAmount += shippingFee;
                 }
 
@@ -387,18 +387,20 @@ export default function Storefront({ transactions, onPlaceOrder }) {
                 };
             });
 
-            // Submit all
-            for (const t of newTransactions) {
-                await onPlaceOrder(t);
-            }
+            // One insert statement saves every order line or none of them.
+            await onPlaceOrder(newTransactions);
 
             setOrderComplete(true);
             setLastOrderId(orderId);
             setCart([]);
+            setProofFile(null);
+            setProofUrl('');
+            setAppliedVoucher(null);
+            setVoucherCode('');
             // Reset after a delay or let them close
         } catch (err) {
             console.error(err);
-            showToast('Order failed. Please try again.', 'error');
+            showToast(`Order could not be confirmed: ${err.message || 'Please check your connection and try again.'}`, 'error');
         } finally {
             setCheckoutLoading(false);
         }
