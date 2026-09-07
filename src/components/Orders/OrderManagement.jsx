@@ -7,7 +7,7 @@ import { useProducts } from '../../hooks/useInventory';
 import { sendSMS } from '../../lib/textbee';
 import { withLocalDate } from '../../lib/transactionDate';
 import { groupOrders } from '../../lib/orderItems';
-import { buildOrderChanges, priceOrderChanges, saveOrderChanges } from '../../lib/orderEditing';
+import { buildOrderChanges, buildOrderDetailChanges, priceOrderChanges, saveOrderChanges } from '../../lib/orderEditing';
 
 const SIZES = ['XS', 'S', 'M', 'L', 'XL', '2XL'];
 
@@ -173,19 +173,13 @@ export default function OrderManagement({ transactions, onAddTransaction, onDele
             const order = groupedOrders.find(o => o.id === orderId);
             if (!order) return;
 
-            const updates = order.transactions.map(async (t) => {
-                const updatedDetails = {
-                    ...t.details,
-                    trackingNumber,
-                    fulfillmentStatus: trackingNumber ? 'shipped' : t.details.fulfillmentStatus, // Only auto-ship if adding number
-                    status: trackingNumber ? 'shipped' : t.details.status
-                };
-
-                const { error } = await supabase.from('transactions').update({ details: updatedDetails }).eq('id', t.id);
-                if (error) throw error;
-            });
-
-            await Promise.all(updates);
+            const changes = buildOrderDetailChanges(order, details => ({
+                ...details,
+                trackingNumber,
+                fulfillmentStatus: trackingNumber ? 'shipped' : details.fulfillmentStatus,
+                status: trackingNumber ? 'shipped' : details.status
+            }));
+            await saveOrderChanges(supabase, changes);
 
             showToast('Tracking updated', 'success');
 
@@ -230,28 +224,19 @@ export default function OrderManagement({ transactions, onAddTransaction, onDele
         setLoading(true);
         try {
             const returnedAt = new Date().toISOString();
-            const updates = order.transactions.map(async (item) => {
-                const updatedDetails = {
-                    ...item.details,
-                    previousFulfillmentStatus: item.details?.fulfillmentStatus || item.details?.status || order.fulfillmentStatus,
-                    fulfillmentStatus: 'returned',
-                    status: 'returned',
-                    returnedAt
-                };
-
-                const { error } = await supabase
-                    .from('transactions')
-                    .update({ details: updatedDetails })
-                    .eq('id', item.id);
-                if (error) throw error;
-            });
-
-            await Promise.all(updates);
+            const changes = buildOrderDetailChanges(order, details => ({
+                ...details,
+                previousFulfillmentStatus: details?.fulfillmentStatus || details?.status || order.fulfillmentStatus,
+                fulfillmentStatus: 'returned',
+                status: 'returned',
+                returnedAt
+            }));
+            await saveOrderChanges(supabase, changes);
             showToast('Order marked as returned', 'success');
             if (refetch) await refetch();
         } catch (err) {
             console.error(err);
-            showToast('Failed to mark order as returned', 'error');
+            showToast('Failed to mark order as returned: ' + err.message, 'error');
         } finally {
             setLoading(false);
         }
@@ -265,29 +250,25 @@ export default function OrderManagement({ transactions, onAddTransaction, onDele
                 const order = groupedOrders.find(o => o.id === orderId);
                 if (!order) continue;
 
-                const dbUpdates = order.transactions.map(item => {
-                    const newDetails = { ...item.details, ...updates };
+                const changes = buildOrderDetailChanges(order, details => {
+                    const newDetails = { ...details, ...updates };
                     // Sync legacy field
                     if (updates.fulfillmentStatus) {
                         newDetails.status = updates.fulfillmentStatus;
 
                         if (updates.fulfillmentStatus === 'returned') {
-                            newDetails.returnedAt = item.details?.returnedAt || new Date().toISOString();
-                            newDetails.previousFulfillmentStatus = item.details?.previousFulfillmentStatus ||
-                                item.details?.fulfillmentStatus || item.details?.status || order.fulfillmentStatus;
-                        } else if (item.details?.fulfillmentStatus === 'returned') {
+                            newDetails.returnedAt = details?.returnedAt || new Date().toISOString();
+                            newDetails.previousFulfillmentStatus = details?.previousFulfillmentStatus ||
+                                details?.fulfillmentStatus || details?.status || order.fulfillmentStatus;
+                        } else if (details?.fulfillmentStatus === 'returned') {
                             delete newDetails.returnedAt;
                             delete newDetails.previousFulfillmentStatus;
                         }
                     }
 
-                    return supabase.from('transactions')
-                        .update({ details: newDetails })
-                        .eq('id', item.id)
+                    return newDetails;
                 });
-                const results = await Promise.all(dbUpdates);
-                const failed = results.find(result => result.error);
-                if (failed) throw failed.error;
+                await saveOrderChanges(supabase, changes);
             }
             showToast('Bulk update complete', 'success');
             setIsSelectionMode(false);
@@ -296,7 +277,8 @@ export default function OrderManagement({ transactions, onAddTransaction, onDele
             if (refetch) await refetch();
         } catch (err) {
             console.error(err);
-            showToast('Bulk update failed. Some items may have changed; refresh before retrying.', 'error');
+            showToast('Bulk update stopped. Earlier orders may be saved; reload before retrying.', 'error');
+            if (refetch) await refetch();
         } finally {
             setLoading(false);
         }
@@ -317,26 +299,16 @@ export default function OrderManagement({ transactions, onAddTransaction, onDele
                 date: new Date().toISOString()
             };
 
-            const updates = order.transactions.map(async (item) => {
-                const currentComments = item.details?.comments || [];
-                const updatedDetails = {
-                    ...item.details,
-                    comments: [...currentComments, newComment]
-                };
-
-                const { error } = await supabase
-                    .from('transactions')
-                    .update({ details: updatedDetails })
-                    .eq('id', item.id);
-                if (error) throw error;
-            });
-
-            await Promise.all(updates);
+            const changes = buildOrderDetailChanges(order, details => ({
+                ...details,
+                comments: [...(details?.comments || []), newComment]
+            }));
+            await saveOrderChanges(supabase, changes);
             showToast('Comment added', 'success');
             if (refetch) await refetch();
         } catch (err) {
             console.error(err);
-            showToast('Failed to add comment', 'error');
+            showToast('Failed to add comment: ' + err.message, 'error');
         } finally {
             setLoading(false);
         }

@@ -1,5 +1,46 @@
 # Supabase Database Setup
 
+## Atomic Order Editing
+
+The app calls `public.save_order_changes` once per order edit. Install the function
+before deploying an app version that uses it:
+
+```powershell
+npx supabase db push --linked --project-ref dmmydgioujpablalezsn --skip-vault --dry-run
+npx supabase db push --linked --project-ref dmmydgioujpablalezsn --skip-vault
+```
+
+The earlier migration files are restored from the project's existing migration
+history. The dry run should list only `20260907070000_save_order_changes.sql` on an
+existing installation. Using `db push` also records the applied version; do not
+repair older versions as reverted or reapply them to bypass missing local history.
+
+The function uses `SECURITY INVOKER`, so existing table grants and row-level
+security remain in effect. It locks the complete visible active order in ID order,
+checks the original row snapshots and pending-order requirement, and updates all
+source rows in a single transaction. Any exception rolls back every item. It does
+not insert missing records or fall back to separate client updates.
+
+Pricing edits, quick tracking, return tags, payment/fulfillment updates and comments
+all use this operation. A bulk action across several orders is atomic per order,
+not across the entire selection.
+
+Customer calls always require a pending order, even if the request disables that
+option. Admin calls can edit other statuses. A lost network response can leave the
+commit result unknown, so the app asks the user to reload rather than retry blindly.
+
+Run the PostgreSQL regressions with an authenticated Supabase CLI:
+
+```powershell
+$env:SUPABASE_DB_TEST_PROJECT_REF = 'dmmydgioujpablalezsn'
+node --test tests\orderEditing.database.test.js
+```
+
+These regressions wrap the function definition and synthetic fixtures in one
+transaction that is always rolled back. They never commit fixture records or
+modify existing orders. Ordinary `npm test` skips the database case unless this
+environment variable is set.
+
 ## Create the Transactions Table
 
 1. Go to your Supabase Dashboard: https://supabase.com/dashboard/project/dmmydgioujpablalezsn
@@ -125,4 +166,3 @@ CREATE POLICY "Allow public read" ON customers FOR SELECT USING (true);
 -- Allow all access for now (or restrict to authenticated if you prefer)
 CREATE POLICY "Allow all access" ON customers FOR ALL USING (true) WITH CHECK (true);
 ```
-

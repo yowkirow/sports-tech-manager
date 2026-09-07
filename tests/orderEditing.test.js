@@ -1,7 +1,7 @@
 import assert from 'node:assert/strict';
 import test from 'node:test';
 import { groupOrders } from '../src/lib/orderItems.js';
-import { buildOrderChanges, getEditableOrderItems, saveOrderChanges } from '../src/lib/orderEditing.js';
+import { buildOrderChanges, buildOrderDetailChanges, getEditableOrderItems, saveOrderChanges } from '../src/lib/orderEditing.js';
 
 const makeRows = (snapshot = true) => {
     const pricing = { version: 1, discount: { type: 'percent', value: 10 }, shippingFee: 100, isRushOrder: true, rushFeePerShirt: 100, shippingLineId: 'shirt' };
@@ -107,53 +107,82 @@ test('manual line-total adjustments remain explicit and product replacement uses
     assert.equal(replaced.changes[0].updates.details.shippingDetails.rushFee, 0);
 });
 
-const mockClient = (rows, failId) => {
-    const writes = [];
+const mockClient = (response) => {
+    const requests = [];
     return {
-        writes,
-        from() {
-            let updates;
-            const filters = [];
-            const query = {
-                select() { return query; },
-                in() { return Promise.resolve({ data: rows, error: null }); },
-                update(value) { updates = value; return query; },
-                eq(key, value) { filters.push([key, value]); return query; },
-                single() {
-                    const id = filters.find(([key]) => key === 'id')[1];
-                    writes.push({ id, updates, filters });
-                    return Promise.resolve(id === failId ? { error: new Error('Conflict'), data: null } : { error: null, data: { id } });
-                }
-            };
-            return query;
+        requests,
+        async rpc(name, args) {
+            requests.push({ name, args });
+            return response || { data: args.p_changes.map(change => ({ id: change.id })), error: null };
         }
     };
 };
 
-test('stale and fulfilled orders are rejected before any database mutation', async () => {
-    const rows = makeRows();
-    const [order] = groupOrders(rows);
-    const result = buildOrderChanges(order, getEditableOrderItems(order));
-    const stale = mockClient(rows.map(row => ({ ...row, amount: row.amount + 1 })));
-    await assert.rejects(saveOrderChanges(stale, result.changes), /changed while/);
-    assert.equal(stale.writes.length, 0);
-    const shippedRows = makeRows().map(row => ({ ...row, details: { ...row.details, fulfillmentStatus: 'shipped' } }));
-    const [shipped] = groupOrders(shippedRows);
-    const shippedChanges = buildOrderChanges(shipped, getEditableOrderItems(shipped));
-    const client = mockClient(shippedRows);
-    await assert.rejects(saveOrderChanges(client, shippedChanges.changes, { requirePending: true }), /Only pending/);
-    assert.equal(client.writes.length, 0);
-});
-
-test('conditional updates target only persisted IDs, and partial failures are never reported as success', async () => {
+test('one RPC sends the full edit and original snapshots, including pending-only protection', async () => {
     const rows = makeRows();
     const [order] = groupOrders(rows);
     const { changes } = buildOrderChanges(order, getEditableOrderItems(order));
-    const client = mockClient(rows);
+    const client = mockClient();
     await saveOrderChanges(client, changes, { requirePending: true });
-    assert.deepEqual(client.writes.map(write => write.id), ['shirt', 'ball']);
-    assert.equal(client.writes[0].filters.some(([field]) => field === 'details'), true);
-    await assert.rejects(saveOrderChanges(mockClient(rows, 'ball'), changes), /could not be fully saved/);
+    assert.equal(client.requests.length, 1);
+    assert.equal(client.requests[0].name, 'save_order_changes');
+    assert.equal(client.requests[0].args.p_require_pending, true);
+    assert.deepEqual(client.requests[0].args.p_changes.map(change => change.id), ['shirt', 'ball']);
+    assert.deepEqual(client.requests[0].args.p_changes[0].expected.details, rows[0].details);
+    assert.deepEqual(client.requests[0].args.p_changes[1].updates, changes[1].updates);
+});
+
+test('status, tracking and comment changes retain source amounts and save as one order operation', async () => {
+    const rows = makeRows();
+    const [order] = groupOrders(rows);
+    const changes = buildOrderDetailChanges(order, details => ({
+        ...details, fulfillmentStatus: 'shipped', trackingNumber: 'TRACK-TEST', comments: [{ text: 'Sent' }]
+    }));
+    const client = mockClient();
+    await saveOrderChanges(client, changes);
+    assert.equal(client.requests.length, 1);
+    assert.equal(client.requests[0].args.p_require_pending, false);
+    assert.deepEqual(changes.map(change => change.updates.amount), [930, 900]);
+    assert.equal(changes.every(change => change.updates.details.fulfillmentStatus === 'shipped'), true);
+    assert.equal(rows[0].details.fulfillmentStatus, 'pending');
+});
+
+test('database rollbacks surface without falling back to separate row updates', async () => {
+    const [order] = groupOrders(makeRows());
+    const { changes } = buildOrderChanges(order, getEditableOrderItems(order));
+    for (const error of [
+        { code: '40001', message: 'Stale order' },
+        { code: '22023', message: 'Only pending orders can be edited.' },
+        { code: '42501', message: 'The complete order could not be saved.' }
+    ]) {
+        const client = mockClient({ error, data: null });
+        await assert.rejects(saveOrderChanges(client, changes), /No changes were saved/);
+        assert.equal(client.requests.length, 1);
+    }
+});
+
+test('a lost or incomplete RPC response requires reload without asserting that a commit failed', async () => {
+    const [order] = groupOrders(makeRows());
+    const { changes } = buildOrderChanges(order, getEditableOrderItems(order));
+    for (const response of [
+        { error: { message: 'Failed to fetch' }, data: null },
+        { error: null, data: [{ id: 'shirt' }] },
+        { error: null, data: [{ id: 'shirt' }, { id: 'shirt' }] },
+        { error: null, data: [{ id: 'shirt' }, { id: 'unknown' }] },
+        { error: { code: 'PGRST202', message: 'Function missing' }, data: null }
+    ]) {
+        await assert.rejects(saveOrderChanges(mockClient(response), changes), /could not be confirmed.*Reload/);
+    }
+});
+
+test('empty, duplicate and synthetic source changes are rejected without requesting a save', async () => {
+    const [order] = groupOrders(makeRows());
+    const { changes } = buildOrderChanges(order, getEditableOrderItems(order));
+    const client = mockClient();
+    await assert.rejects(saveOrderChanges(client, []), /cannot be empty/);
+    await assert.rejects(saveOrderChanges(client, [changes[0], changes[0]]), /duplicate/);
+    await assert.rejects(saveOrderChanges(client, [{ ...changes[0], id: 'legacy:0' }]), /invalid source/);
+    assert.equal(client.requests.length, 0);
 });
 
 test('no-op edits retain historical uneven discount allocations and sub-cent unit prices', () => {

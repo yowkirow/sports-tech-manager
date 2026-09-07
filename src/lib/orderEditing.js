@@ -175,40 +175,46 @@ export const buildOrderChanges = (order, drafts, commonDetails = {}, recordUpdat
     return { ...priced, changes };
 };
 
-const stableJson = value => JSON.stringify(value, function (_key, current) {
-    return current && typeof current === 'object' && !Array.isArray(current)
-        ? Object.fromEntries(Object.entries(current).sort(([left], [right]) => left.localeCompare(right)))
-        : current;
-});
+export const buildOrderDetailChanges = (order, updateDetails) => order.transactions.map(original => ({
+    id: original.id,
+    original,
+    updates: {
+        amount: Number(original.amount),
+        details: updateDetails(original.details)
+    }
+}));
 
 export const saveOrderChanges = async (client, changes, { requirePending = false } = {}) => {
-    const { data: current, error } = await client.from('transactions').select('*').in('id', changes.map(change => change.id));
-    if (error) throw error;
-    const byId = new Map((current || []).map(row => [row.id, row]));
-    for (const change of changes) {
-        const latest = byId.get(change.id);
-        if (!latest || latest.type !== 'sale' || Number(latest.amount) !== Number(change.original.amount)
-            || latest.date !== change.original.date || stableJson(latest.details) !== stableJson(change.original.details)) {
-            throw new Error('This order changed while you were editing. Reload it before saving.');
-        }
-        const legacyStatus = latest.details.status || 'paid';
-        const status = latest.details.fulfillmentStatus || (legacyStatus === 'paid' ? 'pending' : legacyStatus);
-        if (requirePending && status !== 'pending') throw new Error('Only pending orders can be edited.');
+    if (!Array.isArray(changes) || changes.length === 0) throw new Error('Order cannot be empty.');
+    if (changes.some(change => !change?.id || change.original?.id !== change.id || !change.updates)) {
+        throw new Error('Order contains an invalid source transaction.');
     }
+    const ids = new Set(changes.map(change => change.id));
+    if (ids.size !== changes.length) throw new Error('Order contains duplicate source transactions.');
 
-    // Conditional updates never recreate a deleted record or overwrite a detected concurrent edit.
-    // Multiple rows still need a server-side transaction for full all-or-nothing semantics.
-    for (const change of changes) {
-        const { data, error: updateError } = await client.from('transactions')
-            .update(change.updates)
-            .eq('id', change.id)
-            .eq('amount', change.original.amount)
-            .eq('date', change.original.date)
-            .eq('details', JSON.stringify(change.original.details))
-            .select('id')
-            .single();
-        if (updateError || data?.id !== change.id) {
-            throw new Error('The order could not be fully saved. Some items may have changed; reload before retrying.', { cause: updateError });
-        }
+    const { data, error } = await client.rpc('save_order_changes', {
+        p_changes: changes.map(({ id, original, updates }) => ({
+            id,
+            expected: {
+                type: original.type,
+                category: original.category,
+                amount: original.amount,
+                date: original.date,
+                description: original.description ?? null,
+                details: original.details
+            },
+            updates
+        })),
+        p_require_pending: requirePending
+    });
+    if (error) {
+        if (error.code === '40001') throw new Error('This order changed while you were editing. No changes were saved. Reload before retrying.', { cause: error });
+        if (['22023', '42501'].includes(error.code)) throw new Error(`${error.message} No changes were saved.`, { cause: error });
+        // A lost response can follow a committed transaction: reload instead of claiming a rollback.
+        throw new Error('The order save could not be confirmed. Reload before retrying.', { cause: error });
+    }
+    if (!Array.isArray(data) || data.length !== ids.size || new Set(data.map(row => row?.id)).size !== ids.size
+        || data.some(row => !ids.has(row?.id))) {
+        throw new Error('The complete order save could not be confirmed. Reload before retrying.');
     }
 };
