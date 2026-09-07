@@ -7,28 +7,13 @@ import { useRawInventory, useProducts, useColors, useBrands } from '../../hooks/
 import useSupabaseCustomers from '../../hooks/useSupabaseCustomers';
 import { getMMCities, getAllProvinces, getCitiesByProvince, getBarangays } from '../../lib/phLocations';
 import { useActivityLog } from '../../hooks/useActivityLog';
+import { createOrderId } from '../../lib/orderItems';
+import { getStockKey } from '../../lib/inventory';
+import { getCartUnitPrice, isBallProduct, priceOrder } from '../../lib/orderPricing';
 
 const SIZES = ['XS', 'S', 'M', 'L', 'XL', '2XL'];
 
-const isBallProduct = (product) => {
-    const category = product?.category?.toLowerCase();
-    return category === 'balls' || product?.name?.toLowerCase().includes('ball');
-};
-
-const getBallUnitPrice = (quantity) => {
-    const qty = Number(quantity) || 0;
-    if (qty >= 100) return 70;
-    if (qty >= 50) return 80;
-    if (qty >= 21) return 90;
-    return 100;
-};
-
-const getCartUnitPrice = (item, quantity = item.quantity) => {
-    if (isBallProduct(item)) return getBallUnitPrice(quantity);
-    return Number(item.price) || 0;
-};
-
-export default function POSInterface({ transactions, onAddTransaction, onDeleteTransaction, userRole }) {
+export default function POSInterface({ transactions, onAddTransaction, onAddTransactions, onDeleteTransaction, userRole }) {
     const { showToast } = useToast();
     const { logActivity } = useActivityLog();
 
@@ -240,9 +225,7 @@ export default function POSInterface({ transactions, onAddTransaction, onDeleteT
 
     const getStockForProduct = (product, size) => {
         if (product.category !== 'shirts') return 999;
-        const brand = (product.brand || 'Sypik').toLowerCase();
-        const color = (product.linkedColor || 'Black').toLowerCase();
-        const key = `shirt-${brand}-${color}-${size.toLowerCase()}`;
+        const key = getStockKey({ ...product, size });
         return rawInventory[key] || 0;
     };
 
@@ -281,65 +264,82 @@ export default function POSInterface({ transactions, onAddTransaction, onDeleteT
 
         setCheckoutLoading(true);
         try {
-            const { data: { user } } = await supabase.auth.getUser();
-
-            const totalAmount = cart.reduce((a, b) => a + (getCartUnitPrice(b) * b.quantity), 0);
-
-            // Upsert Customer (Save for next time)
-            if (customerName) {
-                const fullAddress = `${customerAddress}${customerBarangay ? ', ' + customerBarangay : ''}${customerCity ? ', ' + customerCity : ''}${customerProvince ? ', ' + customerProvince : ''}`;
-                await upsertCustomer({
-                    name: customerName,
-                    contact_number: customerContact,
-                    address: fullAddress,
-                    total_spent: totalAmount
-                });
-            }
-
-            const transactionData = {
+            const { data: { user }, error } = await supabase.auth.getUser();
+            if (error) throw error;
+            if (!user) throw new Error('Sign in again before saving this order.');
+            const orderId = createOrderId();
+            const date = new Date().toISOString();
+            const priced = priceOrder(cart.map(item => ({
+                ...item,
                 id: crypto.randomUUID(),
+                unitPrice: getCartUnitPrice(item)
+            })));
+            const pricing = { version: 1, discount: null, shippingFee: 0, isRushOrder: false, rushFeePerShirt: 100, shippingLineId: priced.items[0].id };
+            const transactionData = priced.items.map(item => ({
+                id: item.id,
                 type: 'sale',
-                category: 'Sales',
-                amount: totalAmount,
-                date: new Date().toISOString(),
-                description: `POS Sale - ${customerName || 'Walk-in'}`,
+                category: item.category || 'shirts',
+                amount: item.amount,
+                date,
+                description: `POS Sale: ${item.name} (${item.size}) to ${customerName.trim()}`,
                 details: {
-                    items: cart.map(item => ({
-                        id: item.id,
-                        name: item.name,
-                        brand: item.brand,
-                        category: item.category,
-                        price: getCartUnitPrice(item),
-                        quantity: item.quantity,
-                        size: item.size,
-                        color: item.linkedColor,
-                        imageUrl: item.imageUrl
-                    })),
-                    customer: customerName,
-                    customerContact,
-                    customerAddress,
-                    shippingRegion,
-                    customerProvince,
-                    customerCity,
-                    customerBarangay,
+                    orderId,
+                    customerName: customerName.trim(),
+                    contactNumber: customerContact.trim(),
+                    itemName: item.name,
+                    brand: item.brand || 'Sypik',
+                    category: item.category || 'shirts',
+                    unitPrice: item.unitPrice,
+                    originalAmount: item.originalAmount,
+                    discountShare: item.discountShare,
+                    shippingShare: 0,
+                    quantity: item.quantity,
+                    size: item.size,
+                    color: item.linkedColor || '',
+                    imageUrl: item.imageUrl,
+                    source: 'pos',
+                    pricing,
+                    shippingDetails: {
+                        address: customerAddress,
+                        city: customerCity,
+                        province: customerProvince,
+                        barangay: customerBarangay,
+                        contactNumber: customerContact.trim(),
+                        region: shippingRegion,
+                        shippingFee: 0,
+                        rushFee: 0,
+                        isRushOrder: false
+                    },
                     paymentMode,
                     paymentStatus,
                     fulfillmentStatus,
-                    createdBy: user?.email || 'Unknown',
-                    userRole: userRole
+                    status: fulfillmentStatus,
+                    createdBy: user.email,
+                    userRole
                 }
-            };
+            }));
 
-            await onAddTransaction(transactionData);
-
+            await onAddTransactions(transactionData);
             await logActivity('POS Checkout', {
                 customer: customerName,
                 itemCount: cart.length,
-                total: totalAmount,
+                total: priced.total,
                 paymentMode
-            }, transactionData.id);
+            }, orderId);
 
             showToast('Order Processed!', 'success');
+            try {
+                const fullAddress = `${customerAddress}${customerBarangay ? ', ' + customerBarangay : ''}${customerCity ? ', ' + customerCity : ''}${customerProvince ? ', ' + customerProvince : ''}`;
+                await upsertCustomer({
+                    name: customerName.trim(),
+                    contact_number: customerContact,
+                    address: fullAddress,
+                    total_spent: priced.total
+                });
+            } catch (customerError) {
+                console.error('Order saved, but customer profile update failed:', customerError);
+                showToast('Order saved. The customer profile could not be updated.', 'error');
+            }
             setPaymentMode('Cash');
             setCustomerName('');
             setCustomerContact('');
@@ -352,7 +352,7 @@ export default function POSInterface({ transactions, onAddTransaction, onDeleteT
             setCart([]);
         } catch (err) {
             console.error(err);
-            showToast('Checkout Failed', 'error');
+            showToast(`Checkout failed: ${err.message}`, 'error');
         } finally {
             setCheckoutLoading(false);
         }

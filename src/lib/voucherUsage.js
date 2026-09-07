@@ -4,7 +4,7 @@ export const getVoucherUsage = (transactions) => {
     const ordersByCode = new Map();
     for (const transaction of transactions) {
         const code = transaction.details?.voucherCode;
-        if (transaction.type !== 'sale' || isReturnedSale(transaction) || !code) continue;
+        if (transaction.type !== 'sale' || isReturnedSale(transaction) || transaction.details?.removedFromOrder || !code) continue;
 
         if (!ordersByCode.has(code)) ordersByCode.set(code, new Set());
         const orderId = transaction.details.orderId;

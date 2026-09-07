@@ -6,7 +6,7 @@ import { isReturnedSale } from '../lib/transactionStatus';
 const TransactionList = ({ transactions, onDelete }) => {
     // Sort by date desc
     const sorted = transactions
-        .filter(t => !isReturnedSale(t))
+        .filter(t => !isReturnedSale(t) && !t.details?.removedFromOrder)
         .sort((a, b) => new Date(b.date) - new Date(a.date));
 
     const formatDate = (isoString) => {
@@ -60,7 +60,7 @@ const TransactionList = ({ transactions, onDelete }) => {
 
                                         {t.details && t.details.size && (
                                             <span className="px-2 py-0.5 rounded bg-white/10 text-slate-300 text-xs">
-                                                {t.details.quantity || 1}x {t.details.size} / {t.details.color}
+                                                {t.details.quantity ?? 1}x {t.details.size} / {t.details.color}
                                             </span>
                                         )}
                                         {t.details && t.details.subCategory && (

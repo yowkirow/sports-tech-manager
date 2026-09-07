@@ -2,6 +2,7 @@ import { Package, Download, Search, Plus, X } from 'lucide-react';
 import { useMemo, useState } from 'react';
 import clsx from 'clsx';
 import { useToast } from './ui/Toast';
+import { getInventoryRows } from '../lib/inventory.js';
 
 const InventoryList = ({ transactions, onAddTransaction, onDeleteTransaction, onOpenAddStock }) => {
     const [searchTerm, setSearchTerm] = useState('');
@@ -9,38 +10,7 @@ const InventoryList = ({ transactions, onAddTransaction, onDeleteTransaction, on
     const { showToast } = useToast();
 
     // Calculate inventory
-    const inventoryItems = useMemo(() => {
-        const inventory = {};
-        transactions.forEach(t => {
-            if (!t.details || (!t.details.size && !t.details.subCategory) || t.category === 'general') return;
-
-            let key, name, variant;
-            if (t.category === 'blanks') {
-                const { size, linkedColor, color, brand } = t.details;
-                const safeColor = (linkedColor || color || 'Unknown').trim();
-                const safeBrand = (brand || 'Sypik').trim();
-                key = `shirt-${safeBrand.toLowerCase()}-${safeColor.toLowerCase()}-${size.toLowerCase()}`;
-                name = `${safeColor} Shirt`;
-                variant = `${safeBrand} - ${size}`;
-            } else {
-                const sub = t.details.subCategory || t.category;
-                key = `misc-${sub.toLowerCase()}`;
-                name = sub;
-                variant = 'N/A';
-            }
-
-            if (!inventory[key]) {
-                inventory[key] = { id: key, name, variant, count: 0 };
-            }
-            const quantity = t.details.quantity || 1;
-            if (t.type === 'expense' || t.type === 'update_stock') {
-                inventory[key].count += quantity;
-            } else if (t.type === 'sale') {
-                inventory[key].count -= quantity;
-            }
-        });
-        return Object.values(inventory).sort((a, b) => a.name.localeCompare(b.name));
-    }, [transactions]);
+    const inventoryItems = useMemo(() => getInventoryRows(transactions), [transactions]);
 
     // Convert to array and filter
     const inventoryList = inventoryItems
@@ -59,6 +29,27 @@ const InventoryList = ({ transactions, onAddTransaction, onDeleteTransaction, on
             showToast('Inventory export failed. Please try again.', 'error');
         } finally {
             setExporting(false);
+        }
+    };
+
+    const handleDeleteItem = async (item) => {
+        if (!item.canDeleteHistory) {
+            showToast('This item comes from a multi-SKU order. Edit or delete the original order from Orders instead.', 'error');
+            return;
+        }
+
+        if (!window.confirm(`Are you sure you want to delete "${item.name}" (${item.variant})?\n\nThis will permanently delete ${item.transactionIds.length} source record(s) for this inventory item.`)) {
+            return;
+        }
+
+        if (!onDeleteTransaction || item.transactionIds.length === 0) return;
+
+        try {
+            await Promise.all(item.transactionIds.map(id => onDeleteTransaction(id)));
+            showToast(`Deleted history for ${item.name}.`, 'success');
+        } catch (error) {
+            console.error('Failed to delete inventory history:', error);
+            showToast('Failed to delete inventory history. Please try again.', 'error');
         }
     };
 
@@ -123,7 +114,12 @@ const InventoryList = ({ transactions, onAddTransaction, onDeleteTransaction, on
                             >
                                 <div className="min-w-0 pr-6">
                                     <div className="font-semibold text-slate-200 truncate">{item.name}</div>
-                                    <div className="text-sm text-slate-500">Var: {item.variant}</div>
+                                    <div className={clsx(
+                                        "text-sm",
+                                        item.count > 0 ? "text-slate-500" : "text-red-100/80"
+                                    )}>
+                                        Var: {item.variant}
+                                    </div>
                                 </div>
                                 <div className={clsx(
                                     "text-2xl font-bold",
@@ -133,8 +129,8 @@ const InventoryList = ({ transactions, onAddTransaction, onDeleteTransaction, on
                                 </div>
                             </div>
                             <button
-                                onClick={() => handleDeleteItem(item, transactions)}
-                                className="absolute top-2 right-2 p-1.5 bg-black/50 hover:bg-red-500/80 rounded-lg text-slate-400 hover:text-white opacity-0 group-hover:opacity-100 transition-all backdrop-blur-sm"
+                                onClick={() => handleDeleteItem(item)}
+                                className="absolute top-2 right-2 p-1.5 bg-black/50 hover:bg-red-500/80 rounded-lg text-white/80 hover:text-white opacity-0 group-hover:opacity-100 transition-all backdrop-blur-sm"
                                 title="Delete all history for this item"
                             >
                                 <X size={14} />
@@ -145,47 +141,6 @@ const InventoryList = ({ transactions, onAddTransaction, onDeleteTransaction, on
             )}
         </div>
     );
-
-    function handleDeleteItem(item, allTransactions) {
-        if (!confirm(`Are you sure you want to delete "${item.name}" (${item.variant})?\n\nThis will permanently delete ALL ${item.count} history records for this item type.`)) {
-            return;
-        }
-
-        // Identify transactions to delete
-        const toDeleteIds = [];
-        allTransactions.forEach(t => {
-            if (!t.details || (!t.details.size && !t.details.subCategory) || t.category === 'general') return;
-            let key;
-
-            // Reconstruct key to match item.id
-            if (t.category === 'blanks') {
-                const { size, linkedColor, color, brand } = t.details;
-                const safeColor = (linkedColor || color || 'Unknown').trim();
-                const safeBrand = (brand || 'Sypik').trim();
-                key = `shirt-${safeBrand.toLowerCase()}-${safeColor.toLowerCase()}-${size.toLowerCase()}`;
-            } else {
-                const sub = t.details.subCategory || t.category;
-                key = `misc-${sub.toLowerCase()}`;
-            }
-
-            if (key === item.id) {
-                toDeleteIds.push(t.id);
-            }
-        });
-
-        if (toDeleteIds.length === 0) return;
-
-        // Execute deletions
-        // Ensure onAddTransaction handles '_delete' or properly pass a delete function.
-        // Since we only have onAddTransaction prop in this file's signature currently,
-        // we'll assume the parent will pass a specific delete handler or we signal it.
-        // Actually, best to pass `onDeleteTransaction` prop.
-        if (onDeleteTransaction) {
-            toDeleteIds.forEach(id => onDeleteTransaction(id));
-        } else {
-            console.error("Delete function not provided to InventoryList");
-        }
-    }
 };
 
 export default InventoryList;

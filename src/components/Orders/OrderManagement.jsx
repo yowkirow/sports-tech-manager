@@ -5,6 +5,9 @@ import { useToast } from '../ui/Toast';
 import { supabase } from '../../lib/supabaseClient';
 import { useProducts } from '../../hooks/useInventory';
 import { sendSMS } from '../../lib/textbee';
+import { withLocalDate } from '../../lib/transactionDate';
+import { groupOrders } from '../../lib/orderItems';
+import { buildOrderChanges, priceOrderChanges, saveOrderChanges } from '../../lib/orderEditing';
 
 const SIZES = ['XS', 'S', 'M', 'L', 'XL', '2XL'];
 
@@ -25,6 +28,7 @@ export default function OrderManagement({ transactions, onAddTransaction, onDele
 
     // Edit State
     const [editingId, setEditingId] = useState(null);
+    const [editingOrder, setEditingOrder] = useState(null);
     const [editForm, setEditForm] = useState({});
     const [loading, setLoading] = useState(false);
 
@@ -33,97 +37,19 @@ export default function OrderManagement({ transactions, onAddTransaction, onDele
     const [selectedOrderIds, setSelectedOrderIds] = useState(new Set());
     const [showBulkEditModal, setShowBulkEditModal] = useState(false);
 
-    // 1. Group Transactions & Migrate Data
-    const groupedOrders = useMemo(() => {
-        const sales = transactions.filter(t => t.type === 'sale' && t.details?.club !== 'downtown-dinks');
-        const groups = {};
-
-        sales.forEach(t => {
-            let key = t.details?.orderId;
-            if (!key) {
-                const dateKey = new Date(t.date).toISOString().slice(0, 16);
-                key = `${t.details?.customerName || 'Unknown'}-${dateKey}`;
-            }
-
-            if (!groups[key]) {
-                // --- MIGRATION LOGIC ---
-                let fulfillment = t.details?.fulfillmentStatus;
-                let payment = t.details?.paymentStatus;
-
-                if (!fulfillment || !payment) {
-                    // Fallback for old data
-                    const legacyStatus = t.details?.status || 'paid';
-                    if (legacyStatus === 'paid') {
-                        fulfillment = 'pending';
-                        payment = 'paid';
-                    } else {
-                        fulfillment = legacyStatus; // in_progress, ready, shipped
-                        // If it's shipped/ready, we don't strictly know if it's paid, 
-                        // but typically 'shipped' implies paid or COD. 
-                        // Safest default is 'unpaid' so user checks it, OR 'paid' if COD.
-                        // Let's default to 'unpaid' for safety unless it was implicitly 'paid'.
-                        payment = 'unpaid';
-                    }
-                }
-
-                groups[key] = {
-                    id: key,
-                    date: t.date,
-                    customerName: t.details?.customerName || 'Unknown',
-                    fulfillmentStatus: fulfillment,
-                    paymentStatus: payment,
-                    paymentMode: t.details?.paymentMode || 'Cash',
-                    isOnlineOrder: t.details?.isOnlineOrder || false,
-                    isRushOrder: t.details?.isRushOrder || false,
-                    comments: t.details?.comments || [],
-                    items: [],
-                    totalAmount: 0
-                };
-            }
-
-            if (t.details?.isOnlineOrder) groups[key].isOnlineOrder = true; // Ensure flag is set if any item has it
-            if (t.details?.shippingDetails?.isRushOrder || t.details?.isRushOrder) groups[key].isRushOrder = true;
-
-            groups[key].items.push(t);
-            groups[key].totalAmount += (Number(t.amount) || 0);
-
-            // Safety for legacy orders: Ensure shipping fee is counted in total if not already included in amounts
-            // Note: Since each transaction in an order might have the same shippingFee metadata, 
-            // we only count it ONCE per order group.
-            if (t.details?.shippingDetails?.shippingFee && !groups[key].shippingFeeAdded) {
-                const sFee = Number(t.details.shippingDetails.shippingFee) || 0;
-                groups[key].shippingFee = sFee;
-                groups[key].shippingFeeAdded = true;
-
-                // If it's a legacy order where amount sum DOES NOT include shipping fee, we add it to totalAmount.
-                // We'll recalculate the actual items sum and check if it matches the totalAmount.
-                // But a simpler way: if summing amounts doesn't include the shipping fee already, add it.
-                // We'll wait until all items are processed to adjust the totalAmount if needed?
-                // No, let's just make the totalAmount always sum(amount) for consistency with accounting.
-            }
-
-            if (t.details?.shippingDetails?.rushFee) {
-                groups[key].totalRushFee = (groups[key].totalRushFee || 0) + (Number(t.details.shippingDetails.rushFee) || 0);
-            }
-        });
-
-        // SECOND PASS for fixing totalAmount for LEGACY orders
-        Object.values(groups).forEach(order => {
-            const expectedSumWithShipping = (order.items.reduce((s, i) => s + (i.details?.originalAmount || 0), 0)) - (order.items.reduce((s, i) => s + (i.details?.discountShare || 0), 0)) + (order.totalRushFee || 0) + (order.shippingFee || 0);
-
-            // If the sum of transaction amounts is less than the expected total, we assume it's a legacy order missing the shipping fee.
-            // We'll adjust it ONLY if the difference is exactly the shipping fee (or very close).
-            if (order.shippingFee > 0 && order.totalAmount < expectedSumWithShipping) {
-                order.totalAmount = expectedSumWithShipping;
-            }
-        });
-
-        return Object.values(groups).sort((a, b) => new Date(b.date) - new Date(a.date));
-    }, [transactions]);
+    const groupedOrders = useMemo(() => groupOrders(transactions), [transactions]);
+    const editPricing = useMemo(() => {
+        if (!editingId || !editingOrder || !editForm.items) return null;
+        try {
+            return priceOrderChanges(editingOrder, editForm.items);
+        } catch (error) {
+            return { error: error.message };
+        }
+    }, [editingId, editingOrder, editForm.items]);
 
     // 2. Filter Groups
     const filteredOrders = useMemo(() => {
-        return groupedOrders.filter(order => {
+        return groupedOrders.map(order => order.id === editingId && editingOrder ? editingOrder : order).filter(order => {
             const matchesFulfillment = filterFulfillment === 'all' || order.fulfillmentStatus === filterFulfillment;
             const matchesPayment = filterPayment === 'all' || order.paymentStatus === filterPayment;
             const matchesSearch =
@@ -132,7 +58,7 @@ export default function OrderManagement({ transactions, onAddTransaction, onDele
 
             return matchesFulfillment && matchesPayment && matchesSearch;
         });
-    }, [groupedOrders, filterFulfillment, filterPayment, searchTerm]);
+    }, [groupedOrders, filterFulfillment, filterPayment, searchTerm, editingId, editingOrder]);
 
 
     const toggleExpansion = (orderId) => {
@@ -151,6 +77,7 @@ export default function OrderManagement({ transactions, onAddTransaction, onDele
 
     const startEditing = (order) => {
         setEditingId(order.id);
+        setEditingOrder(order);
         
         // Ensure order is expanded so user sees the shipping details edit form
         const newSet = new Set(expandedOrderIds);
@@ -183,68 +110,44 @@ export default function OrderManagement({ transactions, onAddTransaction, onDele
     const handleSave = async (orderId) => {
         setLoading(true);
         try {
-            const order = groupedOrders.find(o => o.id === orderId);
+            const order = editingOrder?.id === orderId ? editingOrder : null;
             if (!order) throw new Error("Order not found");
 
-            const newDate = withLocalDate(editForm.date);
-            const isoDate = newDate.toISOString();
+            const isoDate = editForm.date === new Date(order.date).toISOString().split('T')[0]
+                ? order.date
+                : withLocalDate(editForm.date, new Date(order.date)).toISOString();
 
             const isNewTracking = editForm.trackingNumber && editForm.trackingNumber !== (order.items[0]?.details?.trackingNumber || '');
             const finalFulfillmentStatus = isNewTracking ? 'shipped' : editForm.fulfillmentStatus;
 
-            const updates = editForm.items.map(async (editedItem) => {
-                const originalItem = order.items.find(i => i.id === editedItem.id);
-                if (!originalItem) return;
-
-                const updatedDetails = {
-                    ...editedItem.details,
-                    customerName: editForm.customerName,
-                    fulfillmentStatus: finalFulfillmentStatus,
-                    paymentStatus: editForm.paymentStatus,
-                    paymentMode: editForm.paymentMode,
-                    trackingNumber: editForm.trackingNumber,
-                    status: finalFulfillmentStatus
-                };
-
+            const result = buildOrderChanges(order, editForm.items, {
+                customerName: editForm.customerName,
+                contactNumber: editForm.contactNumber,
+                fulfillmentStatus: finalFulfillmentStatus,
+                paymentStatus: editForm.paymentStatus,
+                paymentMode: editForm.paymentMode,
+                trackingNumber: editForm.trackingNumber,
+                status: finalFulfillmentStatus,
+                shippingDetails: {
+                    contactNumber: editForm.contactNumber,
+                    address: editForm.address,
+                    city: editForm.city,
+                    province: editForm.province,
+                    barangay: editForm.barangay
+                }
+            }, { date: isoDate });
+            result.changes.forEach(({ original, updates }) => {
+                const updatedDetails = updates.details;
                 if (finalFulfillmentStatus === 'returned') {
-                    updatedDetails.returnedAt = originalItem.details?.returnedAt || new Date().toISOString();
-                    updatedDetails.previousFulfillmentStatus = originalItem.details?.previousFulfillmentStatus ||
-                        originalItem.details?.fulfillmentStatus || originalItem.details?.status || order.fulfillmentStatus;
-                } else if (originalItem.details?.fulfillmentStatus === 'returned') {
+                    updatedDetails.returnedAt = original.details?.returnedAt || new Date().toISOString();
+                    updatedDetails.previousFulfillmentStatus = original.details?.previousFulfillmentStatus ||
+                        original.details?.fulfillmentStatus || original.details?.status || order.fulfillmentStatus;
+                } else if (original.details?.fulfillmentStatus === 'returned') {
                     delete updatedDetails.returnedAt;
                     delete updatedDetails.previousFulfillmentStatus;
                 }
-
-                if (updatedDetails.shippingDetails) {
-                    updatedDetails.shippingDetails = {
-                        ...updatedDetails.shippingDetails,
-                        contactNumber: editForm.contactNumber,
-                        address: editForm.address,
-                        city: editForm.city,
-                        province: editForm.province,
-                        barangay: editForm.barangay
-                    };
-                } else {
-                    updatedDetails.customerContact = editForm.contactNumber;
-                    updatedDetails.customerAddress = editForm.address;
-                    updatedDetails.customerCity = editForm.city;
-                    updatedDetails.customerProvince = editForm.province;
-                    updatedDetails.customerBarangay = editForm.barangay;
-                }
-
-                const { error } = await supabase
-                    .from('transactions')
-                    .update({
-                        details: updatedDetails,
-                        amount: editedItem.amount,
-                        description: `Sale: ${editedItem.details.itemName} (${editedItem.details.size}/${editedItem.details.color}) to ${editForm.customerName}`,
-                        date: isoDate
-                    })
-                    .eq('id', editedItem.id);
-                if (error) throw error;
             });
-
-            await Promise.all(updates);
+            await saveOrderChanges(supabase, result.changes);
             showToast('Order updated!', 'success');
 
             // Trigger SMS if tracking number was added/updated
@@ -257,7 +160,8 @@ export default function OrderManagement({ transactions, onAddTransaction, onDele
 
         } catch (err) {
             console.error(err);
-            showToast('Failed to update order', 'error');
+            showToast(err.message || 'Failed to update order', 'error');
+            if (refetch) await refetch();
         } finally {
             setLoading(false);
         }
@@ -269,7 +173,7 @@ export default function OrderManagement({ transactions, onAddTransaction, onDele
             const order = groupedOrders.find(o => o.id === orderId);
             if (!order) return;
 
-            const updates = order.items.map(async (t) => {
+            const updates = order.transactions.map(async (t) => {
                 const updatedDetails = {
                     ...t.details,
                     trackingNumber,
@@ -305,7 +209,7 @@ export default function OrderManagement({ transactions, onAddTransaction, onDele
         try {
             const order = groupedOrders.find(o => o.id === orderId);
             if (!order) return;
-            for (const item of order.items) {
+            for (const item of order.transactions) {
                 await onDeleteTransaction(item.id);
             }
             showToast('Order deleted', 'success');
@@ -326,7 +230,7 @@ export default function OrderManagement({ transactions, onAddTransaction, onDele
         setLoading(true);
         try {
             const returnedAt = new Date().toISOString();
-            const updates = order.items.map(async (item) => {
+            const updates = order.transactions.map(async (item) => {
                 const updatedDetails = {
                     ...item.details,
                     previousFulfillmentStatus: item.details?.fulfillmentStatus || item.details?.status || order.fulfillmentStatus,
@@ -361,7 +265,7 @@ export default function OrderManagement({ transactions, onAddTransaction, onDele
                 const order = groupedOrders.find(o => o.id === orderId);
                 if (!order) continue;
 
-                const dbUpdates = order.items.map(item => {
+                const dbUpdates = order.transactions.map(item => {
                     const newDetails = { ...item.details, ...updates };
                     // Sync legacy field
                     if (updates.fulfillmentStatus) {
@@ -413,7 +317,7 @@ export default function OrderManagement({ transactions, onAddTransaction, onDele
                 date: new Date().toISOString()
             };
 
-            const updates = order.items.map(async (item) => {
+            const updates = order.transactions.map(async (item) => {
                 const currentComments = item.details?.comments || [];
                 const updatedDetails = {
                     ...item.details,
@@ -600,13 +504,16 @@ export default function OrderManagement({ transactions, onAddTransaction, onDele
                                         for (const orderId of selectedOrderIds) {
                                             const order = groupedOrders.find(o => o.id === orderId);
                                             if (order) {
-                                                for (const item of order.items) await onDeleteTransaction(item.id);
+                                                for (const item of order.transactions) await onDeleteTransaction(item.id);
                                             }
                                         }
                                         setIsSelectionMode(false);
                                         setSelectedOrderIds(new Set());
                                         if (refetch) await refetch();
                                         showToast('Deleted', 'success');
+                                    } catch (error) {
+                                        console.error('Order deletion failed:', error);
+                                        showToast('Some orders could not be deleted. Refresh before retrying.', 'error');
                                     } finally { setLoading(false); }
                                 }
                             }}
@@ -789,8 +696,8 @@ export default function OrderManagement({ transactions, onAddTransaction, onDele
                                                 </select>
                                             </div>
                                             <div className="flex gap-2 w-full">
-                                                <button onClick={() => handleSave(order.id)} className="flex-1 bg-green-600/20 text-green-400 py-1.5 rounded hover:bg-green-600/40 font-bold text-xs"><Save size={14} className="mx-auto" /></button>
-                                                <button onClick={() => setEditingId(null)} className="flex-1 bg-red-600/20 text-red-400 py-1.5 rounded hover:bg-red-600/40 text-xs"><X size={14} className="mx-auto" /></button>
+                                                <button aria-label="Save order changes" disabled={loading || !!editPricing?.error} onClick={() => handleSave(order.id)} className="flex-1 bg-green-600/20 text-green-400 py-1.5 rounded hover:bg-green-600/40 font-bold text-xs"><Save size={14} className="mx-auto" /></button>
+                                                <button aria-label="Cancel order changes" disabled={loading} onClick={() => setEditingId(null)} className="flex-1 bg-red-600/20 text-red-400 py-1.5 rounded hover:bg-red-600/40 text-xs"><X size={14} className="mx-auto" /></button>
                                             </div>
                                         </div>
                                     ) : (
@@ -842,8 +749,8 @@ export default function OrderManagement({ transactions, onAddTransaction, onDele
                                                                 <RotateCcw size={16} />
                                                             </button>
                                                         )}
-                                                        <button onClick={(e) => { e.stopPropagation(); startEditing(order); }} className="p-2 hover:bg-white/10 rounded-lg text-slate-400 hover:text-white"><Edit2 size={16} /></button>
-                                                        <button onClick={(e) => { e.stopPropagation(); handleDeleteOrder(order.id); }} className="p-2 hover:bg-red-500/20 rounded-lg text-slate-400 hover:text-red-400"><Trash2 size={16} /></button>
+                                                        <button aria-label={`Edit order for ${order.customerName}`} onClick={(e) => { e.stopPropagation(); startEditing(order); }} className="p-2 hover:bg-white/10 rounded-lg text-slate-400 hover:text-white"><Edit2 size={16} /></button>
+                                                        <button aria-label={`Delete order for ${order.customerName}`} onClick={(e) => { e.stopPropagation(); handleDeleteOrder(order.id); }} className="p-2 hover:bg-red-500/20 rounded-lg text-slate-400 hover:text-red-400"><Trash2 size={16} /></button>
                                                     </div>
                                                 )}
                                                 <div className="p-2 text-slate-500">
@@ -867,6 +774,12 @@ export default function OrderManagement({ transactions, onAddTransaction, onDele
                                         className="bg-white/5 border-t border-white/5"
                                     >
                                         <div className="p-4 space-y-2">
+                                            {editingId === order.id && editPricing && (
+                                                <div role={editPricing.error ? 'alert' : 'status'} className="p-3 text-sm text-slate-200">
+                                                    {editPricing.error || `Updated total: PHP ${editPricing.total.toLocaleString(undefined, { maximumFractionDigits: 2 })}`}
+                                                    {editPricing.options?.legacyDiscount && <p className="mt-1 text-slate-400">This older order keeps its original peso discount when quantities change.</p>}
+                                                </div>
+                                            )}
                                             {order.items.map((item, idx) => (
                                                 <div key={item.id} className="flex flex-col md:flex-row justify-between md:items-center p-3 rounded-xl hover:bg-white/5 bg-black/20 gap-4 border border-white/5 text-sm">
                                                     <div className="flex items-center gap-3 flex-1">
@@ -894,7 +807,10 @@ export default function OrderManagement({ transactions, onAddTransaction, onDele
 
                                                                             newItems[idx].details.itemName = selectedProductName;
                                                                             if (product) {
-                                                                                newItems[idx].amount = product.price;
+                                                                                newItems[idx].productChanged = true;
+                                                                                newItems[idx].priceAdjustment = 0;
+                                                                                newItems[idx].details.unitPrice = product.price;
+                                                                                newItems[idx].details.category = product.category || 'shirts';
                                                                                 newItems[idx].details.imageUrl = product.imageUrl;
                                                                                 newItems[idx].details.color = product.linkedColor || 'Varied';
                                                                                 newItems[idx].details.brand = product.brand || 'Sypik';
@@ -952,14 +868,20 @@ export default function OrderManagement({ transactions, onAddTransaction, onDele
                                                             {editingId === order.id ? (
                                                                 <div className="flex flex-col gap-1 items-end" onClick={e => e.stopPropagation()}>
                                                                     <div className="flex items-center gap-2">
-                                                                        <span className="text-[10px] text-slate-500 font-bold uppercase">Price</span>
+                                                                        <span className="text-[10px] text-slate-500 font-bold uppercase">Line total</span>
                                                                         <input
                                                                             type="number"
                                                                             className="glass-input py-1 px-2 text-xs w-20 text-right"
-                                                                            value={editForm.items[idx]?.amount || 0}
+                                                                            aria-label={`Line total for ${item.details.itemName}`}
+                                                                            step="0.01"
+                                                                            min="0"
+                                                                            value={editPricing?.items?.find(priced => priced.id === item.id)?.amount ?? editForm.items[idx]?.amount ?? 0}
                                                                             onChange={e => {
+                                                                                const priced = editPricing?.items?.find(priced => priced.id === item.id);
+                                                                                if (!priced) return showToast('Enter a valid quantity before changing the line total.', 'error');
                                                                                 const newItems = [...editForm.items];
                                                                                 newItems[idx].amount = Number(e.target.value);
+                                                                                newItems[idx].priceAdjustment = Number(((priced.priceAdjustment || 0) + Number(e.target.value) - priced.amount).toFixed(2));
                                                                                 setEditForm({ ...editForm, items: newItems });
                                                                             }}
                                                                         />
@@ -968,6 +890,9 @@ export default function OrderManagement({ transactions, onAddTransaction, onDele
                                                                         <span className="text-[10px] text-slate-500 font-bold uppercase">Qty</span>
                                                                         <input
                                                                             type="number"
+                                                                            min="1"
+                                                                            step="1"
+                                                                            aria-label={`Quantity for ${item.details.itemName}`}
                                                                             className="glass-input py-1 px-2 text-xs w-16 text-right"
                                                                             value={editForm.items[idx]?.details?.quantity || 0}
                                                                             onChange={e => {
@@ -980,7 +905,7 @@ export default function OrderManagement({ transactions, onAddTransaction, onDele
                                                                 </div>
                                                             ) : (
                                                                 <>
-                                                                    <p className="font-mono font-bold text-white text-base">₱{(item.details?.originalAmount || item.amount).toLocaleString()}</p>
+                                                                    <p className="font-mono font-bold text-white text-base">₱{(item.details?.originalAmount ?? item.amount).toLocaleString()}</p>
                                                                     <p className="text-xs text-slate-500 font-bold">QTY: {item.details?.quantity}</p>
                                                                 </>
                                                             )}
@@ -1008,7 +933,7 @@ export default function OrderManagement({ transactions, onAddTransaction, onDele
                                                     </div>
                                                 )}
                                                 <div className="flex justify-between text-xs text-slate-400">
-                                                    <span>Shipping Fee ({order.items[0]?.details?.shippingDetails?.region || (order.items[0]?.details?.shippingDetails?.province === 'Metro Manila' ? 'MM' : 'Prov')})</span>
+                                                    <span>{order.shippingFee > 0 ? 'Shipping fee' : 'No shipping charge'}</span>
                                                     <span>₱{(order.shippingFee || 0).toLocaleString()}</span>
                                                 </div>
                                                 <div className="flex justify-between text-base font-bold text-white pt-2 border-t border-white/5 mt-1">
@@ -1248,4 +1173,3 @@ export default function OrderManagement({ transactions, onAddTransaction, onDele
         </div>
     );
 }
-import { withLocalDate } from '../../lib/transactionDate';

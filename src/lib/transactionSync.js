@@ -106,6 +106,7 @@ export const createTransactionSync = ({ prepare, read, onTransactions, onLoading
     let active = true;
     let transactions = [];
     let request = null;
+    let readError = null;
 
     const publish = (next) => {
         if (next === transactions) return;
@@ -137,9 +138,13 @@ export const createTransactionSync = ({ prepare, read, onTransactions, onLoading
                     if (!active) return;
                     publish(reconcileTransactions(snapshot, current.changes));
                     // A failed legacy migration must not hide readable server data or its own error.
-                    onError(preparationError);
+                    readError = preparationError;
+                    onError(readError);
                 } catch (error) {
-                    if (active) onError(error);
+                    if (active) {
+                        readError = error;
+                        onError(error);
+                    }
                 } finally {
                     if (active) {
                         request = null;
@@ -156,7 +161,7 @@ export const createTransactionSync = ({ prepare, read, onTransactions, onLoading
             publish(reconcileTransactions(transactions, [change]));
         },
         reportError(error) {
-            if (active) onError(error);
+            if (active) onError(readError || error);
         },
         dispose() {
             active = false;

@@ -38,6 +38,7 @@ const useSupabaseTransactions = ({ enabled = true } = {}) => {
         try {
             const data = await insertTransactionBatch(supabase, newTransactions);
             sync?.apply({ type: 'upsert', rows: data });
+            sync?.reportError(null);
             return data;
         } catch (err) {
             sync?.reportError(err);
@@ -63,6 +64,7 @@ const useSupabaseTransactions = ({ enabled = true } = {}) => {
             if (error) throw error;
             if (!data || data.id !== id) throw new Error('The updated transaction could not be verified. Please refresh.');
             sync?.apply({ type: 'upsert', rows: [data] });
+            sync?.reportError(null);
             return data;
         } catch (err) {
             sync?.reportError(err);
@@ -76,6 +78,7 @@ const useSupabaseTransactions = ({ enabled = true } = {}) => {
             const { error } = await supabase.from('transactions').delete().eq('id', id);
             if (error) throw error;
             sync?.apply({ type: 'delete', ids: [id] });
+            sync?.reportError(null);
         } catch (err) {
             sync?.reportError(err);
             throw err;
@@ -91,6 +94,7 @@ const useSupabaseTransactions = ({ enabled = true } = {}) => {
                 .neq('id', '00000000-0000-0000-0000-000000000000');
             if (error) throw error;
             sync?.apply({ type: 'clear' });
+            sync?.reportError(null);
         } catch (err) {
             sync?.reportError(err);
             throw err;

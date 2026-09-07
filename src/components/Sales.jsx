@@ -5,11 +5,13 @@ import { createPortal } from 'react-dom';
 import AddExpenseForm from './Expenses/AddExpenseForm'; // Reusing form for editing? Or create new?
 import { isReturnedSale } from '../lib/transactionStatus';
 import { withLocalDate } from '../lib/transactionDate';
+import { useToast } from './ui/Toast';
 // For Sales, better to just edit simple fields or redirect to Orders.
 // User asked to "make it editable (Goal: summary of orders and amounts)"
 // I'll implement a simple Edit Modal for Sales that allows changing: Date, Description (Customer), Amount (Override).
 
 const EditSaleModal = ({ transaction, onUpdate, onClose }) => {
+    const { showToast } = useToast();
     const [date, setDate] = useState(transaction.date.split('T')[0]);
     const [amount, setAmount] = useState(transaction.amount);
     const [description, setDescription] = useState(transaction.description);
@@ -26,9 +28,11 @@ const EditSaleModal = ({ transaction, onUpdate, onClose }) => {
                 amount: parseFloat(amount),
                 description
             });
+            showToast('Sale updated.', 'success');
             onClose();
         } catch (err) {
             console.error(err);
+            showToast(`Could not save sale: ${err.message}`, 'error');
         } finally {
             setLoading(false);
         }
@@ -49,7 +53,7 @@ const EditSaleModal = ({ transaction, onUpdate, onClose }) => {
                 <div>
                     <label className="text-sm text-slate-400">Amount</label>
                     <input type="number" step="0.01" value={amount} onChange={e => setAmount(e.target.value)} className="glass-input w-full" />
-                    <p className="text-[10px] text-red-400 mt-1">Warning: Changing amount here desyncs from order items.</p>
+                    <p className="text-xs text-slate-400 mt-1">Amount changes are retained as price adjustments when the order is edited.</p>
                 </div>
                 <div className="flex gap-2 pt-2">
                     <button type="button" onClick={onClose} className="flex-1 py-2 bg-white/5 hover:bg-white/10 rounded-xl text-slate-400">Cancel</button>
@@ -67,7 +71,7 @@ const Sales = ({ transactions, onDeleteTransaction, onUpdateTransaction }) => {
     // Filter only sale transactions
     const sales = useMemo(() => {
         return transactions
-            .filter(t => (t.type === 'sale' && !isReturnedSale(t)) || t.type === 'club_income')
+            .filter(t => (t.type === 'sale' && !isReturnedSale(t) && !t.details?.removedFromOrder) || t.type === 'club_income')
             .filter(t => {
                 const matchesSearch =
                     t.description.toLowerCase().includes(searchTerm.toLowerCase()) ||

@@ -391,7 +391,8 @@ function App() {
                             {!isStaff && activeTab === 'pos' && (
                                 <POSInterface
                                     transactions={transactions} // POS needs ALL transactions to calculate Inventory/Products correctly
-                                    onAddTransaction={addTransaction}
+                                    onAddTransaction={addToSupabase}
+                                    onAddTransactions={addTransactions}
                                     onDeleteTransaction={deleteTransaction} // Enable hard deletes
                                     refetch={refetch}
                                     userRole={userRole} // Pass role for pricing override
@@ -402,7 +403,7 @@ function App() {
                                 <OrderManagement
                                     transactions={effectiveTransactions} // Filtered for Resellers
                                     onAddTransaction={addTransaction}
-                                    onDeleteTransaction={deleteTransaction}
+                                    onDeleteTransaction={deleteFromSupabase}
                                     refetch={refetch}
                                     userRole={userRole} // Pass role for restrictions
                                 />
@@ -413,7 +414,7 @@ function App() {
                                     <Sales
                                         transactions={transactions}
                                         onDeleteTransaction={deleteTransaction}
-                                        onUpdateTransaction={updateTransaction}
+                                        onUpdateTransaction={updateInSupabase}
                                     />
                                 </div>
                             )}
@@ -430,8 +431,8 @@ function App() {
                                     <Expenses
                                         transactions={transactions}
                                         onDeleteTransaction={deleteTransaction}
-                                        onAddTransaction={addTransaction}
-                                        onUpdateTransaction={updateTransaction}
+                                        onAddTransaction={addToSupabase}
+                                        onUpdateTransaction={updateInSupabase}
                                     />
                                 </div>
                             )}
@@ -452,7 +453,7 @@ function App() {
                                     <InventoryList
                                         transactions={transactions}
                                         onAddTransaction={addTransaction}
-                                        onDeleteTransaction={deleteTransaction}
+                                        onDeleteTransaction={deleteFromSupabase}
                                         onOpenAddStock={() => setShowAddStockModal(true)}
                                     />
                                 </div>

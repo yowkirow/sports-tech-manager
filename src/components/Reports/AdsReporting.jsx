@@ -2,6 +2,7 @@ import React, { useState, useMemo } from 'react';
 import { Target } from 'lucide-react';
 import clsx from 'clsx';
 import { isReturnedSale } from '../../lib/transactionStatus';
+import { getSaleItems } from '../../lib/orderItems.js';
 
 const FilterButton = ({ active, onClick, children }) => (
     <button
@@ -57,18 +58,12 @@ const AdsReporting = ({ transactions }) => {
             const amount = Number(t.amount) || 0;
             if (t.type === 'sale' && !isReturnedSale(t) && t.details?.club !== 'downtown-dinks') {
                 totalSales += amount;
-
-                // Count quantity of items sold
-                if (t.details?.items && Array.isArray(t.details.items)) {
-                    // POS Format
-                    t.details.items.forEach(item => {
-                        totalShirtsSold += Number(item.quantity) || 0;
-                    });
-                } else {
-                    // Storefront / Legacy format
-                    totalShirtsSold += Number(t.details?.quantity) || 1;
-                }
+                totalShirtsSold += getSaleItems(t)
+                    .filter(item => item.details?.category === 'shirts')
+                    .reduce((sum, item) => sum + (Number(item.details?.quantity) || 0), 0);
             } else if (t.type === 'expense') {
+                if (t.details?.club === 'downtown-dinks') return;
+
                 const cat = (t.category || '').toLowerCase();
                 const subCat = (t.details?.subCategory || '').toLowerCase();
 

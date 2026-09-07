@@ -1,49 +1,12 @@
 import { useMemo } from 'react';
+import { getInventoryRows } from '../lib/inventory.js';
 
 // 1. Hook to track "Raw Material" Stock (The actual physical shirts)
 export const useRawInventory = (transactions) => {
     return useMemo(() => {
-        const inventory = {}; // key: "shirt-{color}-{size}" or "acc-{name}"
-
-        // Process Chronologically (Oldest -> Newest)
-        // transactions are passed as Newest -> Oldest from hook
-        const chronoTransactions = [...transactions].reverse();
-
-        chronoTransactions.forEach(t => {
-            if (!t.details) return;
-            const { quantity, size, color, subCategory, category } = t.details;
-
-            // Only care about Stock movements (Expense = In, Sale = Out)
-            // AND 'update_stock' which is a manual adjustment
-            const type = t.type;
-            if (!['expense', 'sale', 'update_stock'].includes(type) && t.category !== 'return') return;
-
-            let key;
-            if (
-                t.category === 'blanks' || category === 'blanks' ||
-                t.category === 'shirts' || category === 'shirts'
-            ) {
-                // Multi-Brand Logic: Include brand in the key
-                // validColor comes from Color or linkedColor
-                const validColor = color || t.details.linkedColor;
-                const validBrand = t.details.brand || 'Sypik'; // Default to Sypik for legacy orders
-                if (!validColor || !size) return;
-                key = `shirt-${validBrand.toLowerCase()}-${validColor.toLowerCase()}-${size}`;
-            } else {
-                const name = subCategory || t.details.itemName || t.description;
-                if (!name) return;
-                key = `acc-${name.replace(/\s+/g, '-').toLowerCase()}`;
-            }
-
-            if (!inventory[key]) inventory[key] = 0;
-
-            if (type === 'expense' || type === 'update_stock' || type === 'return') {
-                inventory[key] += (quantity || 0);
-            } else if (type === 'sale') {
-                inventory[key] -= (quantity || 0);
-            }
-        });
-        return inventory;
+        return Object.fromEntries(
+            getInventoryRows(transactions).map(item => [item.id, item.count])
+        );
     }, [transactions]);
 };
 

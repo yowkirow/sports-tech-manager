@@ -3,6 +3,13 @@ import { Package, Copy, CheckCircle2, Circle, Filter, Calendar, Truck, AlertCirc
 import { motion, AnimatePresence } from 'framer-motion';
 import { useToast } from '../ui/Toast';
 import clsx from 'clsx';
+import { groupOrders } from '../../lib/orderItems.js';
+
+const numberOr = (value, fallback = 0) => {
+    if (value === undefined || value === null || value === '') return fallback;
+    const parsed = Number(value);
+    return Number.isFinite(parsed) ? parsed : fallback;
+};
 
 export default function SupplierManager({ transactions }) {
     const { showToast } = useToast();
@@ -12,25 +19,8 @@ export default function SupplierManager({ transactions }) {
 
     // 1. Group transactions into logical orders (Sale types)
     const orders = useMemo(() => {
-        const sales = transactions.filter(t => t.type === 'sale' && t.details?.club !== 'downtown-dinks');
-        const grouped = sales.reduce((acc, t) => {
-            const orderId = t.details?.orderId || t.id;
-            if (!acc[orderId]) {
-                acc[orderId] = {
-                    id: orderId,
-                    customerName: t.details?.customerName || 'Unknown',
-                    date: t.date,
-                    fulfillmentStatus: t.details?.fulfillmentStatus || 'pending',
-                    items: []
-                };
-            }
-            acc[orderId].items.push(t);
-            return acc;
-        }, {});
-
-        // Filter based on UI state
-        return Object.values(grouped).filter(order => {
-            const isPending = order.fulfillmentStatus === 'pending';
+        return groupOrders(transactions).filter(order => {
+            const isPending = `${order.fulfillmentStatus || ''}`.toLowerCase() === 'pending';
 
             if (filterType === 'unfulfilled') {
                 return isPending;
@@ -67,59 +57,56 @@ export default function SupplierManager({ transactions }) {
     // 3. Aggegration Logic (The "Magic")
     const aggregatedData = useMemo(() => {
         const selectedOrdersList = orders.filter(o => selectedOrderIds.has(o.id));
-        const colorMap = {}; // { Color: { Size: Quantity } }
+        const shirtMap = {}; // { Brand - Color: { color, brand, sizes } }
         const itemMap = {}; // { Product Name: Quantity }
+        let hasMissingShirtData = false;
 
         selectedOrdersList.forEach(order => {
-            // Helper to process a single item (or flat transaction)
-            const processItem = (item) => {
-                const details = item.details || item;
-                const category = details.category || item.category;
-                const name = details.itemName || details.name || item.description || "Unknown Item";
-                const size = details.size || "N/A";
-                const qty = details.quantity || 1;
-                const isShirt = category === 'shirts' || (!category && size && size !== 'N/A');
+            order.items.forEach(item => {
+                const details = item.details || {};
+                const category = (details.category || item.category || '').toLowerCase();
+                const name = details.itemName || item.description || 'Unknown Item';
+                const qty = numberOr(details.quantity, 1);
 
-                if (!isShirt || size === 'N/A') {
+                if (category !== 'shirts') {
                     if (!itemMap[name]) itemMap[name] = 0;
                     itemMap[name] += qty;
                     return;
                 }
 
-                const color = details.linkedColor || details.color || "Unknown";
+                const brand = (details.brand || 'Sypik').trim();
+                const color = (details.color || details.linkedColor || 'Unknown').trim() || 'Unknown';
+                const size = (details.size || 'Unknown').trim() || 'Unknown';
+                const groupLabel = `${brand} - ${color}`;
 
-                if (!colorMap[color]) colorMap[color] = {};
-                if (!colorMap[color][size]) colorMap[color][size] = 0;
-                colorMap[color][size] += qty;
-            };
-
-            order.items.forEach(t => {
-                // Check if this transaction has nested items (POS Sale)
-                if (t.details?.items && Array.isArray(t.details.items)) {
-                    t.details.items.forEach(item => processItem(item));
-                } else {
-                    // Manual/Flat transaction
-                    processItem(t);
+                if (color === 'Unknown' || size === 'Unknown') {
+                    hasMissingShirtData = true;
                 }
+
+                if (!shirtMap[groupLabel]) {
+                    shirtMap[groupLabel] = { brand, color, sizes: {} };
+                }
+                if (!shirtMap[groupLabel].sizes[size]) shirtMap[groupLabel].sizes[size] = 0;
+                shirtMap[groupLabel].sizes[size] += qty;
             });
         });
 
-        return { shirts: colorMap, items: itemMap };
+        return { shirts: shirtMap, items: itemMap, hasMissingShirtData };
     }, [orders, selectedOrderIds]);
 
     // 4. Formatting Engine
     const generatedText = useMemo(() => {
-        const colors = Object.keys(aggregatedData.shirts);
+        const shirts = Object.entries(aggregatedData.shirts);
         const items = Object.keys(aggregatedData.items);
-        if (colors.length === 0 && items.length === 0) return "No items selected.";
+        if (shirts.length === 0 && items.length === 0) return "No items selected.";
 
-        const shirtText = colors.map(color => {
-            const sizes = aggregatedData.shirts[color];
+        const shirtText = shirts.map(([label, group]) => {
+            const sizes = group.sizes;
             const sizeLines = Object.keys(sizes)
                 .map(size => `${size} - ${sizes[size]}`)
                 .join('\n');
 
-            return `${color}\n${sizeLines}`;
+            return `${label}\n${sizeLines}`;
         });
 
         const itemText = items.map(item => `${item} - ${aggregatedData.items[item]}`);
@@ -132,6 +119,26 @@ export default function SupplierManager({ transactions }) {
         navigator.clipboard.writeText(generatedText);
         showToast('Supplier text copied!', 'success');
         setTimeout(() => setCopying(false), 2000);
+    };
+
+    const renderOrderItemChip = (item, idx) => {
+        const color = item.details?.color || item.details?.linkedColor || '';
+        const quantity = numberOr(item.details?.quantity, 1);
+        const label = item.details?.category === 'shirts'
+            ? `${item.details?.itemName} • ${item.details?.brand || 'Sypik'} • ${item.details?.size || 'N/A'} - ${quantity}`
+            : `${item.details?.itemName} - ${quantity}`;
+
+        return (
+            <span
+                key={item.id || idx}
+                className="text-[10px] bg-white/15 px-2 py-0.5 rounded text-slate-300 flex items-center gap-1"
+            >
+                {item.details?.category === 'shirts' && (
+                    <span className="w-1.5 h-1.5 rounded-full" style={{ backgroundColor: color.toLowerCase() === 'white' ? '#fff' : color }} />
+                )}
+                {label}
+            </span>
+        );
     };
 
     return (
@@ -210,15 +217,7 @@ export default function SupplierManager({ transactions }) {
                                             <span className="text-[10px] text-slate-500 font-mono italic">#{order.id.slice(-6).toUpperCase()}</span>
                                         </div>
                                         <div className="flex flex-wrap gap-2">
-                                            {order.items.map((item, idx) => (
-                                                <span
-                                                    key={idx}
-                                                    className="text-[10px] bg-white/15 px-2 py-0.5 rounded text-slate-300 flex items-center gap-1"
-                                                >
-                                                    <span className="w-1.5 h-1.5 rounded-full" style={{ backgroundColor: item.details?.linkedColor?.toLowerCase() === 'white' ? '#fff' : item.details?.linkedColor }} />
-                                                    {item.details.size} - {item.details.quantity || 1}
-                                                </span>
-                                            ))}
+                                            {order.items.map(renderOrderItemChip)}
                                         </div>
                                     </div>
 
@@ -235,7 +234,7 @@ export default function SupplierManager({ transactions }) {
                 {/* Right Column: Preview & Output */}
                 <div className="flex flex-col gap-6 h-full">
                     {/* Data Quality Check */}
-                    {selectedOrderIds.size > 0 && Object.keys(aggregatedData.shirts).includes('Unknown') && (
+                    {selectedOrderIds.size > 0 && aggregatedData.hasMissingShirtData && (
                         <motion.div
                             initial={{ opacity: 0, x: 20 }}
                             animate={{ opacity: 1, x: 0 }}
@@ -296,8 +295,8 @@ export default function SupplierManager({ transactions }) {
                                     <div>
                                         <p className="text-slate-500 text-[10px] uppercase font-bold tracking-widest mb-1">Total Items</p>
                                         <p className="text-2xl font-bold font-mono">
-                                            {Object.values(aggregatedData.shirts).reduce((sum, sizes) =>
-                                                sum + Object.values(sizes).reduce((a, b) => a + b, 0), 0
+                                            {Object.values(aggregatedData.shirts).reduce((sum, group) =>
+                                                sum + Object.values(group.sizes).reduce((a, b) => a + b, 0), 0
                                             ) + Object.values(aggregatedData.items).reduce((a, b) => a + b, 0)}
                                         </p>
                                     </div>

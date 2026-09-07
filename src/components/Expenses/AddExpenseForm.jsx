@@ -31,6 +31,7 @@ export default function AddExpenseForm({ onAddTransaction, onUpdateTransaction, 
     const [date, setDate] = useState(new Date().toISOString().split('T')[0]);
     const [reimbursementStatus, setReimbursementStatus] = useState('none');
     const [reimbursedAmount, setReimbursedAmount] = useState('');
+    const isStockExpense = !!initialData && ['blanks', 'shirts', 'dtf', 'accessories', 'balls'].includes(initialData.category);
 
     useEffect(() => {
         const fetchMeta = async () => {
@@ -121,11 +122,11 @@ export default function AddExpenseForm({ onAddTransaction, onUpdateTransaction, 
                 const updates = {
                     amount: parseFloat(amount),
                     description: description || `Expense: ${finalCategory}`,
-                    category: 'general', // Schema uses general? Or the actual category? Existing code uses 'general' and details.subCategory
+                    category: isStockExpense ? initialData.category : (finalCategory === 'Marketing/Ads' ? 'ads' : 'general'),
                     date: newDate.toISOString(),
                     details: {
                         ...initialData.details,
-                        subCategory: finalCategory,
+                        subCategory: isStockExpense ? initialData.details?.subCategory : finalCategory,
                         club: owner === CLUB_SLUG ? CLUB_SLUG : null,
                         reimbursed: isReimbursedBool,
                         reimbursedAmount: finalReimbursedAmount,
@@ -208,11 +209,13 @@ export default function AddExpenseForm({ onAddTransaction, onUpdateTransaction, 
                         <label className="text-sm text-slate-400">Category</label>
                         <select
                             value={category}
+                            disabled={isStockExpense}
                             onChange={(e) => setCategory(e.target.value)}
                             className="glass-input appearance-none"
                         >
                             {expenseCategories.map(c => <option key={c} value={c} className="bg-slate-900">{c}</option>)}
                         </select>
+                        {isStockExpense && <p className="text-xs text-slate-400">Stock category and item details are preserved. This form edits the expense only.</p>}
                     </div>
 
                     {(category === 'Other' || category === 'Marketing/Ads') && (
@@ -223,6 +226,7 @@ export default function AddExpenseForm({ onAddTransaction, onUpdateTransaction, 
                             <input
                                 type="text"
                                 value={customCategory}
+                                disabled={isStockExpense}
                                 onChange={(e) => setCustomCategory(e.target.value)}
                                 className="glass-input"
                                 placeholder={category === 'Marketing/Ads' ? 'e.g. Facebook, TikTok' : 'e.g. Office Supplies'}

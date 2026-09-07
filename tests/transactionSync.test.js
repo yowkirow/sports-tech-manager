@@ -223,6 +223,28 @@ test('simultaneous reloads share a promise and one read, with later refreshes st
     assert.equal(reads, 2);
 });
 
+test('successful write retries clear write errors without hiding a failed history read', async () => {
+    const errors = [];
+    let failRead = false;
+    const sync = createTransactionSync({
+        read: async () => { if (failRead) throw new Error('Read failed'); return []; },
+        onTransactions() {},
+        onLoading() {},
+        onError: error => errors.push(error?.message || null)
+    });
+    await sync.refresh();
+    sync.reportError(new Error('Write failed'));
+    sync.reportError(null);
+    assert.equal(errors.at(-1), null);
+    failRead = true;
+    await sync.refresh();
+    sync.reportError(null);
+    assert.equal(errors.at(-1), 'Read failed');
+    failRead = false;
+    await sync.refresh();
+    assert.equal(errors.at(-1), null);
+});
+
 test('a bulk acknowledgement after realtime is deduplicated and publishes the full batch atomically', async () => {
     const page = deferred();
     const response = deferred();

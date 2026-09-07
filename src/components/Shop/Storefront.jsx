@@ -8,27 +8,12 @@ import { useToast } from '../ui/Toast';
 import { getMMCities, getAllProvinces, getCitiesByProvince, getBarangays } from '../../lib/phLocations';
 import { getSizeGuideForBrand } from '../../data/sizeGuides';
 import { getVoucherUsage } from '../../lib/voucherUsage';
+import { createOrderId } from '../../lib/orderItems';
+import { getStockKey } from '../../lib/inventory';
+import { getBallUnitPrice, getCartUnitPrice, isBallProduct, priceOrder } from '../../lib/orderPricing';
 
 const SIZES = ['XS', 'S', 'M', 'L', 'XL', '2XL'];
 const BALL_QUANTITIES = [1, 5, 10, 20, 50, 100];
-
-const isBallProduct = (product) => {
-    const category = product?.category?.toLowerCase();
-    return category === 'balls' || product?.name?.toLowerCase().includes('ball');
-};
-
-const getBallUnitPrice = (quantity) => {
-    const qty = Number(quantity) || 0;
-    if (qty >= 100) return 70;
-    if (qty >= 50) return 80;
-    if (qty >= 21) return 90;
-    return 100;
-};
-
-const getCartUnitPrice = (item, quantity = item.quantity) => {
-    if (isBallProduct(item)) return getBallUnitPrice(quantity);
-    return Number(item.price) || 0;
-};
 
 export default function Storefront({ transactions, onPlaceOrder }) {
     const { showToast } = useToast();
@@ -139,7 +124,7 @@ export default function Storefront({ transactions, onPlaceOrder }) {
     const getStock = (product, size) => {
         if (!product.linkedColor || product.category !== 'shirts') {
             if (product.category && product.category !== 'shirts') {
-                const key = `acc-${product.name.replace(/\s+/g, '-').toLowerCase()}`;
+                const key = getStockKey(product);
                 return typeof rawInventory[key] === 'number' ? rawInventory[key] : 999;
             }
             return 999;
@@ -171,7 +156,7 @@ export default function Storefront({ transactions, onPlaceOrder }) {
         setCart(prev => prev.map(item => {
             if (item.cartId === cartId) {
                 const newQty = Math.max(0, item.quantity + delta);
-                return { ...item, quantity: newQty, price: getCartUnitPrice(item, newQty) };
+                return { ...item, quantity: newQty, price: newQty > 0 ? getCartUnitPrice(item, newQty) : item.price };
             }
             return item;
         }).filter(i => i.quantity > 0));
@@ -181,14 +166,21 @@ export default function Storefront({ transactions, onPlaceOrder }) {
     const [voucherCode, setVoucherCode] = useState('');
     const [appliedVoucher, setAppliedVoucher] = useState(null);
 
-    const subtotal = useMemo(() => cart.reduce((a, b) => a + (getCartUnitPrice(b) * (Number(b.quantity) || 0)), 0), [cart]);
-    const totalItems = useMemo(() => cart.reduce((a, b) => a + (Number(b.quantity) || 0), 0), [cart]);
+    const pricingOptions = useMemo(() => ({
+        discount: appliedVoucher ? { type: appliedVoucher.discountType, value: Number(appliedVoucher.value) } : null,
+        shippingFee: shippingRegion === 'MM' ? 100 : 200,
+        isRushOrder,
+        rushFeePerShirt: 100
+    }), [appliedVoucher, shippingRegion, isRushOrder]);
+    const cartPricing = useMemo(() => priceOrder(cart.map(item => ({
+        ...item, id: item.cartId, unitPrice: getCartUnitPrice(item)
+    })), pricingOptions), [cart, pricingOptions]);
+    const { subtotal, discountAmount, rushFeeAmount } = cartPricing;
     const rushableItemsCount = useMemo(() => cart.reduce((total, item) => {
         const product = productsByName.get(item.name);
-        const isShirt = !product || !product.category || product.category === 'shirts';
+        const isShirt = !isBallProduct(item) && (!product || !product.category || product.category === 'shirts');
         return isShirt ? total + (Number(item.quantity) || 0) : total;
     }, 0), [cart, productsByName]);
-    const rushFeeAmount = isRushOrder ? rushableItemsCount * 100 : 0;
 
     // Suggestive selling
     const suggestedProducts = useMemo(() => {
@@ -206,15 +198,6 @@ export default function Storefront({ transactions, onPlaceOrder }) {
             .slice(0, 4); // Take up to 4 items
     }, [products, cart]);
 
-    // Derived discount
-    const discountAmount = useMemo(() => {
-        if (!appliedVoucher) return 0;
-        if (appliedVoucher.discountType === 'percent') {
-            return (subtotal * appliedVoucher.value) / 100;
-        }
-        return Math.min(appliedVoucher.value, subtotal);
-    }, [subtotal, appliedVoucher]);
-
     const handleApplyVoucher = () => {
         if (!voucherCode.trim()) return;
 
@@ -231,6 +214,12 @@ export default function Storefront({ transactions, onPlaceOrder }) {
         }
 
         const details = voucherTx.details;
+        const value = Number(details.value);
+        if (!['fixed', 'percent'].includes(details.discountType) || !Number.isFinite(value) || value < 0
+            || (details.discountType === 'percent' && value > 100)) {
+            showToast('This voucher is not configured correctly. Please contact the store.', 'error');
+            return;
+        }
 
         // check expiry
         if (details.expiryDate) {
@@ -292,15 +281,6 @@ export default function Storefront({ transactions, onPlaceOrder }) {
         }
     };
 
-    const generateOrderId = () => {
-        const chars = 'ABCDEFGHJKLMNPQRSTUVWXYZ23456789'; // Avoid ambiguous characters
-        let result = '';
-        for (let i = 0; i < 6; i++) {
-            result += chars.charAt(Math.floor(Math.random() * chars.length));
-        }
-        return `ST-${result}`;
-    };
-
     const handleCheckout = async () => {
         if (cart.length === 0) return showToast('Add an item before checking out.', 'error');
         if (!firstName.trim()) return showToast('Please enter your first name', 'error');
@@ -317,37 +297,20 @@ export default function Storefront({ transactions, onPlaceOrder }) {
         setCheckoutLoading(true);
 
         try {
-            const orderId = generateOrderId();
+            const orderId = createOrderId();
             const date = new Date().toISOString();
-
-            const shippingFee = shippingRegion === 'MM' ? 100 : 200;
+            const priced = priceOrder(cart.map(item => ({
+                ...item, id: crypto.randomUUID(), unitPrice: getCartUnitPrice(item)
+            })), pricingOptions);
+            const pricing = { ...pricingOptions, version: 1, shippingLineId: priced.items[0].id };
 
             // Create transactions for each item
-            const newTransactions = cart.map((item, index) => {
-                const itemQty = Number(item.quantity) || 0;
-                const itemPrice = getCartUnitPrice(item, itemQty);
-                const itemTotal = itemPrice * itemQty;
-                const subtotalSafe = subtotal || 1;
-                const ratio = itemTotal / subtotalSafe;
-                const itemDiscount = discountAmount * ratio;
-                const product = productsByName.get(item.name);
-                const itemCategory = product?.category || item.category || 'shirts';
-                const isShirt = itemCategory === 'shirts';
-                const itemRushFee = (isRushOrder && isShirt) ? itemQty * 100 : 0;
-
-                // Add rush fee to the final amount so it gets tallied correctly as revenue
-                let finalAmount = (itemTotal - itemDiscount) + itemRushFee;
-
-                // We'll add the shipping fee to the first item's final amount 
-                // to ensure the total of all transactions matches the total paid.
-                if (index === 0) {
-                    finalAmount += shippingFee;
-                }
-
+            const newTransactions = priced.items.map(item => {
+                const itemCategory = item.category || 'shirts';
                 return {
-                    id: crypto.randomUUID(),
+                    id: item.id,
                     date,
-                    amount: finalAmount, // Discounted amount for revenue tracking
+                    amount: item.amount,
                     type: 'sale',
                     category: itemCategory,
                     description: `Online Order: ${item.name} (${item.size})`,
@@ -358,6 +321,10 @@ export default function Storefront({ transactions, onPlaceOrder }) {
                         itemName: item.name,
                         brand: item.brand || 'Sypik',
                         category: itemCategory,
+                        unitPrice: item.unitPrice,
+                        shippingShare: item.shippingShare,
+                        pricing,
+                        source: 'storefront',
                         size: item.size,
                         color: item.linkedColor || 'Varied',
                         quantity: item.quantity,
@@ -373,13 +340,13 @@ export default function Storefront({ transactions, onPlaceOrder }) {
                             // zipCode, // Removed
                             contactNumber,
                             region: shippingRegion,
-                            shippingFee,
+                            shippingFee: priced.shippingFee,
                             isRushOrder,
-                            rushFee: itemRushFee
+                            rushFee: item.rushFee
                         },
                         voucherCode: appliedVoucher ? appliedVoucher.code : null,
-                        discountShare: itemDiscount,
-                        originalAmount: itemTotal,
+                        discountShare: item.discountShare,
+                        originalAmount: item.originalAmount,
                         imageUrl: item.imageUrl,
                         isOnlineOrder: true,
                         proofOfPayment: requiresProof ? proofUrl : null
@@ -509,6 +476,7 @@ export default function Storefront({ transactions, onPlaceOrder }) {
 
                     <button
                         onClick={() => setIsCartOpen(true)}
+                        aria-label="Open cart"
                         className="relative p-2 text-slate-400 hover:text-white transition-colors"
                     >
                         <ShoppingCart size={24} />
@@ -799,7 +767,7 @@ export default function Storefront({ transactions, onPlaceOrder }) {
                                 <h2 className="text-xl font-bold text-white flex items-center gap-2">
                                     <ShoppingCart className="text-primary" /> Your Cart
                                 </h2>
-                                <button onClick={() => setIsCartOpen(false)} className="text-slate-400 hover:text-white p-2"><X size={24} /></button>
+                                <button aria-label="Close cart" onClick={() => setIsCartOpen(false)} className="text-slate-400 hover:text-white p-2"><X size={24} /></button>
                             </div>
 
                             <div className="flex-1 overflow-y-auto p-4 space-y-6">
@@ -824,9 +792,9 @@ export default function Storefront({ transactions, onPlaceOrder }) {
 
                                                 <div className="flex items-center gap-3">
                                                     <div className="flex items-center bg-black/40 rounded-lg p-1">
-                                                        <button onClick={() => updateQuantity(item.cartId, -1)} className="p-1 hover:text-white text-slate-400"><Minus size={14} /></button>
+                                                        <button aria-label={`Decrease quantity for ${item.name}`} onClick={() => updateQuantity(item.cartId, -1)} className="p-1 hover:text-white text-slate-400"><Minus size={14} /></button>
                                                         <span className="text-sm font-bold w-6 text-center">{item.quantity}</span>
-                                                        <button onClick={() => updateQuantity(item.cartId, 1)} className="p-1 hover:text-white text-slate-400"><Plus size={14} /></button>
+                                                        <button aria-label={`Increase quantity for ${item.name}`} onClick={() => updateQuantity(item.cartId, 1)} className="p-1 hover:text-white text-slate-400"><Plus size={14} /></button>
                                                     </div>
                                                 </div>
                                             </div>
@@ -1094,7 +1062,7 @@ export default function Storefront({ transactions, onPlaceOrder }) {
                                         </div>
                                         <div className="flex justify-between">
                                             <span>Shipping ({shippingRegion === 'MM' ? 'MM' : 'Provincial'})</span>
-                                            <span>₱{shippingRegion === 'MM' ? 100 : 200}</span>
+                                            <span>₱{cartPricing.shippingFee}</span>
                                         </div>
                                         {appliedVoucher && (
                                             <div className="flex justify-between text-emerald-400 font-bold">
@@ -1104,7 +1072,7 @@ export default function Storefront({ transactions, onPlaceOrder }) {
                                         )}
                                         {isRushOrder && (
                                             <div className="flex justify-between text-amber-400">
-                                                <span>Rush Fee (₱100/shirt x {totalItems})</span>
+                                                <span>Rush Fee (₱100/shirt x {rushableItemsCount})</span>
                                                 <span>₱{rushFeeAmount}</span>
                                             </div>
                                         )}
@@ -1143,7 +1111,7 @@ export default function Storefront({ transactions, onPlaceOrder }) {
                                     <div className="flex justify-between items-center text-xl font-bold pt-2 border-t border-white/5">
                                         <span className="text-white">Total</span>
                                         <span className={clsx("transition-colors duration-500", appliedVoucher ? "text-emerald-400 drop-shadow-[0_0_8px_rgba(52,211,153,0.3)]" : "text-white")}>
-                                            ₱{(subtotal - discountAmount + (shippingRegion === 'MM' ? 100 : 200) + rushFeeAmount).toLocaleString()}
+                                            ₱{cartPricing.total.toLocaleString()}
                                         </span>
                                     </div>
                                     {appliedVoucher && (

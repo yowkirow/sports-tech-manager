@@ -3,6 +3,8 @@ import { motion, AnimatePresence } from 'framer-motion';
 import { Package, CheckCircle, Clock, Truck, ShieldCheck, Search, ArrowLeft, Copy, ShoppingCart, MapPin, Phone, User, ExternalLink, X, Plus, Minus, RotateCcw } from 'lucide-react';
 import { supabase } from '../../lib/supabaseClient';
 import { useToast } from '../ui/Toast';
+import { groupOrders } from '../../lib/orderItems';
+import { buildOrderChanges, getEditableOrderItems, priceOrderChanges, saveOrderChanges } from '../../lib/orderEditing';
 
 const STATUS_STEPS = [
     { key: 'pending', label: 'Order Placed', icon: Clock, description: 'We have received your order.' },
@@ -26,6 +28,16 @@ export default function OrderTracking() {
     const [editItems, setEditItems] = useState([]);
     const [editDetails, setEditDetails] = useState(null);
     const [saving, setSaving] = useState(false);
+    const [editingOrder, setEditingOrder] = useState(null);
+    const [saveError, setSaveError] = useState('');
+    const editPricing = useMemo(() => {
+        if (!isEditing || !editingOrder) return null;
+        try {
+            return priceOrderChanges(editingOrder, editItems);
+        } catch (error) {
+            return { error: error.message };
+        }
+    }, [isEditing, editingOrder, editItems]);
 
     // Get order ID from URL on mount
     useEffect(() => {
@@ -36,7 +48,7 @@ export default function OrderTracking() {
         }
     }, []);
 
-    const fetchOrder = async (id, contact) => {
+    const fetchOrder = async (id, contact, { verifyContact = true, notify = true } = {}) => {
         setLoading(true);
         try {
             let query = supabase
@@ -53,40 +65,42 @@ export default function OrderTracking() {
                     .order('date', { ascending: false });
             }
 
-            const { data, error } = await query;
+            let { data, error } = await query;
 
             if (error) throw error;
+            if (id && !data?.length && /^[0-9a-f]{8}-[0-9a-f-]{27}$/i.test(id)) {
+                const legacy = await supabase.from('transactions').select('*').eq('type', 'sale').eq('id', id);
+                if (legacy.error) throw legacy.error;
+                data = legacy.data;
+            } else if (!id) {
+                const legacy = await supabase.from('transactions').select('*').eq('type', 'sale')
+                    .eq('details->>customerContact', contact.trim()).order('date', { ascending: false });
+                if (legacy.error) throw legacy.error;
+                data = [...new Map([...(data || []), ...(legacy.data || [])].map(row => [row.id, row])).values()];
+            }
+            const groups = groupOrders(data || []);
+            const foundOrder = id ? groups.find(group => group.id === id) : groups[0];
 
-            if (!data || data.length === 0) {
+            if (!foundOrder) {
                 showToast('Order not found', 'error');
+                if (!verifyContact) {
+                    setIsVerified(false);
+                    setOrder(null);
+                }
                 return;
             }
 
-            // If we searched by contact without ID, we take the most recent order's ID
-            const activeOrderId = id || data[0].details.orderId;
-
-            // Filter all items belonging to this specific orderId
-            const orderItems = id ? data : data.filter(item => item.details.orderId === activeOrderId);
-
-            const firstItem = orderItems[0];
-            const storedContact = firstItem.details.contactNumber || firstItem.details.shippingDetails?.contactNumber;
-
-            // Verify contact if we came from a specific ID link
-            if (id && storedContact !== contact && !storedContact.endsWith(contact)) {
+            const storedContact = String(foundOrder.details.contactNumber || '').replace(/\D/g, '');
+            const enteredContact = String(contact || '').replace(/\D/g, '');
+            if (verifyContact && (enteredContact.length < 7 || !storedContact || storedContact !== enteredContact)) {
                 showToast('Verification failed. Invalid contact number.', 'error');
                 return;
             }
 
-            // Success - store the group of items
-            setOrder({
-                id: activeOrderId,
-                items: orderItems,
-                details: firstItem.details,
-                date: firstItem.date
-            });
-            setOrderId(activeOrderId); // Ensure state is updated for real-time channel
+            setOrder(foundOrder);
+            setOrderId(foundOrder.id);
             setIsVerified(true);
-            showToast('Order verified!', 'success');
+            if (notify) showToast('Order verified!', 'success');
 
         } catch (err) {
             console.error(err);
@@ -110,38 +124,18 @@ export default function OrderTracking() {
                     table: 'transactions',
                 },
                 (payload) => {
-                    // Check if this transaction belongs to our current order
-                    const tx = payload.new || payload.old;
-                    if (tx?.details?.orderId === orderId) {
-                        setOrder(prev => {
-                            if (!prev) return prev;
-
-                            if (payload.eventType === 'INSERT') {
-                                if (prev.items.find(i => i.id === payload.new.id)) return prev;
-                                return { ...prev, items: [...prev.items, payload.new] };
-                            }
-
-                            if (payload.eventType === 'UPDATE') {
-                                const updatedItems = prev.items.map(item =>
-                                    item.id === payload.new.id ? { ...item, ...payload.new } : item
-                                );
-                                return {
-                                    ...prev,
-                                    items: updatedItems,
-                                    details: { ...prev.details, ...payload.new.details }
-                                };
-                            }
-
-                            if (payload.eventType === 'DELETE') {
-                                return {
-                                    ...prev,
-                                    items: prev.items.filter(i => i.id !== payload.old.id)
-                                };
-                            }
-
-                            return prev;
-                        });
-                    }
+                    const tx = payload.eventType === 'DELETE' ? payload.old : payload.new;
+                    setOrder(prev => {
+                        if (!prev || !tx || (tx.details?.orderId !== orderId && tx.id !== orderId
+                            && !prev.transactions.some(row => row.id === tx.id))) return prev;
+                        const rows = payload.eventType === 'DELETE'
+                            ? prev.transactions.filter(row => row.id !== tx.id)
+                            : prev.transactions.some(row => row.id === tx.id)
+                                ? prev.transactions.map(row => row.id === tx.id ? { ...row, ...tx } : row)
+                                : [...prev.transactions, tx];
+                        return groupOrders(rows).find(group => group.id === orderId)
+                            || { ...prev, transactions: [], items: [], totalAmount: 0 };
+                    });
                 }
             )
             .subscribe();
@@ -153,19 +147,14 @@ export default function OrderTracking() {
 
     const handleVerify = (e) => {
         e.preventDefault();
-        if (!contactVerify) return;
+        if (!contactVerify.trim()) return showToast('Enter your registered contact number.', 'error');
         fetchOrder(orderId, contactVerify);
     };
 
     const startEditing = () => {
-        setEditItems(order.items.map(item => ({
-            id: item.id,
-            name: item.details.itemName,
-            size: item.details.size,
-            quantity: item.details.quantity,
-            imageUrl: item.details.imageUrl,
-            price: item.details.originalAmount / item.details.quantity
-        })));
+        setEditingOrder(order);
+        setEditItems(getEditableOrderItems(order));
+        setSaveError('');
         setEditDetails({
             customerName: order.details.customerName,
             contactNumber: order.details.contactNumber,
@@ -184,67 +173,31 @@ export default function OrderTracking() {
 
         setSaving(true);
         try {
-            // Updated details for all transactions
-            const updatedFulfillmentDetails = {
-                ...order.details,
+            if (!editDetails.customerName.trim() || String(editDetails.contactNumber).replace(/\D/g, '').length < 7) {
+                throw new Error('Enter a customer name and valid contact number.');
+            }
+            const result = buildOrderChanges(editingOrder, editItems, {
                 customerName: editDetails.customerName,
                 contactNumber: editDetails.contactNumber,
                 shippingDetails: {
-                    ...order.details.shippingDetails,
                     address: editDetails.address,
                     city: editDetails.city,
                     province: editDetails.province,
                     barangay: editDetails.barangay,
-                    contactNumber: editDetails.contactNumber, // Added to sync with shipping details
+                    contactNumber: editDetails.contactNumber,
                 }
-            };
-
-            // Process each item
-            for (const item of editItems) {
-                const originalRow = order.items.find(i => i.id === item.id);
-
-                if (originalRow) {
-                    // Update existing row
-                    const newTotal = item.price * item.quantity;
-                    const updates = {
-                        amount: newTotal - (updatedFulfillmentDetails.discountShare / editItems.length), // Simplified discount split
-                        details: {
-                            ...updatedFulfillmentDetails,
-                            size: item.size,
-                            quantity: item.quantity,
-                            originalAmount: newTotal
-                        }
-                    };
-
-                    const { error } = await supabase
-                        .from('transactions')
-                        .update(updates)
-                        .eq('id', item.id);
-
-                    if (error) throw error;
-                }
-            }
-
-            // Remove deleted rows (items removed from editItems)
-            const removedIds = order.items
-                .filter(orig => !editItems.some(edited => edited.id === orig.id))
-                .map(orig => orig.id);
-
-            if (removedIds.length > 0) {
-                const { error } = await supabase
-                    .from('transactions')
-                    .delete()
-                    .in('id', removedIds);
-                if (error) throw error;
-            }
+            });
+            await saveOrderChanges(supabase, result.changes, { requirePending: true });
 
             showToast('Order updated successfully!', 'success');
             setIsEditing(false);
-            // Re-fetch to get clean state
-            fetchOrder(orderId, contactVerify);
+            setContactVerify(editDetails.contactNumber);
+            await fetchOrder(orderId, editDetails.contactNumber, { verifyContact: false, notify: false });
         } catch (err) {
             console.error(err);
-            showToast('Failed to update order', 'error');
+            setSaveError(`${err.message} Cancel editing to reload before retrying.`);
+            showToast(err.message || 'Failed to update order', 'error');
+            await fetchOrder(orderId, contactVerify, { verifyContact: false, notify: false });
         } finally {
             setSaving(false);
         }
@@ -255,9 +208,9 @@ export default function OrderTracking() {
         ? (order?.details?.previousFulfillmentStatus || 'shipped')
         : currentStatus;
     const statusIdx = Math.max(0, STATUS_STEPS.findIndex(s => s.key === timelineStatus));
-    const canEdit = currentStatus === 'pending';
+    const canEdit = currentStatus === 'pending' && order?.items.length > 0;
 
-    if (!isVerified) {
+    if (!isVerified || !order?.items.length) {
         return (
             <div className="min-h-screen bg-slate-900 text-slate-100 flex flex-col items-center justify-center p-4">
                 <motion.div
@@ -431,13 +384,12 @@ export default function OrderTracking() {
                                                 </div>
 
                                                 <div className="md:w-1/2 md:pl-12">
-                                                    {(index % 2 !== 0 || window.innerWidth < 768) && (
+                                                    <div className={index % 2 === 0 ? 'md:hidden' : ''}>
                                                         <div className={isCompleted ? 'opacity-100' : 'opacity-30'}>
                                                             <h4 className="font-bold text-white text-lg">{step.label}</h4>
                                                             <p className="text-sm text-slate-400">{step.description}</p>
                                                         </div>
-                                                    )}
-                                                    {index % 2 === 0 && window.innerWidth >= 768 && <div className="invisible md:block" />}
+                                                    </div>
                                                 </div>
                                             </div>
                                         );
@@ -477,26 +429,28 @@ export default function OrderTracking() {
                                         <span>Subtotal</span>
                                         <span>₱{(order.items.reduce((acc, item) => acc + (item.details.originalAmount || item.amount), 0)).toLocaleString()}</span>
                                     </div>
-                                    {order.details.discountShare > 0 && (
+                                    {order.discountAmount > 0 && (
                                         <div className="flex justify-between text-sm text-emerald-400">
                                             <span>Discount</span>
-                                            <span>-₱{order.details.discountShare.toLocaleString()}</span>
+                                            <span>-₱{order.discountAmount.toLocaleString()}</span>
                                         </div>
                                     )}
                                     <div className="flex justify-between text-sm text-slate-400">
                                         <span>Shipping</span>
                                         <span>₱{(order.details.shippingDetails?.shippingFee || 0).toLocaleString()}</span>
                                     </div>
-                                    <div className="flex justify-between text-lg font-bold text-white pt-2">
-                                        <span>Total Paid</span>
-                                        <span>₱{(order.items.reduce((acc, item) => acc + item.amount, 0)).toLocaleString()}</span>
-                                    </div>
-                                    {/* Legacy Support Hint */}
-                                    {order.items.reduce((acc, item) => acc + item.amount, 0) < (order.items.reduce((acc, item) => acc + (item.details?.originalAmount || 0), 0) - (order.details.discountShare || 0) + (order.details.shippingDetails?.shippingFee || 0)) && (
-                                        <div className="text-[10px] text-slate-500 text-right mt-1 italic">
-                                            * Shipping fee breakdown might be adjusted in the items total.
-                                        </div>
+                                    {order.totalRushFee > 0 && (
+                                        <div className="flex justify-between text-sm text-amber-400"><span>Rush processing</span><span>₱{order.totalRushFee.toLocaleString()}</span></div>
                                     )}
+                                    {order.priceAdjustment !== 0 && (
+                                        <div className="flex justify-between text-sm text-slate-400"><span>Saved price adjustment</span><span>₱{order.priceAdjustment.toLocaleString()}</span></div>
+                                    )}
+                                    <div className="flex justify-between text-lg font-bold text-white pt-2">
+                                        <span>Order total</span>
+                                        <span>₱{order.totalAmount.toLocaleString()}</span>
+                                    </div>
+                                    <div className="flex justify-between text-sm text-slate-400"><span>Paid</span><span>₱{order.paidAmount.toLocaleString()}</span></div>
+                                    <div className="flex justify-between text-sm text-slate-200"><span>Balance due</span><span>₱{Math.max(0, order.totalAmount - order.paidAmount).toLocaleString()}</span></div>
                                 </div>
                             </div>
 
@@ -564,19 +518,29 @@ export default function OrderTracking() {
                             <h2 className="text-2xl font-bold text-white">Modify Order</h2>
                             <div className="flex gap-3">
                                 <button
-                                    onClick={() => setIsEditing(false)}
+                                    disabled={saving}
+                                    onClick={async () => {
+                                        setIsEditing(false);
+                                        setSaveError('');
+                                        await fetchOrder(orderId, contactVerify, { verifyContact: false, notify: false });
+                                    }}
                                     className="px-4 py-2 rounded-xl text-slate-400 hover:text-white text-sm font-bold transition-colors"
                                 >
                                     Cancel
                                 </button>
                                 <button
                                     onClick={handleSave}
-                                    disabled={saving}
+                                    disabled={saving || !!saveError || !!editPricing?.error}
                                     className="btn-primary px-6 py-2 flex items-center gap-2"
                                 >
                                     {saving ? <Clock className="animate-spin" size={16} /> : 'Save Changes'}
                                 </button>
                             </div>
+                        </div>
+
+                        <div role={saveError || editPricing?.error ? 'alert' : 'status'} className="glass-panel p-4 text-sm text-slate-200">
+                            {saveError || editPricing?.error || `Updated order total: PHP ${editPricing?.total.toLocaleString(undefined, { maximumFractionDigits: 2 })}`}
+                            {editPricing?.options?.legacyDiscount && <p className="mt-2 text-slate-400">This older order keeps its original peso discount. Shipping is charged once; rush fees follow the shirt quantity.</p>}
                         </div>
 
                         <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
@@ -610,6 +574,8 @@ export default function OrderTracking() {
                                                     <div className="space-y-1">
                                                         <label className="text-[10px] font-bold text-slate-500 uppercase ml-1">Size</label>
                                                         <select
+                                                            aria-label={`Size for ${item.name}`}
+                                                            disabled={item.category !== 'shirts'}
                                                             value={item.size}
                                                             onChange={e => {
                                                                 const newItems = [...editItems];
@@ -618,6 +584,7 @@ export default function OrderTracking() {
                                                             }}
                                                             className="glass-input py-1.5 px-3 text-sm min-w-[80px]"
                                                         >
+                                                            {!SIZES.includes(item.size) && <option value={item.size}>{item.size || 'N/A'}</option>}
                                                             {SIZES.map(s => <option key={s} value={s}>{s}</option>)}
                                                         </select>
                                                     </div>
@@ -625,6 +592,7 @@ export default function OrderTracking() {
                                                         <label className="text-[10px] font-bold text-slate-500 uppercase ml-1">Quantity</label>
                                                         <div className="flex items-center gap-2">
                                                             <button
+                                                                aria-label={`Decrease quantity for ${item.name}`}
                                                                 onClick={() => {
                                                                     const newItems = [...editItems];
                                                                     if (newItems[idx].quantity > 1) {
@@ -638,6 +606,7 @@ export default function OrderTracking() {
                                                             </button>
                                                             <span className="w-8 text-center font-bold text-white">{item.quantity}</span>
                                                             <button
+                                                                aria-label={`Increase quantity for ${item.name}`}
                                                                 onClick={() => {
                                                                     const newItems = [...editItems];
                                                                     newItems[idx].quantity++;

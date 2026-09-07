@@ -31,11 +31,12 @@ const useSupabaseCustomers = () => {
             const { name, contact_number, address, total_spent } = details;
 
             // Check if exists
-            const { data: existing } = await supabase
+            const { data: existing, error: lookupError } = await supabase
                 .from('customers')
                 .select('id, total_spent')
                 .eq('name', name)
-                .single();
+                .maybeSingle();
+            if (lookupError) throw lookupError;
 
             let result;
             if (existing) {
@@ -45,7 +46,7 @@ const useSupabaseCustomers = () => {
                     .update({
                         contact_number: contact_number || undefined,
                         address: address || undefined,
-                        total_spent: (existing.total_spent || 0) + (total_spent || 0)
+                        total_spent: Number(existing.total_spent || 0) + Number(total_spent || 0)
                     })
                     .eq('id', existing.id)
                     .select()
