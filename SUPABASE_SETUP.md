@@ -1,5 +1,9 @@
 # Supabase Database Setup
 
+Production still uses this Supabase setup. The isolated Cloudflare migration
+environment is documented in [CLOUDFLARE_SETUP.md](CLOUDFLARE_SETUP.md); do not remove
+Supabase or redirect production based only on a successful staging deployment.
+
 ## Atomic Order Editing
 
 The app calls `public.save_order_changes` once per order edit. Install the function

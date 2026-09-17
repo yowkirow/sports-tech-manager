@@ -22,3 +22,16 @@ After each completed code change set, run the relevant checks and production bui
 Verify the deployment status for the exact pushed commit and report its URL and environment. A successful Git push alone does not confirm a successful deployment.
 
 Working branches use Vercel preview deployments. Production remains tied to `main`; do not merge or push to `main` solely to deploy unless the user explicitly requests a production release. Report deployment failures or missing Vercel integration instead of claiming the changes are live.
+
+## Cloudflare Migration Staging
+
+Until the separately verified production cutover, Vercel and Supabase remain the
+live application. Worker changes use `wrangler.staging.jsonc` and the isolated
+`sportstech-staging` resources only.
+
+For a completed staging change set, run `npm run check:worker`, the relevant tests
+and the frontend build; apply required staging migrations, commit/push the working
+branch, and run `npm run deploy:staging`. Verify the exact Worker version and the
+expected authentication-denial behavior as well as the branch's Vercel preview.
+Do not interpret a successful staging deploy as permission to change Hostinger
+nameservers, redirect the live domain, grant employee access, or retire Supabase.

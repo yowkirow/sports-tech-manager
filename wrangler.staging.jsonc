@@ -1,0 +1,25 @@
+{
+  "$schema": "./node_modules/wrangler/config-schema.json",
+  "name": "sportstech-staging",
+  "account_id": "e6ef673047a124edf93818f0a51ace71",
+  "main": "worker/index.ts",
+  "compatibility_date": "2026-09-17",
+  "workers_dev": true,
+  "preview_urls": false,
+  "vars": {
+    "ENVIRONMENT": "staging",
+    "ACCESS_TEAM_DOMAIN": "jolly-fog-e8df.cloudflareaccess.com",
+    "ACCESS_AUDIENCE": ""
+  },
+  "version_metadata": {
+    "binding": "VERSION"
+  },
+  "d1_databases": [
+    {
+      "binding": "DB",
+      "database_name": "sportstech-staging",
+      "database_id": "e0c1ab2a-79c6-44f1-8e52-dc58f830c5f2",
+      "migrations_dir": "worker/migrations"
+    }
+  ]
+}

@@ -3,26 +3,36 @@
   "private": true,
   "version": "0.0.0",
   "type": "module",
+  "engines": {
+    "node": ">=22.19.0"
+  },
   "scripts": {
     "dev": "vite",
     "test": "node --test",
     "build": "tsc && vite build",
-    "preview": "vite preview"
+    "preview": "vite preview",
+    "check:worker": "tsc --project tsconfig.worker.json",
+    "dev:staging": "wrangler dev --config wrangler.staging.jsonc",
+    "deploy:staging": "npm run check:worker && wrangler deploy --config wrangler.staging.jsonc",
+    "db:staging": "wrangler d1 migrations apply sportstech-staging --remote --config wrangler.staging.jsonc"
   },
   "devDependencies": {
+    "@cloudflare/workers-types": "5.20260917.1",
     "@tailwindcss/postcss": "^4.1.18",
     "autoprefixer": "^10.4.23",
     "postcss": "^8.5.6",
     "tailwindcss": "^4.1.18",
     "typescript": "~5.9.3",
     "vite": "^7.2.4",
-    "vite-plugin-pwa": "^1.2.0"
+    "vite-plugin-pwa": "^1.2.0",
+    "wrangler": "4.132.0"
   },
   "dependencies": {
     "@supabase/supabase-js": "^2.90.1",
     "@vitejs/plugin-react": "^5.1.2",
     "clsx": "^2.1.1",
     "framer-motion": "^12.26.2",
+    "jose": "^6.2.12",
     "lucide-react": "^0.562.0",
     "react": "^19.2.3",
     "react-dom": "^19.2.3",
