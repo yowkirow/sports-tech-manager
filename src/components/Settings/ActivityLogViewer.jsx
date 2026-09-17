@@ -1,37 +1,35 @@
 import React, { useState, useEffect } from 'react';
-import { supabase } from '../../lib/supabaseClient';
+import { apiRequest } from '../../lib/apiClient';
 import { Loader2, RefreshCw, Clock, User, Activity } from 'lucide-react';
 
 export default function ActivityLogViewer({ user, userRole }) {
     const [logs, setLogs] = useState([]);
     const [loading, setLoading] = useState(true);
     const [adminMap, setAdminMap] = useState({});
+    const [error, setError] = useState(null);
 
     const fetchLogs = async () => {
         setLoading(true);
+        setError(null);
         try {
             // Parallel fetch: Logs + Identity Map
             const [logsRes, adminsRes] = await Promise.all([
-                supabase
-                    .from('activity_logs')
-                    .select('*')
-                    .order('created_at', { ascending: false })
-                    .limit(50),
-                supabase.from('admin_directory').select('email, name')
+                apiRequest('/api/activity?offset=0&limit=100'),
+                userRole === 'owner' ? apiRequest('/api/members') : Promise.resolve({ members: [] })
             ]);
 
-            if (logsRes.error) throw logsRes.error;
+            if (!Array.isArray(logsRes.logs)) throw new Error('The activity log response could not be verified.');
 
             // Map emails to names
             const map = {};
-            if (adminsRes.data) {
-                adminsRes.data.forEach(a => {
+            if (adminsRes.members) {
+                adminsRes.members.forEach(a => {
                     if (a.email && a.name) map[a.email] = a.name;
                 });
             }
             setAdminMap(map);
 
-            let data = logsRes.data || [];
+            let data = logsRes.logs;
 
             // Reseller Security: Only show own logs
             if (userRole === 'reseller' && user?.email) {
@@ -41,6 +39,7 @@ export default function ActivityLogViewer({ user, userRole }) {
             setLogs(data);
         } catch (err) {
             console.error('Error fetching logs:', err);
+            setError(err.message);
         } finally {
             setLoading(false);
         }
@@ -48,7 +47,7 @@ export default function ActivityLogViewer({ user, userRole }) {
 
     useEffect(() => {
         fetchLogs();
-    }, []);
+    }, [user?.id, userRole]);
 
     const formatDate = (isoString) => {
         return new Date(isoString).toLocaleString('en-US', {
@@ -59,7 +58,7 @@ export default function ActivityLogViewer({ user, userRole }) {
     const formatDetails = (detailsStr) => {
         if (!detailsStr) return '-';
         try {
-            const obj = JSON.parse(detailsStr);
+            const obj = typeof detailsStr === 'object' ? detailsStr : JSON.parse(detailsStr);
             // prettify or summary
             return Object.entries(obj).map(([key, val]) => (
                 <span key={key} className="block text-xs text-slate-400">
@@ -86,6 +85,7 @@ export default function ActivityLogViewer({ user, userRole }) {
                 </button>
             </div>
 
+            {error && <p role="alert" className="text-sm text-red-300">{error} Use refresh to retry.</p>}
             <div className="glass-panel overflow-hidden p-0">
                 <div className="overflow-x-auto max-h-[500px]">
                     <table className="w-full text-left text-sm">

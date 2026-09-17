@@ -2,9 +2,8 @@ import React, { useState, useMemo } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
 import { Package, Clock, CheckCircle, Truck, User, Search, Edit2, Save, X, Trash2, Layers, ChevronDown, ChevronUp, ShoppingBag, Loader2, AlertCircle, Banknote, Filter, Copy, MessageSquare, Send, RotateCcw } from 'lucide-react';
 import { useToast } from '../ui/Toast';
-import { supabase } from '../../lib/supabaseClient';
+import { api, apiRequest } from '../../lib/apiClient';
 import { useProducts } from '../../hooks/useInventory';
-import { sendSMS } from '../../lib/textbee';
 import { withLocalDate } from '../../lib/transactionDate';
 import { groupOrders } from '../../lib/orderItems';
 import { buildOrderChanges, buildOrderDetailChanges, priceOrderChanges, saveOrderChanges } from '../../lib/orderEditing';
@@ -15,10 +14,22 @@ const FULFILLMENT_STATUSES = ['pending', 'in_progress', 'ready', 'shipped', 'ret
 const PAYMENT_STATUSES = ['unpaid', 'paid'];
 const PAYMENT_MODES = ['Cash', 'Gcash', 'Bank Transfer', 'COD'];
 
-export default function OrderManagement({ transactions, onAddTransaction, onDeleteTransaction, refetch, userRole }) {
+export default function OrderManagement({ transactions, onAddTransaction, onDeleteTransaction, onOrderSaved, refetch, userRole }) {
     const { showToast } = useToast();
     const products = useProducts(transactions);
     const isReseller = userRole === 'reseller';
+    const deletionRequests = React.useRef(new Map());
+    const persistOrder = async changes => {
+        const ready = details => ['ready', 'shipped'].includes(details?.fulfillmentStatus ?? details?.status);
+        const needsPackingConfirmation = import.meta.env.VITE_PRINT_QUEUE_ENABLED === 'true'
+            && changes.some(change => !ready(change.original.details) && ready(change.updates.details));
+        if (needsPackingConfirmation && !window.confirm('Confirm that all shirts passed quality checks and packing, accessories and labels are complete.')) {
+            throw new Error('Packing was not confirmed. No changes were saved.');
+        }
+        const result = await saveOrderChanges(changes, { requirePending: isReseller, ...(needsPackingConfirmation ? { packingConfirmed: true } : {}) });
+        onOrderSaved?.(changes, result);
+        return result;
+    };
     const [filterFulfillment, setFilterFulfillment] = useState('all');
     const [filterPayment, setFilterPayment] = useState('all'); // 'all', 'paid', 'unpaid'
     const [searchTerm, setSearchTerm] = useState('');
@@ -76,6 +87,10 @@ export default function OrderManagement({ transactions, onAddTransaction, onDele
     };
 
     const startEditing = (order) => {
+        if (isReseller && order.fulfillmentStatus !== 'pending') {
+            showToast('Only pending orders can be edited. Contact the owner for later changes.', 'info');
+            return;
+        }
         setEditingId(order.id);
         setEditingOrder(order);
         
@@ -117,16 +132,16 @@ export default function OrderManagement({ transactions, onAddTransaction, onDele
                 ? order.date
                 : withLocalDate(editForm.date, new Date(order.date)).toISOString();
 
-            const isNewTracking = editForm.trackingNumber && editForm.trackingNumber !== (order.items[0]?.details?.trackingNumber || '');
-            const finalFulfillmentStatus = isNewTracking ? 'shipped' : editForm.fulfillmentStatus;
+            const isNewTracking = !isReseller && editForm.trackingNumber && editForm.trackingNumber !== (order.items[0]?.details?.trackingNumber || '');
+            const finalFulfillmentStatus = isReseller ? order.fulfillmentStatus : isNewTracking ? 'shipped' : editForm.fulfillmentStatus;
 
             const result = buildOrderChanges(order, editForm.items, {
                 customerName: editForm.customerName,
                 contactNumber: editForm.contactNumber,
                 fulfillmentStatus: finalFulfillmentStatus,
-                paymentStatus: editForm.paymentStatus,
+                paymentStatus: isReseller ? order.paymentStatus : editForm.paymentStatus,
                 paymentMode: editForm.paymentMode,
-                trackingNumber: editForm.trackingNumber,
+                trackingNumber: isReseller ? (order.items[0]?.details?.trackingNumber || '') : editForm.trackingNumber,
                 status: finalFulfillmentStatus,
                 shippingDetails: {
                     contactNumber: editForm.contactNumber,
@@ -147,7 +162,7 @@ export default function OrderManagement({ transactions, onAddTransaction, onDele
                     delete updatedDetails.previousFulfillmentStatus;
                 }
             });
-            await saveOrderChanges(supabase, result.changes);
+            await persistOrder(result.changes);
             showToast('Order updated!', 'success');
 
             // Trigger SMS if tracking number was added/updated
@@ -168,10 +183,11 @@ export default function OrderManagement({ transactions, onAddTransaction, onDele
     };
 
     const handleQuickTracking = async (orderId, trackingNumber) => {
+        if (isReseller) return;
         setLoading(true);
         try {
             const order = groupedOrders.find(o => o.id === orderId);
-            if (!order) return;
+            if (!order) throw new Error('Order not found. Reload before retrying.');
 
             const changes = buildOrderDetailChanges(order, details => ({
                 ...details,
@@ -179,7 +195,7 @@ export default function OrderManagement({ transactions, onAddTransaction, onDele
                 fulfillmentStatus: trackingNumber ? 'shipped' : details.fulfillmentStatus,
                 status: trackingNumber ? 'shipped' : details.status
             }));
-            await saveOrderChanges(supabase, changes);
+            await persistOrder(changes);
 
             showToast('Tracking updated', 'success');
 
@@ -198,18 +214,29 @@ export default function OrderManagement({ transactions, onAddTransaction, onDele
     };
 
     const handleDeleteOrder = async (orderId) => {
+        if (isReseller) return;
         if (!confirm('Delete this entire order?')) return;
         setLoading(true);
         try {
             const order = groupedOrders.find(o => o.id === orderId);
-            if (!order) return;
-            for (const item of order.transactions) {
-                await onDeleteTransaction(item.id);
+            if (!order) throw new Error('Order not found. Reload before retrying.');
+            const expectedVersion = order.transactions[0]?.orderVersion;
+            if (!Number.isSafeInteger(expectedVersion)) throw new Error('The order version is missing. Reload before deleting.');
+            const key = `${orderId}:${expectedVersion}`;
+            const requestId = deletionRequests.current.get(key) || crypto.randomUUID();
+            deletionRequests.current.set(key, requestId);
+            const result = await apiRequest(`/api/orders/${encodeURIComponent(orderId)}`, {
+                method: 'DELETE', body: { expectedVersion, requestId, sourceIds: order.transactions.map(row => row.id) }
+            });
+            if (result.orderId !== orderId || !Array.isArray(result.ids)
+                || order.transactions.some(row => !result.ids.includes(row.id))) {
+                throw new Error('Order deletion could not be confirmed. Reload before retrying.');
             }
+            deletionRequests.current.delete(key);
             showToast('Order deleted', 'success');
             if (refetch) await refetch();
         } catch (err) {
-            showToast('Delete failed', 'error');
+            showToast('Delete failed: ' + err.message, 'error');
         } finally {
             setLoading(false);
         }
@@ -231,7 +258,7 @@ export default function OrderManagement({ transactions, onAddTransaction, onDele
                 status: 'returned',
                 returnedAt
             }));
-            await saveOrderChanges(supabase, changes);
+            await persistOrder(changes);
             showToast('Order marked as returned', 'success');
             if (refetch) await refetch();
         } catch (err) {
@@ -243,12 +270,13 @@ export default function OrderManagement({ transactions, onAddTransaction, onDele
     };
 
     const handleBulkUpdate = async (updates) => {
+        if (isReseller) return;
         if (!confirm(`Update ${selectedOrderIds.size} orders?`)) return;
         setLoading(true);
         try {
             for (const orderId of selectedOrderIds) {
                 const order = groupedOrders.find(o => o.id === orderId);
-                if (!order) continue;
+                if (!order) throw new Error('Order not found. Reload before retrying.');
 
                 const changes = buildOrderDetailChanges(order, details => {
                     const newDetails = { ...details, ...updates };
@@ -268,7 +296,7 @@ export default function OrderManagement({ transactions, onAddTransaction, onDele
 
                     return newDetails;
                 });
-                await saveOrderChanges(supabase, changes);
+                await persistOrder(changes);
             }
             showToast('Bulk update complete', 'success');
             setIsSelectionMode(false);
@@ -288,9 +316,9 @@ export default function OrderManagement({ transactions, onAddTransaction, onDele
         if (!commentText.trim()) return;
         setLoading(true);
         try {
-            const { data: { user } } = await supabase.auth.getUser();
+            const user = await api.getCurrentUser();
             const order = groupedOrders.find(o => o.id === orderId);
-            if (!order) return;
+            if (!order) throw new Error('Order not found. Reload before retrying.');
 
             const newComment = {
                 id: crypto.randomUUID(),
@@ -303,12 +331,14 @@ export default function OrderManagement({ transactions, onAddTransaction, onDele
                 ...details,
                 comments: [...(details?.comments || []), newComment]
             }));
-            await saveOrderChanges(supabase, changes);
+            await persistOrder(changes);
             showToast('Comment added', 'success');
             if (refetch) await refetch();
+            return true;
         } catch (err) {
             console.error(err);
             showToast('Failed to add comment: ' + err.message, 'error');
+            return false;
         } finally {
             setLoading(false);
         }
@@ -345,18 +375,14 @@ export default function OrderManagement({ transactions, onAddTransaction, onDele
 
     const handleSendTrackingSms = async (order, trackingNumber) => {
         try {
-            console.log("Triggering SMS for tracking:", trackingNumber);
-            const { data: { user } } = await supabase.auth.getUser();
-            const meta = user?.user_metadata;
-
-            if (!meta?.enable_tracking_sms) {
-                console.warn("SMS is disabled in User Metadata");
+            if (userRole !== 'owner') return;
+            const settings = await apiRequest('/api/settings/sms');
+            if (!settings.enableTrackingSms) {
                 showToast("SMS Disabled in Profile Settings", "info");
                 return;
             }
-            if (!meta?.textbee_api_key || !meta?.textbee_device_id) {
-                console.warn("Missing TextBee keys in User Metadata");
-                showToast("SMS Failed: No API Key or Device ID found in Profile Settings", "error");
+            if (!settings.configured) {
+                showToast("Order saved. Configure the SMS gateway in Settings to send notifications.", "error");
                 return;
             }
             if (!trackingNumber) return;
@@ -369,13 +395,11 @@ export default function OrderManagement({ transactions, onAddTransaction, onDele
 
             const recipient = formatContactForSMS(contactRaw);
             if (!recipient || !recipient.startsWith('+')) {
-                console.warn('Skipping SMS: Invalid or missing contact number', contactRaw);
                 showToast(`SMS Skipped: Customer missing valid phone #`, 'error');
                 return;
             }
 
             // Intelligently format the tracking link
-            const internalTracker = `${window.location.origin}/track/${order.id}`;
             let trackingLink = trackingNumber;
             if (!trackingNumber.startsWith('http') && trackingNumber.length < 25) {
                 // If it looks like an ordinary tracking ID, fallback to LBC or courier
@@ -383,19 +407,18 @@ export default function OrderManagement({ transactions, onAddTransaction, onDele
             }
 
             // Parse template
-            let message = meta.tracking_sms_template || 'Hi {customerName}, your order {orderId} has been shipped! Track here: {trackingLink}';
+            let message = settings.trackingSmsTemplate || 'Hi {customerName}, your order {orderId} has been shipped! Track here: {trackingLink}';
             message = message
                 .replace(/{customerName}/g, order.customerName || 'Customer')
                 .replace(/{trackingNumber}/g, trackingNumber)
                 .replace(/{trackingLink}/g, trackingLink)
                 .replace(/{orderId}/g, String(order.id).slice(0, 8)); // Use first 8 chars for cleaner ID
 
-            console.log("Sending TextBee API request to", recipient);
-            await sendSMS({
-                apiKey: meta.textbee_api_key,
-                deviceId: meta.textbee_device_id,
+            await api.sendSms({
                 recipient,
-                message
+                message,
+                orderId: order.id,
+                trackingNumber
             });
             showToast('Tracking SMS sent!', 'success');
         } catch (error) {
@@ -462,12 +485,12 @@ export default function OrderManagement({ transactions, onAddTransaction, onDele
                 </div>
                 {isSelectionMode ? (
                     <div className="flex gap-2 animate-fade-in">
-                        <button
+                        {!isReseller && <button
                             onClick={() => setShowBulkEditModal(true)}
                             className="bg-primary text-white hover:bg-primary-hover px-4 py-2 rounded-xl transition-colors text-sm font-bold whitespace-nowrap flex items-center gap-2"
                         >
                             <Edit2 size={16} /> Bulk Edit
-                        </button>
+                        </button>}
                         <button
                             onClick={async () => {
                                 if (confirm(`Delete ${selectedOrderIds.size} orders?`)) {
@@ -630,6 +653,7 @@ export default function OrderManagement({ transactions, onAddTransaction, onDele
                                                     <Truck className="absolute left-2 top-[60%] -translate-y-1/2 text-slate-500" size={14} />
                                                     <input
                                                         placeholder="Tracking Number"
+                                                        disabled={isReseller}
                                                         value={editForm.trackingNumber || ''}
                                                         onChange={e => {
                                                             const val = e.target.value;
@@ -654,6 +678,7 @@ export default function OrderManagement({ transactions, onAddTransaction, onDele
                                                 )}
                                                 <select
                                                     value={editForm.paymentStatus}
+                                                    disabled={isReseller}
                                                     onChange={e => setEditForm({ ...editForm, paymentStatus: e.target.value })}
                                                     className="glass-input py-1 px-2 text-xs capitalize"
                                                 >
@@ -680,6 +705,7 @@ export default function OrderManagement({ transactions, onAddTransaction, onDele
                                                     <Truck size={14} className={`absolute left-2 top-1/2 -translate-y-1/2 ${order.items[0]?.details?.trackingNumber ? 'text-primary' : 'text-slate-500'}`} />
                                                     <input
                                                         defaultValue={order.items[0]?.details?.trackingNumber || ''}
+                                                        readOnly={isReseller}
                                                         placeholder="Add Tracking"
                                                         className={`py-1.5 pl-8 pr-2 text-xs w-32 focus:w-48 transition-all rounded-lg border outline-none ${order.items[0]?.details?.trackingNumber
                                                             ? 'bg-primary/10 border-primary/30 text-primary font-mono font-bold'
@@ -1062,19 +1088,20 @@ export default function OrderManagement({ transactions, onAddTransaction, onDele
                                                         type="text" 
                                                         placeholder="Write a note..."
                                                         className="glass-input py-1.5 px-3 text-xs flex-1"
-                                                        onKeyDown={(e) => {
-                                                            if (e.key === 'Enter' && e.target.value.trim()) {
-                                                                handleSaveComment(order.id, e.target.value);
-                                                                e.target.value = '';
+                                                        disabled={loading}
+                                                        onKeyDown={async (e) => {
+                                                            if (e.key === 'Enter' && e.target.value.trim() && !loading) {
+                                                                const input = e.currentTarget;
+                                                                if (await handleSaveComment(order.id, input.value)) input.value = '';
                                                             }
                                                         }}
                                                     />
                                                     <button 
-                                                        onClick={(e) => {
+                                                        disabled={loading}
+                                                        onClick={async (e) => {
                                                             const input = e.currentTarget.previousSibling;
                                                             if (input.value.trim()) {
-                                                                handleSaveComment(order.id, input.value);
-                                                                input.value = '';
+                                                                if (await handleSaveComment(order.id, input.value)) input.value = '';
                                                             }
                                                         }}
                                                         className="p-2 bg-primary/20 text-primary hover:bg-primary hover:text-white rounded-lg transition-all"

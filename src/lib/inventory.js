@@ -71,6 +71,35 @@ export const getStockKey = (source, fallbackCategory = '') => (
     getInventoryDescriptor(source, fallbackCategory)?.key || null
 );
 
+const forEachMovement = (transactions, addMovement) => {
+    for (const transaction of transactions) {
+        if (!transaction?.id || !transaction.details) continue;
+        if (transaction.type === 'expense' || transaction.type === 'update_stock') {
+            const category = getCategory(transaction, transaction.category);
+            const details = transaction.details;
+            if (details.club || EXCLUDED_STOCK_CATEGORIES.has(category)) continue;
+            if (!SHIRT_CATEGORIES.has(category) && !normalizeWhitespace(details.subCategory || details.itemName || details.name)) continue;
+            const descriptor = getInventoryDescriptor(transaction, transaction.category);
+            if (descriptor) addMovement(descriptor.key, descriptor, transaction.id, quantityOr(details.quantity));
+            continue;
+        }
+        if (transaction.type !== 'sale') continue;
+        for (const item of getSaleItems(transaction)) {
+            if (item.details?.removedFromOrder) continue;
+            const descriptor = getInventoryDescriptor(item, item.category);
+            if (descriptor) addMovement(descriptor.key, descriptor, item.transactionId || transaction.id, -quantityOr(item.details?.quantity));
+        }
+    }
+};
+
+export const getStockCounts = (transactions = []) => {
+    const counts = Object.create(null);
+    forEachMovement(transactions, (key, _descriptor, _transactionId, quantity) => {
+        counts[key] = (counts[key] || 0) + quantity;
+    });
+    return { ...counts };
+};
+
 export const getInventoryRows = (transactions = []) => {
     const rows = new Map();
     const transactionKeyMap = new Map();
@@ -101,47 +130,7 @@ export const getInventoryRows = (transactions = []) => {
         transactionKeyMap.get(transactionId).add(key);
     };
 
-    chronoTransactions.forEach(transaction => {
-        if (!transaction?.id || !transaction.details) return;
-
-        if (transaction.type === 'expense' || transaction.type === 'update_stock') {
-            const category = getCategory(transaction, transaction.category);
-            const details = transaction.details || {};
-
-            if (details.club || EXCLUDED_STOCK_CATEGORIES.has(category)) return;
-
-            if (SHIRT_CATEGORIES.has(category)) {
-                const descriptor = getShirtDescriptor(transaction);
-                if (!descriptor) return;
-                addMovement(descriptor.key, descriptor, transaction.id, quantityOr(details.quantity));
-                return;
-            }
-
-            const accessorySeed = normalizeWhitespace(details.subCategory || details.itemName || details.name);
-            if (!accessorySeed) return;
-
-            const descriptor = getAccessoryDescriptor(transaction);
-            if (!descriptor) return;
-            addMovement(descriptor.key, descriptor, transaction.id, quantityOr(details.quantity));
-            return;
-        }
-
-        if (transaction.type !== 'sale') return;
-
-        getSaleItems(transaction).forEach(item => {
-            if (item.details?.removedFromOrder) return;
-
-            const descriptor = getInventoryDescriptor(item, item.category);
-            if (!descriptor) return;
-
-            addMovement(
-                descriptor.key,
-                descriptor,
-                item.transactionId || transaction.id,
-                -quantityOr(item.details?.quantity)
-            );
-        });
-    });
+    forEachMovement(chronoTransactions, addMovement);
 
     const rowsList = Array.from(rows.values());
     rowsList.forEach(row => {

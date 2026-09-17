@@ -3,11 +3,17 @@ import react from '@vitejs/plugin-react'
 import { VitePWA } from 'vite-plugin-pwa'
 
 // https://vitejs.dev/config/
-export default defineConfig({
+export default defineConfig(({ mode }) => ({
+    define: {
+        'import.meta.env.VITE_PRINT_QUEUE_ENABLED': JSON.stringify(mode === 'staging' ? 'true' : process.env.VITE_PRINT_QUEUE_ENABLED || 'false')
+    },
     plugins: [
         react(),
         VitePWA({
             registerType: 'autoUpdate',
+            workbox: {
+                navigateFallbackDenylist: [/^\/api\//, /^\/cdn-cgi\//, /^\/admin(?:\/|$)/, /^\/print(?:\/|$)/, /^\/health$/]
+            },
             includeAssets: ['favicon.ico', 'apple-touch-icon.png', 'masked-icon.svg'],
             manifest: {
                 name: 'SportsTech Manager',
@@ -32,6 +38,6 @@ export default defineConfig({
                     }
                 ]
             }
-        })
+        }))
     ],
 })

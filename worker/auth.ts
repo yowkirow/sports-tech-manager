@@ -40,7 +40,12 @@ export async function verifyAccessIdentity(
     getKey?: JWTVerifyGetKey
 ): Promise<AccessIdentity> {
     const { issuer, audience } = configuration(config);
-    const token = request.headers.get('Cf-Access-Jwt-Assertion');
+    // Private APIs may sit outside the edge-protected UI paths. The Access
+    // cookie is still a JWT and must pass exactly the same signature/claim checks.
+    const cookies = (request.headers.get('Cookie') || '').split(';')
+        .map(part => part.trim()).filter(part => part.startsWith('CF_Authorization='));
+    const token = request.headers.get('Cf-Access-Jwt-Assertion')
+        || (cookies.length === 1 ? cookies[0]?.slice('CF_Authorization='.length) : undefined);
     if (!token || token.length > 16384) {
         throw new HttpError(401, 'sign_in_required', 'Sign in to access this workspace.');
     }

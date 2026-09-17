@@ -1,25 +1,23 @@
-import React, { useState, useMemo } from 'react';
+import React, { useState, useMemo, useRef } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
 import { Component, Loader2, Upload, ShoppingCart, X, Plus, Minus, CheckCircle, Store, Search, Package, Clock, Ticket, Copy, ExternalLink, SearchCode, Phone } from 'lucide-react';
-import { supabase } from '../../lib/supabaseClient';
-import { useProducts, useRawInventory, useBrands } from '../../hooks/useInventory';
+import { apiRequest } from '../../lib/apiClient';
+import { rememberTracking, trackOrder, uploadReceipt } from '../../lib/publicShopApi';
 import clsx from 'clsx';
 import { useToast } from '../ui/Toast';
 import { getMMCities, getAllProvinces, getCitiesByProvince, getBarangays } from '../../lib/phLocations';
 import { getSizeGuideForBrand } from '../../data/sizeGuides';
-import { getVoucherUsage } from '../../lib/voucherUsage';
-import { createOrderId } from '../../lib/orderItems';
 import { getStockKey } from '../../lib/inventory';
 import { getBallUnitPrice, getCartUnitPrice, isBallProduct, priceOrder } from '../../lib/orderPricing';
 
 const SIZES = ['XS', 'S', 'M', 'L', 'XL', '2XL'];
 const BALL_QUANTITIES = [1, 5, 10, 20, 50, 100];
 
-export default function Storefront({ transactions, onPlaceOrder }) {
+export default function Storefront({ catalog }) {
     const { showToast } = useToast();
-    const products = useProducts(transactions);
-    const rawInventory = useRawInventory(transactions);
-    const brands = useBrands(transactions);
+    const { products = [], stock: rawInventory = {}, brands = [], vouchers = [] } = catalog || {};
+    const checkoutRequest = useRef(null);
+    const checkoutInFlight = useRef(false);
 
     const [cart, setCart] = useState([]);
     const [isCartOpen, setIsCartOpen] = useState(false);
@@ -56,8 +54,8 @@ export default function Storefront({ transactions, onPlaceOrder }) {
     const [barangaysList, setBarangaysList] = useState([]);
 
     const [paymentMode, setPaymentMode] = useState('COD');
-    const [proofFile, setProofFile] = useState(null);
     const [proofUrl, setProofUrl] = useState('');
+    const [proofReceipt, setProofReceipt] = useState(null);
     const [uploadingProof, setUploadingProof] = useState(false);
     const [checkoutLoading, setCheckoutLoading] = useState(false);
     const [orderComplete, setOrderComplete] = useState(false);
@@ -119,7 +117,7 @@ export default function Storefront({ transactions, onPlaceOrder }) {
         return matchesSearch && matchesBrand;
     }), [products, searchTerm, selectedBrand]);
     const productsByName = useMemo(() => new Map(products.map(product => [product.name, product])), [products]);
-    const voucherUsage = useMemo(() => getVoucherUsage(transactions), [transactions]);
+    React.useEffect(() => () => { if (proofUrl) URL.revokeObjectURL(proofUrl); }, [proofUrl]);
 
     const getStock = (product, size) => {
         if (!product.linkedColor || product.category !== 'shirts') {
@@ -201,19 +199,15 @@ export default function Storefront({ transactions, onPlaceOrder }) {
     const handleApplyVoucher = () => {
         if (!voucherCode.trim()) return;
 
-        // Find voucher in transactions
-        const voucherTx = transactions.find(t =>
-            t.type === 'voucher' &&
-            t.details.code.toUpperCase() === voucherCode.trim().toUpperCase()
-        );
+        const voucher = vouchers.find(entry => entry.code.toUpperCase() === voucherCode.trim().toUpperCase());
 
-        if (!voucherTx || !voucherTx.details.active) {
+        if (!voucher || !voucher.active) {
             showToast('Invalid or inactive voucher', 'error');
             setAppliedVoucher(null);
             return;
         }
 
-        const details = voucherTx.details;
+        const details = voucher;
         const value = Number(details.value);
         if (!['fixed', 'percent'].includes(details.discountType) || !Number.isFinite(value) || value < 0
             || (details.discountType === 'percent' && value > 100)) {
@@ -235,7 +229,7 @@ export default function Storefront({ transactions, onPlaceOrder }) {
 
         // check usage limit
         if (details.usageLimit) {
-            const uniqueUses = voucherUsage.get(details.code) || 0;
+            const uniqueUses = details.used || 0;
 
             if (uniqueUses >= details.usageLimit) {
                 showToast('Voucher usage limit reached', 'error');
@@ -257,21 +251,9 @@ export default function Storefront({ transactions, onPlaceOrder }) {
         if (!file) return;
         setUploadingProof(true);
         try {
-            const ext = file.name.split('.').pop();
-            const fileName = `receipt-${Date.now()}.${ext}`;
-            const path = fileName;
-
-            const { error: uploadError } = await supabase.storage.from('product-images').upload(path, file, {
-                cacheControl: '3600',
-                upsert: false,
-                contentType: file.type
-            });
-
-            if (uploadError) throw uploadError;
-
-            const { data } = supabase.storage.from('product-images').getPublicUrl(path);
-            setProofUrl(data.publicUrl);
-            setProofFile(file);
+            const receipt = await uploadReceipt(file);
+            setProofReceipt(receipt);
+            setProofUrl(URL.createObjectURL(file));
             showToast('Receipt uploaded!', 'success');
         } catch (err) {
             console.error(err);
@@ -282,6 +264,7 @@ export default function Storefront({ transactions, onPlaceOrder }) {
     };
 
     const handleCheckout = async () => {
+        if (checkoutInFlight.current || uploadingProof) return;
         if (cart.length === 0) return showToast('Add an item before checking out.', 'error');
         if (!firstName.trim()) return showToast('Please enter your first name', 'error');
         if (!lastName.trim()) return showToast('Please enter your last name', 'error');
@@ -292,83 +275,46 @@ export default function Storefront({ transactions, onPlaceOrder }) {
 
         // Payment Validation
         const requiresProof = ['Gcash', 'Bank Transfer'].includes(paymentMode);
-        if (requiresProof && !proofUrl) return showToast('Please upload proof of payment', 'error');
+        if (requiresProof && !proofReceipt) return showToast('Please upload proof of payment', 'error');
 
+        checkoutInFlight.current = true;
         setCheckoutLoading(true);
 
         try {
-            const orderId = createOrderId();
-            const date = new Date().toISOString();
-            const priced = priceOrder(cart.map(item => ({
-                ...item, id: crypto.randomUUID(), unitPrice: getCartUnitPrice(item)
-            })), pricingOptions);
-            const pricing = { ...pricingOptions, version: 1, shippingLineId: priced.items[0].id };
-
-            // Create transactions for each item
-            const newTransactions = priced.items.map(item => {
-                const itemCategory = item.category || 'shirts';
-                return {
-                    id: item.id,
-                    date,
-                    amount: item.amount,
-                    type: 'sale',
-                    category: itemCategory,
-                    description: `Online Order: ${item.name} (${item.size})`,
-                    details: {
-                        orderId,
-                        customerName,
-                        contactNumber,
-                        itemName: item.name,
-                        brand: item.brand || 'Sypik',
-                        category: itemCategory,
-                        unitPrice: item.unitPrice,
-                        shippingShare: item.shippingShare,
-                        pricing,
-                        source: 'storefront',
-                        size: item.size,
-                        color: item.linkedColor || 'Varied',
-                        quantity: item.quantity,
-                        fulfillmentStatus: 'pending',
-                        paymentStatus: 'unpaid', // Default to unpaid for checks
-                        status: 'pending', // Legacy support
-                        paymentMode,
-                        shippingDetails: {
-                            address: shippingAddress,
-                            city,
-                            province,
-                            barangay,
-                            // zipCode, // Removed
-                            contactNumber,
-                            region: shippingRegion,
-                            shippingFee: priced.shippingFee,
-                            isRushOrder,
-                            rushFee: item.rushFee
-                        },
-                        voucherCode: appliedVoucher ? appliedVoucher.code : null,
-                        discountShare: item.discountShare,
-                        originalAmount: item.originalAmount,
-                        imageUrl: item.imageUrl,
-                        isOnlineOrder: true,
-                        proofOfPayment: requiresProof ? proofUrl : null
-                    }
-                };
+            const intent = {
+                items: cart.map(item => ({
+                    productId: item.id, name: item.name, size: item.size,
+                    color: item.linkedColor || 'Varied', quantity: item.quantity
+                })),
+                customerName, contactNumber, shippingDetails: { address: shippingAddress, city, province, barangay },
+                region: shippingRegion, rush: isRushOrder, voucherCode: appliedVoucher?.code || null, paymentMode,
+                ...(requiresProof ? { receipt: proofReceipt } : {})
+            };
+            const signature = JSON.stringify(intent);
+            if (checkoutRequest.current && checkoutRequest.current.signature !== signature) {
+                throw new Error('A previous checkout is unconfirmed. Restore that cart and retry, or track your order before starting a different checkout.');
+            }
+            checkoutRequest.current ||= { signature, requestId: crypto.randomUUID() };
+            const result = await apiRequest('/api/public/checkout', {
+                method: 'POST', body: { ...intent, requestId: checkoutRequest.current.requestId }
             });
-
-            // One insert statement saves every order line or none of them.
-            await onPlaceOrder(newTransactions);
+            rememberTracking(result.orderId, result.token);
 
             setOrderComplete(true);
-            setLastOrderId(orderId);
+            setLastOrderId(result.orderId);
+            checkoutRequest.current = null;
             setCart([]);
-            setProofFile(null);
             setProofUrl('');
+            setProofReceipt(null);
             setAppliedVoucher(null);
             setVoucherCode('');
             // Reset after a delay or let them close
         } catch (err) {
+            if (['invalid_input', 'payload_too_large', 'catalog_changed', 'receipt_conflict'].includes(err.code)) checkoutRequest.current = null;
             console.error(err);
             showToast(`Order could not be confirmed: ${err.message || 'Please check your connection and try again.'}`, 'error');
         } finally {
+            checkoutInFlight.current = false;
             setCheckoutLoading(false);
         }
     };
@@ -378,26 +324,12 @@ export default function Storefront({ transactions, onPlaceOrder }) {
 
         setIsSearchingOrder(true);
         try {
-            const { data, error } = await supabase
-                .from('transactions')
-                .select('details')
-                .eq('details->>contactNumber', trackingContact.trim())
-                .eq('type', 'sale')
-                .order('date', { ascending: false })
-                .limit(1);
-
-            if (error) throw error;
-            if (!data || data.length === 0) {
-                showToast('No order found with this contact number', 'error');
-                return;
-            }
-
-            const orderId = data[0].details.orderId;
+            const { order } = await trackOrder(trackingContact.trim());
             setIsTrackModalOpen(false);
-            window.location.href = `/track/${orderId}`;
+            window.location.href = `/track/${order.id}`;
         } catch (err) {
             console.error(err);
-            showToast('Search failed. Please try again.', 'error');
+            showToast(err.message || 'Search failed. Please try again.', 'error');
         } finally {
             setIsSearchingOrder(false);
         }
@@ -1020,7 +952,7 @@ export default function Storefront({ transactions, onPlaceOrder }) {
                                                     <div className="relative">
                                                         <img src={proofUrl} alt="Proof" className="w-full max-h-48 object-contain rounded-lg bg-black/50" />
                                                         <button
-                                                            onClick={() => { setProofUrl(''); setProofFile(null); }}
+                                                            onClick={() => { setProofUrl(''); setProofReceipt(null); }}
                                                             className="absolute top-2 right-2 p-1 bg-red-500 rounded-full text-white hover:bg-red-600 transition-colors"
                                                         >
                                                             <X size={14} />
@@ -1123,7 +1055,7 @@ export default function Storefront({ transactions, onPlaceOrder }) {
 
                                     <button
                                         onClick={handleCheckout}
-                                        disabled={cart.length === 0 || checkoutLoading}
+                                        disabled={cart.length === 0 || checkoutLoading || uploadingProof}
                                         className="btn-primary w-full py-4 text-lg font-bold disabled:opacity-50 disabled:cursor-not-allowed"
                                     >
                                         {checkoutLoading ? 'Processing...' : 'Place Order'}

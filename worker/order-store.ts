@@ -32,6 +32,12 @@ export interface SaveOrderResult {
     ids: string[];
 }
 
+export interface SaveOrderOptions {
+    // Internal deployment flag, not part of caller-controlled SaveOrderInput.
+    requireProductionReady?: boolean;
+    packingConfirmed?: boolean;
+}
+
 export class OrderStoreError extends Error {
     readonly code: string;
     readonly status: number;
@@ -167,6 +173,13 @@ function detailsOrderId(details: unknown, id: string): string {
     return orderId(explicit);
 }
 
+// Shared HTTP writes use the same exact decimal, UTC and JSON snapshot rules.
+export {
+    decimal, decimal as normalizeDecimal,
+    timestamp, timestamp as normalizeTimestamp,
+    canonical, detailsOrderId
+};
+
 function removed(details: unknown): boolean {
     return object(details) && (details.removedFromOrder === true || details.removedFromOrder === 'true');
 }
@@ -189,12 +202,13 @@ type NormalInput = Omit<SaveOrderInput, 'changes' | 'requirePending'> & {
     requirePending: boolean;
 };
 
-function normalize(input: SaveOrderInput): NormalInput {
+function normalize(input: unknown): NormalInput {
     if (!object(input)) invalid('Order input must be an object.');
     keys(input, ['orderId', 'expectedVersion', 'requestId', 'changes'], ['requirePending']);
     const key = orderId(input.orderId);
     const requestId = identifier(input.requestId, 'request ID');
-    if (!Number.isSafeInteger(input.expectedVersion) || input.expectedVersion < 0 || input.expectedVersion >= Number.MAX_SAFE_INTEGER) {
+    if (typeof input.expectedVersion !== 'number' || !Number.isSafeInteger(input.expectedVersion)
+        || input.expectedVersion < 0 || input.expectedVersion >= Number.MAX_SAFE_INTEGER) {
         invalid('Expected version must be a nonnegative safe integer.');
     }
     if (input.requirePending !== undefined && typeof input.requirePending !== 'boolean') invalid('requirePending must be boolean.');
@@ -275,7 +289,32 @@ const membership = `type = 'sale'
     AND (order_id = ? OR coalesce(nullif(json_extract(details, '$.orderId'), ''), id) = ?)`;
 const receipt = 'EXISTS (SELECT 1 FROM mutation_receipts WHERE actor_id = ? AND request_id = ?)';
 
-function mapGuard(error: unknown): never {
+// One JSON-array binding scopes this post-write check to the affected orders.
+// The production views include flat and legacy nested shirt variants; absence of
+// a job cannot be mistaken for completed QA. Only used after migration 0005.
+export const PRODUCTION_READY_CONDITION = `NOT EXISTS (
+    SELECT 1 FROM transactions AS ready
+    WHERE ready.type = 'sale'
+        AND coalesce(json_extract(ready.details, '$.removedFromOrder'), 0) NOT IN (1, 'true')
+        AND coalesce(json_extract(ready.details, '$.fulfillmentStatus'), json_extract(ready.details, '$.status'), 'pending') IN ('ready','shipped')
+        AND coalesce(ready.order_id, nullif(json_extract(ready.details, '$.orderId'), ''), ready.id)
+            IN (SELECT value FROM json_each(?))
+        AND (
+            EXISTS (SELECT 1 FROM production_jobs AS job
+                WHERE job.order_id = coalesce(ready.order_id, nullif(json_extract(ready.details, '$.orderId'), ''), ready.id)
+                    AND job.status <> 'superseded'
+                    AND (job.accepted <> job.required OR job.status <> 'completed' OR job.source_changed <> 0))
+            OR EXISTS (SELECT 1 FROM production_order_shirt_lines AS line
+                WHERE line.order_id = coalesce(ready.order_id, nullif(json_extract(ready.details, '$.orderId'), ''), ready.id)
+                    AND NOT EXISTS (SELECT 1 FROM production_jobs AS job
+                        WHERE job.source_id = line.source_id AND job.item_index = line.item_index
+                            AND job.order_id = line.order_id AND job.required = line.required
+                            AND job.accepted = job.required AND job.status = 'completed'
+                            AND job.source_changed = 0 AND job.source_fingerprint = line.fingerprint))
+        )
+)`;
+
+function mapGuard(error: unknown, readyTransition = false): never {
     let current = error;
     const seen = new Set<unknown>();
     while (current instanceof Error && !seen.has(current)) {
@@ -291,6 +330,10 @@ function mapGuard(error: unknown): never {
             }
             if (['order_save_conflict', 'order_save_updated', 'order_save_version_updated',
                 'order_save_audit_written', 'order_save_receipt_written'].includes(name)) {
+                if (name === 'order_save_updated' && readyTransition) {
+                    throw new OrderStoreError('ORDER_CONFLICT',
+                        'The order changed or print QA is incomplete. Refresh and complete every required print job before Ready.', 409);
+                }
                 throw new OrderStoreError('ORDER_CONFLICT', 'The complete order could not be saved. Reload before retrying.', 409);
             }
         }
@@ -308,10 +351,20 @@ function mapGuard(error: unknown): never {
  * version. No write can use a stale preflight decision. Owner authorization is
  * always in the batch, including receipt replay; callers supply verified actor IDs.
  */
-export async function saveOrderChanges(db: D1Database, actorId: string, input: SaveOrderInput): Promise<SaveOrderResult> {
+export async function saveOrderChanges(
+    db: D1Database, actorId: string, input: unknown, options: SaveOrderOptions = {}
+): Promise<SaveOrderResult> {
     identifier(actorId, 'actor ID');
     const normalized = normalize(input);
     const { orderId: key, requestId, expectedVersion, changes } = normalized;
+    const ready = (details: unknown) => object(details) && ['ready', 'shipped'].includes(String(details.fulfillmentStatus ?? details.status));
+    // Historical Ready orders remain editable without inventing retrospective
+    // jobs. Physical-change holds remain enforced by production SQL triggers.
+    const readyTransition = options.requireProductionReady
+        && changes.some(change => !ready(change.expected.details) && ready(change.updates.details));
+    if (readyTransition && options.packingConfirmed !== true) {
+        throw new OrderStoreError('PACKING_CONFIRMATION_REQUIRED', 'Confirm that packing and any accessories are complete before marking Ready or Shipped.', 400);
+    }
     const payload = canonical({
         orderId: key, expectedVersion, requirePending: normalized.requirePending, changes
     });
@@ -339,7 +392,10 @@ export async function saveOrderChanges(db: D1Database, actorId: string, input: S
     const guard = (kind: string, condition: string, ...values: (string | number)[]) =>
         bind(`INSERT INTO _order_save_guards(kind, ok) VALUES ('${kind}', CASE WHEN ${condition} THEN 1 ELSE 0 END)`, ...values);
     const countGuard = (kind: string, count: number) =>
-        guard(kind, `changes() = ? OR ${receipt}`, count, actorId, requestId);
+        readyTransition && kind === 'updated'
+            ? guard(kind, `${receipt} OR (changes() = ? AND ${PRODUCTION_READY_CONDITION})`,
+                actorId, requestId, count, JSON.stringify([key]))
+            : guard(kind, `changes() = ? OR ${receipt}`, count, actorId, requestId);
 
     const statements = [
         guard('forbidden', "EXISTS (SELECT 1 FROM members WHERE id = ? AND role = 'owner' AND active = 1)", actorId),
@@ -388,7 +444,7 @@ export async function saveOrderChanges(db: D1Database, actorId: string, input: S
     try {
         results = await db.batch(statements);
     } catch (error) {
-        mapGuard(error);
+        mapGuard(error, readyTransition);
     }
     const saved = results.at(-1)?.results as { response?: unknown }[] | undefined;
     const savedResponse = saved?.[0]?.response;

@@ -42,6 +42,19 @@ test('Access verifies the expected audience, issuer, signature and human identit
     assert.deepEqual(identity, { subject: 'verified-human-id', email: 'owner@example.test' });
 });
 
+test('signed Access cookies support private APIs without trusting unsigned browser identity', async () => {
+    const valid = await token();
+    const cookieRequest = new Request('https://staging.example.test/api/profile', {
+        headers: { Cookie: `other=value; CF_Authorization=${valid}` }
+    });
+    assert.equal((await verifyAccessIdentity(cookieRequest, config, localKeys)).email, 'owner@example.test');
+    await assert.rejects(verifyAccessIdentity(new Request(cookieRequest.url, {
+        headers: { Cookie: `CF_Authorization=${await token({ aud: 'b'.repeat(64) })}` }
+    }), config, localKeys), { status: 401 });
+    await assert.rejects(verifyAccessIdentity(new Request(cookieRequest.url, {
+        headers: { Cookie: `CF_Authorization=${valid}; CF_Authorization=forged` }
+    }), config, localKeys), { status: 401 });
+});
 test('missing configuration and missing authentication cannot produce an owner', async () => {
     const req = new Request('https://staging.example.test/api/session', {
         headers: { 'Cf-Access-Authenticated-User-Email': 'owner@example.test' }
@@ -124,7 +137,7 @@ test('an authenticated printing identity retains its restricted role', async t =
 });
 
 test('the staging router returns explicit errors instead of exposing data or SPA fallbacks', async () => {
-    const env = { ...config, ENVIRONMENT: 'staging', DB: {} };
+    const env = { ...config, ENVIRONMENT: 'staging', MUTATIONS_ENABLED: 'true', DB: {} };
     const health = await worker.fetch(new Request('https://staging.example.test/health'), env);
     assert.equal(health.status, 200);
     assert.equal((await health.json()).service, 'sportstech-staging');
@@ -134,7 +147,15 @@ test('the staging router returns explicit errors instead of exposing data or SPA
     assert.equal(denied.headers.has('access-control-allow-origin'), false);
     assert.equal((await denied.json()).error.code, 'sign_in_required');
     const mutation = await worker.fetch(new Request('https://staging.example.test/api/orders', { method: 'POST' }), env);
-    assert.equal(mutation.status, 405);
+    assert.equal(mutation.status, 401);
+    const crossOrigin = await worker.fetch(new Request('https://staging.example.test/api/orders', {
+        method: 'POST', headers: { Origin: 'https://untrusted.example' }
+    }), env);
+    assert.equal(crossOrigin.status, 403);
+    const maintenance = await worker.fetch(new Request('https://staging.example.test/api/orders', { method: 'POST' }),
+        { ...env, MUTATIONS_ENABLED: 'false' });
+    assert.equal(maintenance.status, 503);
+    assert.equal((await maintenance.json()).error.code, 'maintenance_read_only');
     const unavailable = await worker.fetch(new Request('https://staging.example.test/api/session'), { ...env, ACCESS_AUDIENCE: '' });
     assert.equal(unavailable.status, 503);
 });

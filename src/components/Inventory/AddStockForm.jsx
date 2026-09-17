@@ -4,7 +4,7 @@ import { Plus, Loader2, X } from 'lucide-react';
 import { motion, AnimatePresence } from 'framer-motion';
 
 import { useActivityLog } from '../../hooks/useActivityLog';
-import { supabase } from '../../lib/supabaseClient';
+import { api } from '../../lib/apiClient';
 import { useColors, useBrands } from '../../hooks/useInventory';
 
 const SIZES = ['XS', 'S', 'M', 'L', 'XL', '2XL'];
@@ -45,7 +45,7 @@ export default function AddStockForm({ onAddTransaction, onClose, transactions }
 
         try {
             const finalCost = parseFloat(cost) || 0; // Allow 0 cost
-            const { data: { user } } = await supabase.auth.getUser();
+            const user = await api.getCurrentUser();
 
             // 1. Construct Details
             let details = {

@@ -3,7 +3,7 @@ import { useToast } from '../ui/Toast';
 import { Plus, Loader2, X, Save } from 'lucide-react';
 import clsx from 'clsx';
 import { useActivityLog } from '../../hooks/useActivityLog';
-import { supabase } from '../../lib/supabaseClient';
+import { api } from '../../lib/apiClient';
 
 const DEFAULT_CATEGORIES = [
     'Rent',
@@ -35,13 +35,13 @@ export default function AddExpenseForm({ onAddTransaction, onUpdateTransaction, 
 
     useEffect(() => {
         const fetchMeta = async () => {
-            const { data: { user } } = await supabase.auth.getUser();
+            const user = await api.getCurrentUser();
             if (user?.user_metadata?.expense_categories) {
                 setExpenseCategories(user.user_metadata.expense_categories);
                 if (!initialData) setCategory(user.user_metadata.expense_categories[0]);
             }
         };
-        fetchMeta();
+        fetchMeta().catch(() => showToast('Could not load expense categories. Default categories are available.', 'error'));
     }, [initialData]);
 
     useEffect(() => {
@@ -107,7 +107,7 @@ export default function AddExpenseForm({ onAddTransaction, onUpdateTransaction, 
 
             const newDate = withLocalDate(date);
 
-            const { data: { user } } = await supabase.auth.getUser();
+            const user = await api.getCurrentUser();
 
             let finalReimbursedAmount = 0;
             if (reimbursementStatus === 'full') {

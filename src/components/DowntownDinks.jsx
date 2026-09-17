@@ -2,7 +2,7 @@ import React, { useMemo, useState } from 'react';
 import { createPortal } from 'react-dom';
 import clsx from 'clsx';
 import { Banknote, Calendar, Edit2, Filter, Loader2, Plus, Save, Search, Trash2, TrendingDown, Trophy, X } from 'lucide-react';
-import { supabase } from '../lib/supabaseClient';
+import { api } from '../lib/apiClient';
 import { useToast } from './ui/Toast';
 import { isReturnedSale } from '../lib/transactionStatus';
 
@@ -63,7 +63,7 @@ const EarningModal = ({ initialData, onAddTransaction, onUpdateTransaction, onCl
             const finalDescription = description.trim() || `${incomeTypeLabel(incomeType)} earning`;
             const nextDate = makeDateWithCurrentTime(date);
             const parsedAmount = parseFloat(amount);
-            const { data: { user } } = await supabase.auth.getUser();
+            const user = await api.getCurrentUser();
 
             if (initialData) {
                 await onUpdateTransaction(initialData.id, {
@@ -191,6 +191,7 @@ const EarningModal = ({ initialData, onAddTransaction, onUpdateTransaction, onCl
 };
 
 export default function DowntownDinks({ transactions, onAddTransaction, onUpdateTransaction, onDeleteTransaction }) {
+    const { showToast } = useToast();
     const [searchTerm, setSearchTerm] = useState('');
     const [filterType, setFilterType] = useState('all');
     const [showModal, setShowModal] = useState(false);
@@ -231,7 +232,11 @@ export default function DowntownDinks({ transactions, onAddTransaction, onUpdate
 
     const handleDelete = async (id) => {
         if (!window.confirm('Delete this Downtown Dinks earning?')) return;
-        await onDeleteTransaction(id, true);
+        try {
+            await onDeleteTransaction(id, true);
+        } catch (error) {
+            showToast(`Delete failed: ${error.message}`, 'error');
+        }
     };
 
     const openCreateModal = () => {

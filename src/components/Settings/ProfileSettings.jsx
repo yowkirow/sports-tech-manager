@@ -1,5 +1,5 @@
 import React, { useState, useEffect } from 'react';
-import { supabase } from '../../lib/supabaseClient';
+import { api, apiRequest } from '../../lib/apiClient';
 import { useToast } from '../ui/Toast';
 import { User, Lock, Save, LogOut, Shield, MessageSquare, Send } from 'lucide-react';
 import { motion } from 'framer-motion';
@@ -7,57 +7,58 @@ import ActivityLogViewer from './ActivityLogViewer';
 import ColorSettings from './ColorSettings';
 import BrandSettings from './BrandSettings';
 import ExpenseCategorySettings from './ExpenseCategorySettings';
-import { sendSMS } from '../../lib/textbee';
 
-export default function ProfileSettings({ user, onLogout, transactions = [], onAddTransaction }) {
+export default function ProfileSettings({ user, onLogout, onProfileChange, transactions = [], onAddTransaction }) {
     const { showToast } = useToast();
     const [loading, setLoading] = useState(false);
 
-    const userRole = user?.user_metadata?.role || 'admin';
-    const isAdmin = userRole !== 'staff' && userRole !== 'reseller';
+    const userRole = user?.user_metadata?.role;
+    const isAdmin = userRole === 'owner';
 
     // Profile State
     const [fullName, setFullName] = useState(user?.user_metadata?.full_name || '');
 
-    // Security State
-    const [newPin, setNewPin] = useState('');
-    const [confirmPin, setConfirmPin] = useState('');
-
     // TextBee State
-    const [textbeeApiKey, setTextbeeApiKey] = useState(user?.user_metadata?.textbee_api_key || '');
-    const [textbeeDeviceId, setTextbeeDeviceId] = useState(user?.user_metadata?.textbee_device_id || '');
-    const [enableSmsNotifications, setEnableSmsNotifications] = useState(user?.user_metadata?.enable_sms_notifications || false);
-    const [enableTrackingSms, setEnableTrackingSms] = useState(user?.user_metadata?.enable_tracking_sms || false);
-    const [trackingSmsTemplate, setTrackingSmsTemplate] = useState(user?.user_metadata?.tracking_sms_template || 'Hi {customerName}, your SportsTech order is on its way! 🚀 Track here: {trackingLink}');
+    const [textbeeApiKey, setTextbeeApiKey] = useState('');
+    const [textbeeDeviceId, setTextbeeDeviceId] = useState('');
+    const [smsConfigured, setSmsConfigured] = useState(false);
+    const [smsLoaded, setSmsLoaded] = useState(false);
+    const [smsError, setSmsError] = useState(null);
+    const [smsAttempt, setSmsAttempt] = useState(0);
+    const [enableSmsNotifications, setEnableSmsNotifications] = useState(false);
+    const [enableTrackingSms, setEnableTrackingSms] = useState(false);
+    const [trackingSmsTemplate, setTrackingSmsTemplate] = useState('Hi {customerName}, your SportsTech order is on its way! 🚀 Track here: {trackingLink}');
     const [testRecipient, setTestRecipient] = useState('');
 
     useEffect(() => {
-        if (user?.user_metadata) {
-            if (user.user_metadata.full_name) setFullName(user.user_metadata.full_name);
-            if (user.user_metadata.textbee_api_key) setTextbeeApiKey(user.user_metadata.textbee_api_key);
-            if (user.user_metadata.textbee_device_id) setTextbeeDeviceId(user.user_metadata.textbee_device_id);
-            if (user.user_metadata.enable_sms_notifications !== undefined) setEnableSmsNotifications(user.user_metadata.enable_sms_notifications);
-            if (user.user_metadata.enable_tracking_sms !== undefined) setEnableTrackingSms(user.user_metadata.enable_tracking_sms);
-            if (user.user_metadata.tracking_sms_template) setTrackingSmsTemplate(user.user_metadata.tracking_sms_template);
-        }
-    }, [user]);
+        setFullName(user?.user_metadata?.full_name || '');
+    }, [user?.user_metadata?.full_name]);
+
+    useEffect(() => {
+        if (!isAdmin) return;
+        let active = true;
+        setSmsError(null);
+        setSmsLoaded(false);
+        apiRequest('/api/settings/sms').then(settings => {
+            if (!active) return;
+            setSmsConfigured(settings.configured === true);
+            setTextbeeDeviceId(settings.deviceId || '');
+            setEnableSmsNotifications(settings.enableSmsNotifications === true);
+            setEnableTrackingSms(settings.enableTrackingSms === true);
+            setTrackingSmsTemplate(settings.trackingSmsTemplate || '');
+            setSmsLoaded(true);
+        }).catch(error => {
+            if (active) setSmsError(error.message);
+        });
+        return () => { active = false; };
+    }, [isAdmin, smsAttempt]);
 
     const handleUpdateProfile = async (e) => {
         e.preventDefault();
         setLoading(true);
         try {
-            const { error } = await supabase.auth.updateUser({
-                data: { full_name: fullName }
-            });
-            if (error) throw error;
-
-            // Sync to Public Admin Directory (so Activity Logs show names)
-            if (user?.email) {
-                await supabase.from('admin_directory').upsert({
-                    email: user.email,
-                    name: fullName
-                }, { onConflict: 'email' });
-            }
+            const { profile } = await api.updateProfile({ full_name: fullName });
+            onProfileChange?.(profile);
 
             showToast('Profile updated!', 'success');
         } catch (error) {
@@ -68,40 +69,21 @@ export default function ProfileSettings({ user, onLogout, transactions = [], onA
         }
     };
 
-    const handleChangePin = async (e) => {
-        e.preventDefault();
-        const passwordToSet = confirmPin; // Using confirmPin state for password input
-        if (passwordToSet.length < 6) return showToast('Password must be at least 6 characters', 'error');
-
-        setLoading(true);
-        try {
-            const { error } = await supabase.auth.updateUser({
-                password: passwordToSet
-            });
-            if (error) throw error;
-            showToast('Password updated successfully!', 'success');
-            setConfirmPin('');
-        } catch (error) {
-            console.error(error);
-            showToast('Failed to update password', 'error');
-        } finally {
-            setLoading(false);
-        }
-    };
-
     const handleSaveTextBeeSettings = async () => {
         setLoading(true);
         try {
-            const { error } = await supabase.auth.updateUser({
-                data: {
-                    textbee_api_key: textbeeApiKey,
-                    textbee_device_id: textbeeDeviceId,
-                    enable_sms_notifications: enableSmsNotifications,
-                    enable_tracking_sms: enableTrackingSms,
-                    tracking_sms_template: trackingSmsTemplate
+            const settings = await apiRequest('/api/settings/sms', {
+                method: 'PATCH',
+                body: {
+                    ...(textbeeApiKey.trim() ? { apiKey: textbeeApiKey.trim() } : {}),
+                    deviceId: textbeeDeviceId,
+                    enableSmsNotifications,
+                    enableTrackingSms,
+                    trackingSmsTemplate
                 }
             });
-            if (error) throw error;
+            setSmsConfigured(settings.configured === true);
+            setTextbeeApiKey('');
             showToast('SMS Gateway settings updated!', 'success');
         } catch (error) {
             console.error(error);
@@ -115,9 +97,7 @@ export default function ProfileSettings({ user, onLogout, transactions = [], onA
         if (!testRecipient) return showToast('Please enter a recipient number', 'error');
         setLoading(true);
         try {
-            await sendSMS({
-                apiKey: textbeeApiKey,
-                deviceId: textbeeDeviceId,
+            await api.sendSms({
                 recipient: testRecipient,
                 message: 'Sports-Tech: This is a test SMS from your manager app! 🚀'
             });
@@ -179,7 +159,7 @@ export default function ProfileSettings({ user, onLogout, transactions = [], onA
                     </form>
                 </motion.div>
 
-                {/* Security Section - Quick PIN */}
+                {/* Access session */}
                 <motion.div
                     initial={{ opacity: 0, y: 20 }}
                     animate={{ opacity: 1, y: 0 }}
@@ -191,114 +171,17 @@ export default function ProfileSettings({ user, onLogout, transactions = [], onA
                             <Shield size={24} />
                         </div>
                         <div>
-                            <h3 className="text-xl font-bold text-white">Quick Access PIN</h3>
-                            <p className="text-xs text-slate-400">Used for Lock Screen only (Metadata)</p>
+                            <h3 className="text-xl font-bold text-white">Secure Access</h3>
+                            <p className="text-xs text-slate-400">Managed by Cloudflare Access</p>
                         </div>
                     </div>
 
                     <div className="space-y-4">
-                        <div>
-                            <label className="text-xs font-bold text-slate-500 uppercase block mb-2">Set Quick PIN (4-6 digits)</label>
-                            <div className="relative">
-                                <Lock className="absolute left-3 top-1/2 -translate-y-1/2 text-slate-500" size={16} />
-                                <input
-                                    type="password"
-                                    value={newPin}
-                                    onChange={(e) => setNewPin(e.target.value)}
-                                    placeholder="Enter Lock Screen PIN"
-                                    className="glass-input w-full pl-10"
-                                />
-                            </div>
-                        </div>
-
-                        {/* Sync Checkbox */}
-                        <div className="flex items-start gap-2 p-3 rounded-lg bg-orange-500/10 border border-orange-500/20">
-                            <input
-                                type="checkbox"
-                                id="syncPassword"
-                                className="mt-1"
-                                defaultChecked={true}
-                                onChange={(e) => {
-                                    // Make this accessible to the save handler
-                                    window.syncPassword = e.target.checked;
-                                }}
-                            />
-                            <label htmlFor="syncPassword" className="text-sm text-orange-200 cursor-pointer">
-                                <strong>Also use as Login Password</strong>
-                                <p className="text-xs text-orange-200/70 mt-0.5">Check this if you want to use this PIN to log in from the main screen.</p>
-                            </label>
-                        </div>
-
-                        <div className="pt-2">
-                            <button
-                                onClick={async () => {
-                                    if (newPin.length < 4) return showToast('PIN must be at least 4 digits', 'error');
-                                    setLoading(true);
-                                    try {
-                                        const updates = {
-                                            data: { pos_pin: newPin }
-                                        };
-                                        const sync = document.getElementById('syncPassword')?.checked;
-
-                                        if (sync) {
-                                            updates.password = newPin;
-                                        }
-
-                                        const { error } = await supabase.auth.updateUser(updates);
-
-                                        if (error) throw error;
-                                        showToast(sync ? 'PIN & Password updated!' : 'Quick PIN updated!', 'success');
-                                        setNewPin('');
-                                    } catch (err) {
-                                        console.error(err);
-                                        showToast('Failed to update PIN', 'error');
-                                    } finally {
-                                        setLoading(false);
-                                    }
-                                }}
-                                disabled={loading}
-                                className="btn-primary w-full bg-gradient-to-r from-purple-600 to-indigo-600"
-                            >
-                                <Save size={18} /> Save PIN
-                            </button>
-                        </div>
+                        <p className="text-sm text-slate-400">Sign-in and verification are handled outside this app. Local passwords and quick PINs are no longer used.</p>
+                        <button onClick={onLogout} className="btn-primary w-full">
+                            <Lock size={18} /> Lock and sign out
+                        </button>
                     </div>
-                </motion.div>
-
-                {/* Password Section */}
-                <motion.div
-                    initial={{ opacity: 0, y: 20 }}
-                    animate={{ opacity: 1, y: 0 }}
-                    transition={{ delay: 0.2 }}
-                    className="glass-card space-y-6"
-                >
-                    <div className="flex items-center gap-3 border-b border-white/5 pb-4">
-                        <div className="p-2 bg-emerald-500/20 text-emerald-400 rounded-lg">
-                            <Lock size={24} />
-                        </div>
-                        <div>
-                            <h3 className="text-xl font-bold text-white">Account Password</h3>
-                            <p className="text-xs text-slate-400">Main login credentials</p>
-                        </div>
-                    </div>
-
-                    <form onSubmit={handleChangePin} className="space-y-4">
-                        <div>
-                            <label className="text-xs font-bold text-slate-500 uppercase block mb-2">New Password</label>
-                            <input
-                                type="password"
-                                value={confirmPin}
-                                onChange={(e) => setConfirmPin(e.target.value)}
-                                placeholder="Enter new password"
-                                className="glass-input w-full"
-                            />
-                        </div>
-                        <div className="pt-2">
-                            <button type="submit" disabled={loading} className="btn-primary w-full bg-emerald-600 hover:bg-emerald-500">
-                                <Save size={18} /> Update Password
-                            </button>
-                        </div>
-                    </form>
                 </motion.div>
 
                 {/* TextBee Gateway Section */}
@@ -319,17 +202,24 @@ export default function ProfileSettings({ user, onLogout, transactions = [], onA
                             </div>
                         </div>
 
+                        {smsError && <div role="alert" className="text-sm text-red-300">
+                            {smsError}
+                            <button type="button" onClick={() => setSmsAttempt(value => value + 1)} className="btn-secondary ml-3">Retry</button>
+                        </div>}
                         <div className="grid md:grid-cols-2 gap-6">
                             <div className="space-y-4">
                                 <div>
-                                    <label className="text-xs font-bold text-slate-500 uppercase block mb-2">API Key</label>
+                                    <label htmlFor="sms-api-key" className="text-xs font-bold text-slate-500 uppercase block mb-2">Replacement API Key</label>
                                     <input
+                                        id="sms-api-key"
                                         type="password"
+                                        autoComplete="new-password"
                                         value={textbeeApiKey}
                                         onChange={(e) => setTextbeeApiKey(e.target.value)}
-                                        placeholder="your-textbee-api-key"
+                                        placeholder={smsConfigured ? 'Configured — leave blank to keep' : 'Enter a new API key'}
                                         className="glass-input w-full"
                                     />
+                                    <p className="text-xs text-slate-400 mt-2">The saved key is never returned to this browser. Save changes before sending a test.</p>
                                 </div>
                                 <div>
                                     <label className="text-xs font-bold text-slate-500 uppercase block mb-2">Device ID</label>
@@ -400,7 +290,7 @@ export default function ProfileSettings({ user, onLogout, transactions = [], onA
 
                                 <button
                                     onClick={handleSaveTextBeeSettings}
-                                    disabled={loading}
+                                    disabled={loading || !smsLoaded}
                                     className="btn-primary w-full bg-orange-600 hover:bg-orange-500"
                                 >
                                     <Save size={18} /> Save Settings
@@ -422,7 +312,7 @@ export default function ProfileSettings({ user, onLogout, transactions = [], onA
                                 </div>
                                 <button
                                     onClick={handleSendTestSms}
-                                    disabled={loading || !textbeeApiKey || !textbeeDeviceId}
+                                    disabled={loading || !smsLoaded || !smsConfigured || !textbeeDeviceId}
                                     className="w-full flex items-center justify-center gap-2 px-4 py-2 bg-blue-500/10 text-blue-400 border border-blue-500/20 rounded-xl hover:bg-blue-500/20 transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
                                 >
                                     <Send size={18} /> Send Test SMS

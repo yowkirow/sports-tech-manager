@@ -1,13 +1,12 @@
 import React, { lazy, Suspense, useState } from 'react';
-import useSupabaseTransactions from './hooks/useSupabaseTransactions';
+import useTransactions from './hooks/useTransactions';
 import { createPortal } from 'react-dom';
 import { LayoutDashboard, Store, ShoppingBag, Package, LogOut, X, Wallet, Banknote, Menu, Globe, Ticket, Settings as SettingsIcon, Lock, ClipboardList, TrendingUp, Trophy } from 'lucide-react';
 import clsx from 'clsx';
 import { motion, AnimatePresence } from 'framer-motion';
 import { useToast } from './components/ui/Toast';
-import { supabase } from './lib/supabaseClient';
+import { api, apiRequest } from './lib/apiClient';
 import LoadingState from './components/ui/LoadingState';
-import { sendSMS } from './lib/textbee';
 
 const DashboardStats = lazy(() => import('./components/DashboardStats'));
 const TransactionList = lazy(() => import('./components/TransactionList'));
@@ -25,6 +24,9 @@ const Storefront = lazy(() => import('./components/Shop/Storefront'));
 const Login = lazy(() => import('./components/Auth/Login'));
 const ProfileSettings = lazy(() => import('./components/Settings/ProfileSettings'));
 const OrderTracking = lazy(() => import('./components/Shop/OrderTracking'));
+const PrintQueue = lazy(() => import('./components/Production/PrintQueue'));
+const ProductionManager = lazy(() => import('./components/Production/ProductionManager'));
+const printQueueEnabled = import.meta.env.VITE_PRINT_QUEUE_ENABLED === 'true';
 
 const NavItem = ({ id, label, icon: Icon, activeTab, onNavigate }) => (
     <button
@@ -42,173 +44,146 @@ const NavItem = ({ id, label, icon: Icon, activeTab, onNavigate }) => (
     </button>
 );
 
-function App() {
-    const isAdminPath = window.location.pathname.startsWith('/admin');
-    const isTrackPath = window.location.pathname.startsWith('/track');
+function PublicStore() {
+    const [catalog, setCatalog] = useState(null);
+    const [error, setError] = useState(null);
+    const [attempt, setAttempt] = useState(0);
+    React.useEffect(() => {
+        const controller = new AbortController();
+        setError(null);
+        apiRequest('/api/public/catalog', { signal: controller.signal }).then(data => {
+            if (!controller.signal.aborted) setCatalog(data);
+        }).catch(err => {
+            if (!controller.signal.aborted) setError(err.message);
+        });
+        return () => controller.abort();
+    }, [attempt]);
+    if (error) return <LoadingState error={error} onRetry={() => setAttempt(value => value + 1)} />;
+    if (!catalog) return <LoadingState label="Loading store..." />;
+    return <Storefront catalog={catalog} />;
+}
+
+function ProtectedWorkspace({ printPath }) {
     const [session, setSession] = useState(null);
     const [authLoading, setAuthLoading] = useState(true);
+    const [authError, setAuthError] = useState(null);
+    const [attempt, setAttempt] = useState(0);
+    React.useEffect(() => {
+        let active = true;
+        const load = async () => {
+            if (document.visibilityState !== 'visible') return;
+            try {
+                const { member, profile = {}, mutationsEnabled, environment } = await api.getSession();
+                if (!member?.id || !member.email) throw new Error('Your account could not be verified. Sign in again.');
+                if (active) {
+                    setSession({ user: { ...member, user_metadata: { ...profile, role: member.role } }, readOnly: mutationsEnabled === false, environment });
+                    setAuthError(null);
+                }
+            } catch (err) {
+                if (active) {
+                    setSession(null);
+                    setAuthError(err.message);
+                }
+            } finally {
+                if (active) setAuthLoading(false);
+            }
+        };
+        void load();
+        const timer = window.setInterval(load, 30_000);
+        window.addEventListener('focus', load);
+        window.addEventListener('online', load);
+        document.addEventListener('visibilitychange', load);
+        return () => {
+            active = false;
+            window.clearInterval(timer);
+            window.removeEventListener('focus', load);
+            window.removeEventListener('online', load);
+            document.removeEventListener('visibilitychange', load);
+        };
+    }, [attempt]);
+    const role = session?.user?.role;
+    React.useEffect(() => {
+        if (role === 'print_operator' && !printPath) window.location.replace('/print');
+    }, [role, printPath]);
+    if (authLoading) return <LoadingState label="Loading account..." />;
+    if (!session) return <Login error={authError} onRetry={() => setAttempt(value => value + 1)} />;
+    if (!['owner', 'reseller', 'print_operator'].includes(role)) return <Login denied />;
+    if (role === 'print_operator' && !printPath) return <LoadingState label="Opening print queue..." />;
+    if (printPath) {
+        if (!['owner', 'print_operator'].includes(role)) return <Login denied />;
+        if (!printQueueEnabled) return <LoadingState error="The print queue is not enabled yet." />;
+        return <PrintQueue user={session.user} userRole={role} />;
+    }
+    return <ManagementApp key={`${session.user.id}:${role}`} session={session} onProfileChange={profile => {
+        setSession(current => ({ ...current, user: { ...current.user, user_metadata: { ...current.user.user_metadata, ...profile, role } } }));
+    }} />;
+}
+
+function ManagementApp({ session, onProfileChange }) {
     const {
         transactions,
         loading,
         error,
-        addTransaction: addToSupabase,
+        legacyCache,
+        addTransaction: addToServer,
         addTransactions,
-        updateTransaction: updateInSupabase,
-        deleteTransaction: deleteFromSupabase,
+        updateTransaction: updateOnServer,
+        deleteTransaction: deleteFromServer,
         deleteAllTransactions,
+        applyOrderSave,
         refetch
-    } = useSupabaseTransactions({ enabled: !isTrackPath && (!isAdminPath || !!session) });
+    } = useTransactions({ enabled: true, accountId: session.user.id });
 
-    const [activeTab, setActiveTab] = useState('pos'); // Default to POS for speed
+    const [activeTab, setActiveTab] = useState('pos');
     const [showAddStockModal, setShowAddStockModal] = useState(false);
     const [isSidebarOpen, setIsSidebarOpen] = useState(false);
-    const [dbRole, setDbRole] = useState(null); // Role from DB
-
-    // Lock Screen State
-    const [isLocked, setIsLocked] = useState(false);
-
-    // Reseller Logic
-    // Priority: DB Role > Metadata Role > Default 'admin'
-    const userRole = dbRole || session?.user?.user_metadata?.role || 'admin';
-    const isReseller = userRole === 'reseller';
-    const isStaff = userRole === 'staff';
-
-    // Force staff out of the default POS tab to orders tab initially
-    React.useEffect(() => {
-        if (isStaff && activeTab === 'pos') {
-            setActiveTab('orders');
-        }
-    }, [isStaff, activeTab]);
-
-    // Transactions Filtering (Security: Client Side)
-    // If reseller, only show transactions created by them (or no filter if they view global products?)
-    // Actually, products are global (system category), sales are personal.
-    // So we need to be careful.
-    // Products (define_product, delete_product) should be visible to ALL (global catalog).
-    // Sales/Orders/Expenses should be filtered.
-
-    // BUT useSupabaseTransactions returns raw stream.
-    // For specific views, we should pass filtered lists or let the view filter.
-    // Easiest is to pass `transactions` as-is but filtered where strictly necessary?
-    // No, users requested "Their Orders", so OrderManagement must be filtered.
-    // "Their very own dashboard" -> DashboardStats filtered.
-    // POS -> Needs ALL products (to sell them) but creates OWN sales.
-
-    // Computed Filtered Transactions (For Dashboard, Orders, Sales, Expenses)
-    // Products (type 'define_product') remain visible.
-    const effectiveTransactions = React.useMemo(() => {
-        if (!isReseller) return transactions;
-        return transactions.filter(t => {
-            // Always show products/system events
-            if (['define_product', 'delete_product', 'define_color', 'delete_color'].includes(t.type)) return true;
-            // Otherwise only show own
-            return t.details?.createdBy === session?.user?.email;
-        });
-    }, [transactions, isReseller, session]);
+    const userRole = session.user.role;
+    const isOwner = userRole === 'owner';
+    const effectiveTransactions = transactions;
 
     const { showToast } = useToast();
 
-    // Auth Listener & Role Fetcher
-    React.useEffect(() => {
-        if (!isAdminPath) return;
-        const {
-            data: { subscription },
-        } = supabase.auth.onAuthStateChange((_event, session) => {
-            setSession(session);
-            setAuthLoading(false);
-        });
-
-        return () => subscription.unsubscribe();
-    }, [isAdminPath]);
-
-    React.useEffect(() => {
-        let active = true;
-        setDbRole(null);
-        const email = session?.user?.email;
-        if (!email) return;
-
-        const fetchRole = async () => {
-            const { data, error } = await supabase
-                .from('admin_directory')
-                .select('role')
-                .eq('email', email)
-                .maybeSingle();
-            if (!active) return;
-            if (error) console.error('Failed to load account role:', error);
-            else setDbRole(data?.role || null);
-        };
-        fetchRole();
-        return () => { active = false; };
-    }, [session?.user?.email]);
-
-    // PWA Redirect Logic
-    React.useEffect(() => {
-        const isStandalone = window.matchMedia('(display-mode: standalone)').matches || window.navigator.standalone;
-        const isRoot = window.location.pathname === '/';
-
-        if (isStandalone && isRoot) {
-            window.location.href = '/admin';
-        }
-    }, []);
-
     const addTransaction = async (transaction) => {
         try {
-            await addToSupabase(transaction);
+            const saved = await addToServer(transaction);
             if (transaction.type === 'expense') {
                 showToast('Inventory updated!', 'success');
             }
 
-            // TextBee Integration
-            const meta = session?.user?.user_metadata;
-            if (transaction.type === 'sale' && meta?.enable_sms_notifications && meta?.textbee_api_key && meta?.textbee_device_id) {
-                // Determine recipient: Use customer phone if available, else maybe skip or notify owner
-                // For now, let's assume we notify the OWNER about the sale if enabled.
-                // Or if transaction.details.customerPhone exists, send to them.
-                const recipient = transaction.details?.customerPhone || session.user.email; // Fallback to email as string? No, needs number.
-
-                // If we want to notify the OWNER, we need a "Notification Number" in settings.
-                // For now, let's just implement the logic.
-                if (recipient && recipient.startsWith('+')) {
-                    try {
-                        await sendSMS({
-                            apiKey: meta.textbee_api_key,
-                            deviceId: meta.textbee_device_id,
-                            recipient: recipient,
-                            message: `SportsTech: New Sale! ${transaction.description}. Amount: ₱${transaction.amount}`
-                        });
-                        console.log('SMS Notification sent');
-                    } catch (smsErr) {
-                        console.error('Failed to send SMS:', smsErr);
-                    }
-                }
-            }
+            return saved;
         } catch (err) {
             console.error(err);
             showToast(`Failed to save: ${err.message}`, 'error');
+            throw err;
         }
     };
 
     const updateTransaction = async (id, updates) => {
         try {
-            await updateInSupabase(id, updates);
+            const saved = await updateOnServer(id, updates);
             showToast('Record updated!', 'success');
+            return saved;
         } catch (err) {
             console.error(err);
             showToast(`Failed to update: ${err.message}`, 'error');
+            throw err;
         }
     };
 
     const deleteTransaction = async (id, skipConfirm = false) => {
-        if (!skipConfirm && !window.confirm('Delete this record? Inventory counts will be affected.')) return;
+        if (!skipConfirm && !window.confirm('Delete this record? Inventory counts will be affected.')) return false;
         try {
-            await deleteFromSupabase(id);
+            await deleteFromServer(id);
             if (!skipConfirm) showToast('Record deleted', 'info');
+            return true;
         } catch (err) {
             showToast('Failed to delete', 'error');
+            throw err;
         }
     };
 
     const handleDeleteAll = async () => {
+        if (!isOwner) return;
         if (!window.confirm('WARNING: This will wipe ALL data. Are you sure?')) return;
         try {
             await deleteAllTransactions();
@@ -222,44 +197,6 @@ function App() {
         activeTab,
         onNavigate: (id) => { setActiveTab(id); setIsSidebarOpen(false); }
     };
-
-    // Tracking Route
-    if (isTrackPath) return <OrderTracking />;
-
-    // Default to Storefront unless on /admin path
-    if (!isAdminPath) {
-        if (loading && transactions.length === 0) return <LoadingState label="Loading store..." />;
-        if (error && transactions.length === 0) {
-            return <LoadingState error={error} onRetry={refetch} />;
-        }
-        return (
-            <Storefront
-                transactions={transactions}
-                onPlaceOrder={addTransactions}
-            />
-        );
-    }
-
-    if (authLoading) return <LoadingState label="Loading account..." />;
-
-    if (!session) {
-        return <Login />;
-    }
-
-    if (isLocked) {
-        return (
-            <Login
-                unlockMode={true}
-                user={session.user}
-                onUnlock={() => setIsLocked(false)}
-                onLogout={() => {
-                    setIsLocked(false);
-                    supabase.auth.signOut();
-                }}
-            />
-        );
-    }
-
 
     return (
         <div className="flex h-screen bg-slate-900 text-slate-100 overflow-hidden font-sans selection:bg-primary/30 relative">
@@ -291,9 +228,9 @@ function App() {
                 </div>
 
                 <nav className="flex-1 px-4 space-y-2 mt-4 overflow-y-auto">
-                    {!isStaff && <NavItem {...navProps} id="pos" label="Point of Sale" icon={Store} />}
+                    <NavItem {...navProps} id="pos" label="Point of Sale" icon={Store} />
                     <NavItem {...navProps} id="orders" label="Orders" icon={Package} />
-                    {!(isReseller || isStaff) && (
+                    {isOwner && (
                         <>
                             <NavItem {...navProps} id="sales" label="Sales" icon={Banknote} />
                             <NavItem {...navProps} id="expenses" label="Expenses" icon={Wallet} />
@@ -302,9 +239,10 @@ function App() {
                             <NavItem {...navProps} id="supplier" label="Supplier Order" icon={ClipboardList} />
                             <NavItem {...navProps} id="vouchers" label="Vouchers" icon={Ticket} />
                             <NavItem {...navProps} id="reports" label="Reports" icon={TrendingUp} />
+                            {printQueueEnabled && <NavItem {...navProps} id="production" label="Production" icon={ClipboardList} />}
                         </>
                     )}
-                    {!isStaff && <NavItem {...navProps} id="dashboard" label="Dashboard" icon={LayoutDashboard} />}
+                    <NavItem {...navProps} id="dashboard" label="Dashboard" icon={LayoutDashboard} />
                     <div className="border-t border-white/5 my-2 mx-4"></div>
                     <NavItem {...navProps} id="settings" label="Settings" icon={SettingsIcon} />
                 </nav>
@@ -328,10 +266,10 @@ function App() {
                                 {session?.user?.user_metadata?.full_name || session?.user?.email?.split('@')[0] || 'Manager'}
                             </p>
                         </div>
-                        <button onClick={() => setIsLocked(true)} className="text-slate-500 hover:text-white p-1" title="Lock Screen">
+                        <button onClick={api.logout} className="text-slate-500 hover:text-white p-1" title="Lock and sign out">
                             <Lock size={16} />
                         </button>
-                        <button onClick={() => supabase.auth.signOut()} className="text-slate-500 hover:text-red-400 p-1" title="Sign Out">
+                        <button onClick={api.logout} className="text-slate-500 hover:text-red-400 p-1" title="Sign Out">
                             <LogOut size={16} />
                         </button>
                     </div>
@@ -356,6 +294,7 @@ function App() {
                             {activeTab === 'supplier' && 'Supplier Order'}
                             {activeTab === 'vouchers' && 'Vouchers'}
                             {activeTab === 'reports' && 'Reports'}
+                            {activeTab === 'production' && 'Production'}
                             {activeTab === 'settings' && 'Settings'}
                             {activeTab === 'add-stock' && 'Receive Stock'}
                         </h2>
@@ -372,6 +311,26 @@ function App() {
                 </header>
 
                 <div className="flex-1 overflow-y-auto p-4 lg:p-8 relative">
+                    {session.readOnly && <div role="status" className="mb-4 rounded-xl border border-amber-500/30 bg-amber-500/10 p-4 text-sm text-amber-100">
+                        {session.environment === 'staging'
+                            ? 'Read-only staging snapshot. You can review data here; saves, checkout and SMS delivery are disabled. The live store is unchanged.'
+                            : 'Maintenance: data is temporarily read-only. Saves and checkout are disabled until maintenance is complete.'}
+                    </div>}
+                    {legacyCache && (
+                        <div role="status" className="mb-4 rounded-xl border border-amber-500/20 bg-amber-500/10 p-4 text-amber-200">
+                            Legacy data is saved in this browser. It has not been imported. Export it for owner review before making any import.
+                            <button className="btn-secondary ml-3" onClick={() => {
+                                const content = window.localStorage.getItem('sports-tech-transactions');
+                                if (!content) return;
+                                const url = URL.createObjectURL(new Blob([content], { type: 'application/json' }));
+                                const link = document.createElement('a');
+                                link.href = url;
+                                link.download = 'legacy-transactions-for-review.json';
+                                link.click();
+                                URL.revokeObjectURL(url);
+                            }}>Export legacy data</button>
+                        </div>
+                    )}
                     {error && (
                         <div role="alert" className="mb-4 flex flex-wrap items-center justify-between gap-3 rounded-xl border border-red-500/20 bg-red-500/10 p-4 text-red-200">
                             <span>Unable to sync data: {error}</span>
@@ -388,10 +347,10 @@ function App() {
                     ) : (
                         <div className="max-w-7xl mx-auto h-full">
                             <Suspense fallback={<LoadingState label="Loading workspace..." />}>
-                            {!isStaff && activeTab === 'pos' && (
+                            {activeTab === 'pos' && (
                                 <POSInterface
-                                    transactions={transactions} // POS needs ALL transactions to calculate Inventory/Products correctly
-                                    onAddTransaction={addToSupabase}
+                                    transactions={transactions}
+                                    onAddTransaction={addToServer}
                                     onAddTransactions={addTransactions}
                                     onDeleteTransaction={deleteTransaction} // Enable hard deletes
                                     refetch={refetch}
@@ -403,41 +362,42 @@ function App() {
                                 <OrderManagement
                                     transactions={effectiveTransactions} // Filtered for Resellers
                                     onAddTransaction={addTransaction}
-                                    onDeleteTransaction={deleteFromSupabase}
+                                    onDeleteTransaction={deleteFromServer}
+                                    onOrderSaved={applyOrderSave}
                                     refetch={refetch}
                                     userRole={userRole} // Pass role for restrictions
                                 />
                             )}
 
-                            {activeTab === 'sales' && (
+                            {isOwner && activeTab === 'sales' && (
                                 <div className="animate-fade-in">
                                     <Sales
                                         transactions={transactions}
                                         onDeleteTransaction={deleteTransaction}
-                                        onUpdateTransaction={updateInSupabase}
+                                        onUpdateTransaction={updateOnServer}
                                     />
                                 </div>
                             )}
 
                             {activeTab === 'dashboard' && (
                                 <div className="space-y-8 animate-fade-in">
-                                    <DashboardStats transactions={effectiveTransactions} onDeleteAll={handleDeleteAll} />
+                                    <DashboardStats transactions={effectiveTransactions} onDeleteAll={isOwner ? handleDeleteAll : undefined} />
                                     <TransactionList transactions={effectiveTransactions} onDelete={deleteTransaction} />
                                 </div>
                             )}
 
-                            {activeTab === 'expenses' && (
+                            {isOwner && activeTab === 'expenses' && (
                                 <div className="animate-fade-in">
                                     <Expenses
                                         transactions={transactions}
                                         onDeleteTransaction={deleteTransaction}
-                                        onAddTransaction={addToSupabase}
-                                        onUpdateTransaction={updateInSupabase}
+                                        onAddTransaction={addToServer}
+                                        onUpdateTransaction={updateOnServer}
                                     />
                                 </div>
                             )}
 
-                            {activeTab === 'downtown-dinks' && (
+                            {isOwner && activeTab === 'downtown-dinks' && (
                                 <div className="animate-fade-in">
                                     <DowntownDinks
                                         transactions={transactions}
@@ -448,29 +408,29 @@ function App() {
                                 </div>
                             )}
 
-                            {activeTab === 'inventory' && (
+                            {isOwner && activeTab === 'inventory' && (
                                 <div className="animate-fade-in">
                                     <InventoryList
                                         transactions={transactions}
                                         onAddTransaction={addTransaction}
-                                        onDeleteTransaction={deleteFromSupabase}
+                                        onDeleteTransaction={deleteFromServer}
                                         onOpenAddStock={() => setShowAddStockModal(true)}
                                     />
                                 </div>
                             )}
 
-                            {activeTab === 'vouchers' && (
+                            {isOwner && activeTab === 'vouchers' && (
                                 <div className="animate-fade-in">
                                     <VoucherManager
                                         transactions={transactions}
-                                        onAddTransaction={addToSupabase}
-                                        onUpdateTransaction={updateInSupabase}
-                                        onDeleteTransaction={deleteFromSupabase}
+                                        onAddTransaction={addToServer}
+                                        onUpdateTransaction={updateOnServer}
+                                        onDeleteTransaction={deleteFromServer}
                                     />
                                 </div>
                             )}
 
-                            {activeTab === 'supplier' && (
+                            {isOwner && activeTab === 'supplier' && (
                                 <div className="animate-fade-in h-full">
                                     <SupplierManager
                                         transactions={effectiveTransactions}
@@ -478,17 +438,21 @@ function App() {
                                 </div>
                             )}
 
-                            {activeTab === 'reports' && (
+                            {isOwner && activeTab === 'reports' && (
                                 <div className="animate-fade-in h-full">
                                     <AdsReporting transactions={transactions} />
                                 </div>
                             )}
 
+                            {isOwner && printQueueEnabled && activeTab === 'production' && (
+                                <ProductionManager user={session.user} transactions={transactions} refetch={refetch} />
+                            )}
                             {activeTab === 'settings' && (
                                 <div className="animate-fade-in">
                                     <ProfileSettings
                                         user={session?.user}
-                                        onLogout={() => supabase.auth.signOut()}
+                                        onLogout={api.logout}
+                                        onProfileChange={onProfileChange}
                                         transactions={transactions}
                                         onAddTransaction={addTransaction}
                                     />
@@ -506,8 +470,8 @@ function App() {
                     <div className="w-full max-w-2xl relative">
                         <Suspense fallback={<LoadingState label="Loading stock form..." />}>
                             <AddStockForm
-                                onAddTransaction={(t) => {
-                                    addTransaction(t);
+                                onAddTransaction={async (t) => {
+                                    await addTransaction(t);
                                     setShowAddStockModal(false);
                                 }}
                                 onClose={() => setShowAddStockModal(false)}
@@ -523,5 +487,15 @@ function App() {
 }
 
 export default function AppLoader() {
-    return <Suspense fallback={<LoadingState />}><App /></Suspense>;
+    const path = window.location.pathname;
+    const isAdminPath = /^\/admin(?:\/|$)/.test(path);
+    const isPrintPath = /^\/print(?:\/|$)/.test(path);
+    const isTrackPath = /^\/track(?:\/|$)/.test(path);
+    React.useEffect(() => {
+        const standalone = window.matchMedia('(display-mode: standalone)').matches || window.navigator.standalone;
+        if (standalone && path === '/') window.location.replace('/admin');
+    }, [path]);
+    return <Suspense fallback={<LoadingState />}>
+        {isTrackPath ? <OrderTracking /> : isAdminPath || isPrintPath ? <ProtectedWorkspace printPath={isPrintPath} /> : <PublicStore />}
+    </Suspense>;
 }

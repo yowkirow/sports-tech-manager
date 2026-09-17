@@ -9,11 +9,22 @@
   "vars": {
     "ENVIRONMENT": "staging",
     "ACCESS_TEAM_DOMAIN": "jolly-fog-e8df.cloudflareaccess.com",
-    "ACCESS_AUDIENCE": "ee3e0d310a6943197b1764a7c89ec1a242de63d4827ea64879a128aa6e2d8120"
+    "ACCESS_AUDIENCE": "ee3e0d310a6943197b1764a7c89ec1a242de63d4827ea64879a128aa6e2d8120",
+    "PRINT_QUEUE_ENABLED": "true",
+    "MUTATIONS_ENABLED": "false"
+  },
+  "assets": {
+    "directory": "./dist",
+    "binding": "ASSETS",
+    "not_found_handling": "single-page-application",
+    "run_worker_first": ["/api/*", "/health", "/admin*", "/print*"]
   },
   "version_metadata": {
     "binding": "VERSION"
   },
+  "r2_buckets": [
+    { "binding": "MEDIA", "bucket_name": "sportstech-staging-media" }
+  ],
   "d1_databases": [
     {
       "binding": "DB",

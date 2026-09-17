@@ -2,14 +2,15 @@ import React, { useState, useMemo, useRef } from 'react';
 import { motion, AnimatePresence, Reorder } from 'framer-motion';
 import { Search, ShoppingCart, Trash2, CheckCircle, Package, Plus, Loader2, Edit, X, Upload, Ruler, GripVertical } from 'lucide-react';
 import { useToast } from '../ui/Toast';
-import { supabase } from '../../lib/supabaseClient';
+import { api, apiRequest } from '../../lib/apiClient';
 import { useRawInventory, useProducts, useColors, useBrands } from '../../hooks/useInventory';
-import useSupabaseCustomers from '../../hooks/useSupabaseCustomers';
+import useCustomers from '../../hooks/useCustomers';
 import { getMMCities, getAllProvinces, getCitiesByProvince, getBarangays } from '../../lib/phLocations';
 import { useActivityLog } from '../../hooks/useActivityLog';
 import { createOrderId } from '../../lib/orderItems';
 import { getStockKey } from '../../lib/inventory';
 import { getCartUnitPrice, isBallProduct, priceOrder } from '../../lib/orderPricing';
+import { getCheckoutStatuses } from '../../lib/checkoutPolicy';
 
 const SIZES = ['XS', 'S', 'M', 'L', 'XL', '2XL'];
 
@@ -24,6 +25,8 @@ export default function POSInterface({ transactions, onAddTransaction, onAddTran
     const [cart, setCart] = useState([]);
     const [searchTerm, setSearchTerm] = useState('');
     const [checkoutLoading, setCheckoutLoading] = useState(false);
+    const checkoutPending = useRef(false);
+    const checkoutAttempt = useRef(null);
 
     // UI State
     const [showProductModal, setShowProductModal] = useState(false);
@@ -46,24 +49,31 @@ export default function POSInterface({ transactions, onAddTransaction, onAddTran
     const [customerProvince, setCustomerProvince] = useState('');
     const [customerBarangay, setCustomerBarangay] = useState('');
     const [fulfillmentStatus, setFulfillmentStatus] = useState('pending');
-    const [paymentStatus, setPaymentStatus] = useState('paid');
+    const [paymentStatus, setPaymentStatus] = useState(() => getCheckoutStatuses(userRole).paymentStatus);
     const [paymentMode, setPaymentMode] = useState('Cash');
 
     // Customer Search State
     const [showSuggestions, setShowSuggestions] = useState(false);
     const [customerSuggestions, setCustomerSuggestions] = useState([]);
-    const { searchCustomers, upsertCustomer } = useSupabaseCustomers();
+    const { searchCustomers, upsertCustomer } = useCustomers();
 
     // Debounced Search
     React.useEffect(() => {
+        let active = true;
         const timer = setTimeout(async () => {
             if (showSuggestions && customerName.length > 1) {
-                const results = await searchCustomers(customerName);
-                if (results) setCustomerSuggestions(results);
-                else setCustomerSuggestions([]);
+                try {
+                    const results = await searchCustomers(customerName);
+                    if (active) setCustomerSuggestions(results);
+                } catch {
+                    if (active) {
+                        setCustomerSuggestions([]);
+                        showToast('Customer search unavailable. You can still enter customer details.', 'error');
+                    }
+                }
             }
         }, 300);
-        return () => clearTimeout(timer);
+        return () => { active = false; clearTimeout(timer); };
     }, [customerName, showSuggestions, searchCustomers]);
 
     // Location State
@@ -253,6 +263,7 @@ export default function POSInterface({ transactions, onAddTransaction, onAddTran
     };
 
     const handleCheckout = async () => {
+        if (checkoutPending.current) return;
         if (cart.length === 0) {
             showToast('Cart is empty', 'error');
             return;
@@ -262,16 +273,25 @@ export default function POSInterface({ transactions, onAddTransaction, onAddTran
             return;
         }
 
+        checkoutPending.current = true;
         setCheckoutLoading(true);
         try {
-            const { data: { user }, error } = await supabase.auth.getUser();
-            if (error) throw error;
+            const user = await api.getCurrentUser();
             if (!user) throw new Error('Sign in again before saving this order.');
-            const orderId = createOrderId();
-            const date = new Date().toISOString();
-            const priced = priceOrder(cart.map(item => ({
+            const fingerprint = JSON.stringify([cart, customerName, customerContact, customerAddress, customerCity,
+                customerProvince, customerBarangay, shippingRegion, paymentMode, paymentStatus, fulfillmentStatus, user.id]);
+            if (checkoutAttempt.current && checkoutAttempt.current.fingerprint !== fingerprint) {
+                throw new Error('A previous checkout is unconfirmed. Restore that cart and retry, or reload Orders to verify it before starting another checkout.');
+            }
+            const attempt = checkoutAttempt.current || {
+                fingerprint, requestId: crypto.randomUUID(), orderId: createOrderId(), date: new Date().toISOString(),
+                itemIds: cart.map(() => crypto.randomUUID())
+            };
+            checkoutAttempt.current = attempt;
+            const { orderId, date } = attempt;
+            const priced = priceOrder(cart.map((item, index) => ({
                 ...item,
-                id: crypto.randomUUID(),
+                id: attempt.itemIds[index],
                 unitPrice: getCartUnitPrice(item)
             })));
             const pricing = { version: 1, discount: null, shippingFee: 0, isRushOrder: false, rushFeePerShirt: 100, shippingLineId: priced.items[0].id };
@@ -311,15 +331,14 @@ export default function POSInterface({ transactions, onAddTransaction, onAddTran
                         isRushOrder: false
                     },
                     paymentMode,
-                    paymentStatus,
-                    fulfillmentStatus,
-                    status: fulfillmentStatus,
+                    ...getCheckoutStatuses(userRole, paymentStatus, fulfillmentStatus),
                     createdBy: user.email,
                     userRole
                 }
             }));
 
-            await onAddTransactions(transactionData);
+            await onAddTransactions(transactionData, { requestId: attempt.requestId });
+            checkoutAttempt.current = null;
             await logActivity('POS Checkout', {
                 customer: customerName,
                 itemCount: cart.length,
@@ -340,6 +359,20 @@ export default function POSInterface({ transactions, onAddTransaction, onAddTran
                 console.error('Order saved, but customer profile update failed:', customerError);
                 showToast('Order saved. The customer profile could not be updated.', 'error');
             }
+            if (userRole === 'owner' && customerContact.trim()) {
+                try {
+                    const settings = await apiRequest('/api/settings/sms');
+                    if (settings.enableSmsNotifications && settings.configured) {
+                        await api.sendSms({
+                            recipient: customerContact.trim(),
+                            message: `SportsTech: Order ${orderId} confirmed. Total: ₱${priced.total}`,
+                            orderId
+                        });
+                    }
+                } catch {
+                    showToast('Order saved. The SMS notification could not be sent.', 'error');
+                }
+            }
             setPaymentMode('Cash');
             setCustomerName('');
             setCustomerContact('');
@@ -351,9 +384,11 @@ export default function POSInterface({ transactions, onAddTransaction, onAddTran
             setCityCode('');
             setCart([]);
         } catch (err) {
+            if ([400, 401, 403, 404, 409, 422].includes(err.status)) checkoutAttempt.current = null;
             console.error(err);
             showToast(`Checkout failed: ${err.message}`, 'error');
         } finally {
+            checkoutPending.current = false;
             setCheckoutLoading(false);
         }
     };
@@ -683,13 +718,8 @@ const ProductDefinitionModal = ({ editingProduct, onClose, onSave, onDelete, col
         if (!file) return;
         setUploading(true);
         try {
-            const ext = file.name.split('.').pop();
-            const fileName = `${Date.now()}.${ext}`;
-            const { error: uploadError } = await supabase.storage.from('product-images').upload(fileName, file);
-            if (uploadError) throw uploadError;
-            const { data } = supabase.storage.from('product-images').getPublicUrl(fileName);
-            
-            const newUrl = data.publicUrl;
+            const { url: newUrl } = await api.uploadProductImage(file);
+            if (!newUrl) throw new Error('The uploaded image could not be verified.');
             setForm(p => {
                 const newImages = [...(p.images || []), newUrl];
                 return { 
@@ -861,7 +891,7 @@ const CartContent = ({ cart, updateCartQuantity, handleCheckout, checkoutLoading
                 <input className="glass-input text-xs py-3" placeholder="Street Address / Room / landmarks" value={customerAddress} onChange={e => setCustomerAddress(e.target.value)} />
                 <div className="grid grid-cols-2 gap-3 pt-2">
                     <select className="glass-input text-[11px] py-3" value={paymentMode} onChange={e => setPaymentMode(e.target.value)}>{['Cash', 'Gcash', 'Bank Transfer', 'COD'].map(m => <option key={m} value={m} className="bg-slate-900">{m}</option>)}</select>
-                    <select className="glass-input text-[11px] py-3 capitalize" value={paymentStatus} onChange={e => setPaymentStatus(e.target.value)}>{['unpaid', 'paid'].map(s => <option key={s} value={s} className="bg-slate-900">{s}</option>)}</select>
+                    <select aria-label="Payment status" disabled={isReseller} className="glass-input text-[11px] py-3 capitalize" value={paymentStatus} onChange={e => setPaymentStatus(e.target.value)}>{['unpaid', 'paid'].map(s => <option key={s} value={s} className="bg-slate-900">{s}</option>)}</select>
                 </div>
                 {!isReseller && <select className="glass-input text-[11px] py-3 capitalize" value={fulfillmentStatus} onChange={e => setFulfillmentStatus(e.target.value)}>{['pending', 'in_progress', 'ready', 'shipped'].map(s => <option key={s} value={s} className="bg-slate-900">{s.replace('_', ' ')}</option>)}</select>}
             </div>

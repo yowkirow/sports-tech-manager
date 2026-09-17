@@ -1,5 +1,5 @@
 import React, { useState, useEffect } from 'react';
-import { supabase } from '../../lib/supabaseClient';
+import { api } from '../../lib/apiClient';
 import { useToast } from '../ui/Toast';
 import { Tag, Plus, X, Save, Loader2 } from 'lucide-react';
 import { motion, AnimatePresence } from 'framer-motion';
@@ -19,15 +19,27 @@ export default function ExpenseCategorySettings() {
     const [loading, setLoading] = useState(false);
     const [categories, setCategories] = useState([]);
     const [newCategory, setNewCategory] = useState('');
+    const [loaded, setLoaded] = useState(false);
+    const [loadError, setLoadError] = useState(null);
+    const [attempt, setAttempt] = useState(0);
 
     useEffect(() => {
+        let active = true;
+        setLoaded(false);
+        setLoadError(null);
         const fetchCategories = async () => {
-            const { data: { user } } = await supabase.auth.getUser();
-            const savedCategories = user?.user_metadata?.expense_categories || DEFAULT_CATEGORIES;
-            setCategories(savedCategories);
+            const { profile } = await api.getProfile();
+            const savedCategories = profile?.expense_categories || DEFAULT_CATEGORIES;
+            if (active) {
+                setCategories(savedCategories);
+                setLoaded(true);
+            }
         };
-        fetchCategories();
-    }, []);
+        fetchCategories().catch(error => {
+            if (active) setLoadError(error.message);
+        });
+        return () => { active = false; };
+    }, [attempt]);
 
     const handleAddCategory = () => {
         const trimmed = newCategory.trim();
@@ -44,12 +56,10 @@ export default function ExpenseCategorySettings() {
     };
 
     const handleSave = async () => {
+        if (!loaded) return;
         setLoading(true);
         try {
-            const { error } = await supabase.auth.updateUser({
-                data: { expense_categories: categories }
-            });
-            if (error) throw error;
+            await api.updateProfile({ expense_categories: categories });
             showToast('Expense categories updated!', 'success');
         } catch (err) {
             console.error(err);
@@ -83,6 +93,10 @@ export default function ExpenseCategorySettings() {
                 </div>
             </div>
 
+            {loadError && <p role="alert" className="text-sm text-red-300">
+                Could not load expense categories: {loadError}
+                <button type="button" onClick={() => setAttempt(value => value + 1)} className="btn-secondary ml-3">Retry</button>
+            </p>}
             <div className="space-y-4">
                 <div className="flex gap-2">
                     <input
@@ -129,7 +143,7 @@ export default function ExpenseCategorySettings() {
                 <div className="flex gap-3 pt-4 border-t border-white/5">
                     <button
                         onClick={handleSave}
-                        disabled={loading}
+                        disabled={loading || !loaded}
                         className="btn-primary flex-1 py-1.5 h-10 shadow-lg shadow-indigo-500/20"
                     >
                         {loading ? <Loader2 className="animate-spin" /> : <Save size={18} />}
@@ -137,7 +151,7 @@ export default function ExpenseCategorySettings() {
                     </button>
                     <button
                         onClick={handleReset}
-                        disabled={loading}
+                        disabled={loading || !loaded}
                         className="px-4 py-1.5 h-10 bg-white/5 hover:bg-white/10 text-slate-400 rounded-xl transition-all border border-white/5 text-sm font-medium"
                     >
                         Reset Defaults

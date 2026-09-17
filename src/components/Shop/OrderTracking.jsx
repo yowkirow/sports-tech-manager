@@ -1,10 +1,9 @@
-import React, { useState, useEffect, useMemo } from 'react';
+import React, { useState, useEffect, useMemo, useRef } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
 import { Package, CheckCircle, Clock, Truck, ShieldCheck, Search, ArrowLeft, Copy, ShoppingCart, MapPin, Phone, User, ExternalLink, X, Plus, Minus, RotateCcw } from 'lucide-react';
-import { supabase } from '../../lib/supabaseClient';
+import { refreshTrackedOrder, saveTrackedOrder, trackOrder, trackingToken } from '../../lib/publicShopApi';
 import { useToast } from '../ui/Toast';
-import { groupOrders } from '../../lib/orderItems';
-import { buildOrderChanges, getEditableOrderItems, priceOrderChanges, saveOrderChanges } from '../../lib/orderEditing';
+import { getEditableOrderItems, priceOrderChanges } from '../../lib/orderEditingPure';
 
 const STATUS_STEPS = [
     { key: 'pending', label: 'Order Placed', icon: Clock, description: 'We have received your order.' },
@@ -22,6 +21,11 @@ export default function OrderTracking() {
     const [order, setOrder] = useState(null);
     const [loading, setLoading] = useState(false);
     const [isVerified, setIsVerified] = useState(false);
+    const [token, setToken] = useState('');
+    const [refreshError, setRefreshError] = useState('');
+    const editRequest = useRef(null);
+    const refreshing = useRef(false);
+    const saveInFlight = useRef(false);
 
     // Editing State
     const [isEditing, setIsEditing] = useState(false);
@@ -51,99 +55,67 @@ export default function OrderTracking() {
     const fetchOrder = async (id, contact, { verifyContact = true, notify = true } = {}) => {
         setLoading(true);
         try {
-            let query = supabase
-                .from('transactions')
-                .select('*')
-                .eq('type', 'sale');
-
-            if (id) {
-                // If ID is provided (from URL), search by orderId
-                query = query.filter('details->>orderId', 'eq', id);
-            } else {
-                // If no ID, search by contact number and get the latest order
-                query = query.eq('details->>contactNumber', contact.trim())
-                    .order('date', { ascending: false });
-            }
-
-            let { data, error } = await query;
-
-            if (error) throw error;
-            if (id && !data?.length && /^[0-9a-f]{8}-[0-9a-f-]{27}$/i.test(id)) {
-                const legacy = await supabase.from('transactions').select('*').eq('type', 'sale').eq('id', id);
-                if (legacy.error) throw legacy.error;
-                data = legacy.data;
-            } else if (!id) {
-                const legacy = await supabase.from('transactions').select('*').eq('type', 'sale')
-                    .eq('details->>customerContact', contact.trim()).order('date', { ascending: false });
-                if (legacy.error) throw legacy.error;
-                data = [...new Map([...(data || []), ...(legacy.data || [])].map(row => [row.id, row])).values()];
-            }
-            const groups = groupOrders(data || []);
-            const foundOrder = id ? groups.find(group => group.id === id) : groups[0];
-
-            if (!foundOrder) {
-                showToast('Order not found', 'error');
-                if (!verifyContact) {
-                    setIsVerified(false);
-                    setOrder(null);
-                }
-                return;
-            }
-
-            const storedContact = String(foundOrder.details.contactNumber || '').replace(/\D/g, '');
-            const enteredContact = String(contact || '').replace(/\D/g, '');
-            if (verifyContact && (enteredContact.length < 7 || !storedContact || storedContact !== enteredContact)) {
-                showToast('Verification failed. Invalid contact number.', 'error');
-                return;
-            }
-
-            setOrder(foundOrder);
-            setOrderId(foundOrder.id);
+            const result = verifyContact ? await trackOrder(contact, id) : await refreshTrackedOrder(id, token || trackingToken(id));
+            setOrder(result.order);
+            setOrderId(result.order.id);
+            if (result.token) setToken(result.token);
             setIsVerified(true);
+            setRefreshError('');
             if (notify) showToast('Order verified!', 'success');
 
         } catch (err) {
             console.error(err);
-            showToast('Error fetching order', 'error');
+            if ([401, 403].includes(err.status)) setIsVerified(false);
+            setRefreshError(err.message || 'The order could not be refreshed.');
+            if (notify) showToast(err.message || 'Error fetching order', 'error');
         } finally {
             setLoading(false);
         }
     };
 
-    // Real-time subscription
+    // Poll only while visible and not editing; the server verifies the capability each time.
     useEffect(() => {
         if (!isVerified || !orderId || isEditing) return;
-
-        const channel = supabase
-            .channel(`order-track-${orderId}`)
-            .on(
-                'postgres_changes',
-                {
-                    event: '*',
-                    schema: 'public',
-                    table: 'transactions',
-                },
-                (payload) => {
-                    const tx = payload.eventType === 'DELETE' ? payload.old : payload.new;
-                    setOrder(prev => {
-                        if (!prev || !tx || (tx.details?.orderId !== orderId && tx.id !== orderId
-                            && !prev.transactions.some(row => row.id === tx.id))) return prev;
-                        const rows = payload.eventType === 'DELETE'
-                            ? prev.transactions.filter(row => row.id !== tx.id)
-                            : prev.transactions.some(row => row.id === tx.id)
-                                ? prev.transactions.map(row => row.id === tx.id ? { ...row, ...tx } : row)
-                                : [...prev.transactions, tx];
-                        return groupOrders(rows).find(group => group.id === orderId)
-                            || { ...prev, transactions: [], items: [], totalAmount: 0 };
-                    });
+        let cancelled = false;
+        const refresh = async () => {
+            if (document.visibilityState !== 'visible' || refreshing.current) return;
+            refreshing.current = true;
+            try {
+                const result = await refreshTrackedOrder(orderId, token || trackingToken(orderId));
+                if (!cancelled) { setOrder(result.order); setRefreshError(''); }
+            } catch (error) {
+                if (!cancelled) {
+                    setRefreshError(error.message);
+                    if ([401, 403].includes(error.status)) setIsVerified(false);
                 }
-            )
-            .subscribe();
-
-        return () => {
-            supabase.removeChannel(channel);
+            } finally { refreshing.current = false; }
         };
-    }, [isVerified, orderId, isEditing]);
+        const timer = setInterval(refresh, 30000);
+        window.addEventListener('focus', refresh);
+        document.addEventListener('visibilitychange', refresh);
+        return () => {
+            cancelled = true;
+            clearInterval(timer);
+            window.removeEventListener('focus', refresh);
+            document.removeEventListener('visibilitychange', refresh);
+        };
+    }, [isVerified, orderId, isEditing, token]);
+
+    useEffect(() => {
+        const id = window.location.pathname.match(/\/track\/([^/]+)/)?.[1];
+        const savedToken = id && trackingToken(id);
+        if (!savedToken) return;
+        let cancelled = false;
+        refreshTrackedOrder(id, savedToken).then(result => {
+            if (!cancelled) {
+                setOrder(result.order);
+                setOrderId(id);
+                setToken(savedToken);
+                setIsVerified(true);
+            }
+        }).catch(() => { /* Expired capabilities fall back to full contact verification. */ });
+        return () => { cancelled = true; };
+    }, []);
 
     const handleVerify = (e) => {
         e.preventDefault();
@@ -152,6 +124,7 @@ export default function OrderTracking() {
     };
 
     const startEditing = () => {
+        editRequest.current = null;
         setEditingOrder(order);
         setEditItems(getEditableOrderItems(order));
         setSaveError('');
@@ -167,38 +140,46 @@ export default function OrderTracking() {
     };
 
     const handleSave = async () => {
+        if (saveInFlight.current) return;
         if (editItems.length === 0) {
             return showToast('Order cannot be empty', 'error');
         }
 
+        saveInFlight.current = true;
         setSaving(true);
         try {
             if (!editDetails.customerName.trim() || String(editDetails.contactNumber).replace(/\D/g, '').length < 7) {
                 throw new Error('Enter a customer name and valid contact number.');
             }
-            const result = buildOrderChanges(editingOrder, editItems, {
+            const intent = {
+                expectedVersion: editingOrder.orderVersion,
+                items: editItems.map(item => ({ id: item.id, size: item.size, color: item.color, quantity: Number(item.quantity) })),
                 customerName: editDetails.customerName,
                 contactNumber: editDetails.contactNumber,
                 shippingDetails: {
                     address: editDetails.address,
                     city: editDetails.city,
                     province: editDetails.province,
-                    barangay: editDetails.barangay,
-                    contactNumber: editDetails.contactNumber,
+                    barangay: editDetails.barangay
                 }
-            });
-            await saveOrderChanges(supabase, result.changes, { requirePending: true });
+            };
+            const signature = JSON.stringify(intent);
+            if (editRequest.current && editRequest.current.signature !== signature) throw new Error('The previous save is unconfirmed. Retry it unchanged or cancel to reload.');
+            editRequest.current ||= { signature, requestId: crypto.randomUUID() };
+            const result = await saveTrackedOrder(orderId, { ...intent, requestId: editRequest.current.requestId }, token);
 
             showToast('Order updated successfully!', 'success');
+            setOrder(result.order);
+            setToken(result.token);
+            editRequest.current = null;
             setIsEditing(false);
             setContactVerify(editDetails.contactNumber);
-            await fetchOrder(orderId, editDetails.contactNumber, { verifyContact: false, notify: false });
         } catch (err) {
             console.error(err);
-            setSaveError(`${err.message} Cancel editing to reload before retrying.`);
+            setSaveError(`${err.message} Retry the same changes, or cancel editing to reload.`);
             showToast(err.message || 'Failed to update order', 'error');
-            await fetchOrder(orderId, contactVerify, { verifyContact: false, notify: false });
         } finally {
+            saveInFlight.current = false;
             setSaving(false);
         }
     };
@@ -291,6 +272,13 @@ export default function OrderTracking() {
             </header>
 
             <main className="flex-1 p-4 md:p-8 max-w-4xl mx-auto w-full space-y-6">
+                {!isEditing && (
+                    <div className="flex items-center justify-between gap-4 text-sm text-slate-400">
+                        <p role="status">{refreshError || 'Status refreshes every 30 seconds while this page is visible.'}</p>
+                        <button type="button" disabled={loading} onClick={() => fetchOrder(orderId, contactVerify, { verifyContact: false, notify: false })}
+                            className="text-primary shrink-0 disabled:opacity-50">Refresh</button>
+                    </div>
+                )}
                 {!isEditing ? (
                     <>
                         {/* Header Card */}
@@ -530,7 +518,7 @@ export default function OrderTracking() {
                                 </button>
                                 <button
                                     onClick={handleSave}
-                                    disabled={saving || !!saveError || !!editPricing?.error}
+                                    disabled={saving || !!editPricing?.error}
                                     className="btn-primary px-6 py-2 flex items-center gap-2"
                                 >
                                     {saving ? <Clock className="animate-spin" size={16} /> : 'Save Changes'}
