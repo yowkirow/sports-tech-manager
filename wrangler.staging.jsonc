@@ -9,7 +9,7 @@
   "vars": {
     "ENVIRONMENT": "staging",
     "ACCESS_TEAM_DOMAIN": "jolly-fog-e8df.cloudflareaccess.com",
-    "ACCESS_AUDIENCE": ""
+    "ACCESS_AUDIENCE": "ee3e0d310a6943197b1764a7c89ec1a242de63d4827ea64879a128aa6e2d8120"
   },
   "version_metadata": {
     "binding": "VERSION"

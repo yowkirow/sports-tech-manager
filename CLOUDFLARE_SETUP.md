@@ -45,12 +45,14 @@ Confirm the application contains only the intended exact-email allow rule and no
 bypass/everyone policy. The Access organization is
 `jolly-fog-e8df.cloudflareaccess.com`.
 
-Copy that staging application's audience (AUD) into `ACCESS_AUDIENCE` in
-`wrangler.staging.jsonc`, then redeploy. The audience is an application identifier,
-not a credential. It is intentionally empty until the actual Access application
-has been created and its policy attachment verified. Until then, every private
-endpoint returns an explicit 503; it does not accept unsigned email headers or
-default to admin.
+The staging application is `61e152cf-3fc1-47c2-9151-a92fa5653f8d`, with the saved
+owner policy attached and a six-hour application session duration. Its verified
+audience (AUD) is configured in `ACCESS_AUDIENCE` in `wrangler.staging.jsonc`.
+The audience is an application identifier, not a credential. If the application
+is ever replaced, verify its exact policy/hostname and update the audience before
+redeploying; do not infer it from another application's token or bypass policy.
+Missing configuration still produces an explicit 503 instead of accepting unsigned
+email headers or defaulting to admin.
 
 Provision the explicitly approved owner in `members` through a controlled D1
 administration step using a stable internal ID and exact normalized email. Never
@@ -69,7 +71,7 @@ explicit service errors, not successful anonymous fallbacks.
 
 | Endpoint | Behavior |
 | --- | --- |
-| `GET /health` | Public, non-sensitive service/version check |
+| `GET /health` | Non-sensitive service/version check; subject to the hostname's Access policy |
 | `GET /api/session` | Verified Access identity and active D1 membership required |
 | `GET /` | Owner-only staging status, not the storefront |
 | Any write method | Rejected; no financial or production mutation API is enabled |
@@ -78,6 +80,13 @@ Responses use `Cache-Control: no-store`. No private data or permissive CORS head
 are returned to anonymous requests. Unexpected `/api` paths never fall back to a
 successful SPA document. The staging database must contain only deliberate
 account setup and synthetic fixtures until a separately reviewed import.
+
+Access protects the entire staging hostname. Unauthenticated requests should
+redirect to the configured team's sign-in page before reaching the Worker,
+including `/health`; do not weaken the policy just to make a health probe public.
+After sign-in, `/api/session` confirms the app-level member and `/health` reports
+the deployed Worker version. Dashboard sign-in alone does not prove that this
+separate application login works.
 
 ## Validation and migration gates
 
