@@ -54,6 +54,12 @@ redeploying; do not infer it from another application's token or bypass policy.
 Missing configuration still produces an explicit 503 instead of accepting unsigned
 email headers or defaulting to admin.
 
+Under Cloudflare One's **Integrations > Identity providers**, explicitly enable
+**One-time PIN** for email-code sign-in. Do not rely on the dashboard's default-PIN
+hint when its provider list is empty: the staging login returned "no login methods
+available" until this provider was added. Keep the exact-email Access policy;
+adding a login method must not broaden who can access the app.
+
 Provision the explicitly approved owner in `members` through a controlled D1
 administration step using a stable internal ID and exact normalized email. Never
 make the first visitor owner. Do not place personal seed data in migrations.
