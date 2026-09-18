@@ -2,6 +2,7 @@ import type { Member } from './auth.ts';
 import type { AppEnv } from './env.ts';
 import { HttpError } from './errors.ts';
 import { isObject, json, readJson } from './http.ts';
+import { saveResellerOrderChanges } from './reseller-order-store.ts';
 import {
     canonical, decimal, detailsOrderId, OrderStoreError, PRODUCTION_READY_CONDITION, saveOrderChanges, timestamp
 } from './order-store.ts';
@@ -751,10 +752,14 @@ export async function handleBusinessRequest(request: Request, env: AppEnv, membe
             return json(await changeTransaction(env.DB, member, id, body, method === 'DELETE'));
         }
         if (path === '/api/orders/save' && method === 'POST') {
-            allow(member, ['owner']);
+            allow(member, BUSINESS);
             const body = fields(await readJson(request), ['orderId', 'expectedVersion', 'requestId', 'changes'], ['requirePending', 'packingConfirmed']);
             if (body.packingConfirmed !== undefined && typeof body.packingConfirmed !== 'boolean') invalid('Packing confirmation must be boolean.');
             const { packingConfirmed, ...input } = body;
+            if (member.role === 'reseller') {
+                if (packingConfirmed === true) throw new HttpError(403, 'forbidden', 'Packing confirmation is owner-only.');
+                return json(await saveResellerOrderChanges(env.DB, member, input, validateReseller));
+            }
             return json(await saveOrderChanges(env.DB, member.id, input, {
                 requireProductionReady: env.PRINT_QUEUE_ENABLED === 'true',
                 packingConfirmed: packingConfirmed === true

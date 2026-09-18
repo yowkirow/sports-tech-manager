@@ -111,19 +111,29 @@ async function rateLimit(request: Request, env: AppEnv, scope: string, limit: nu
 }
 
 function decodeRows(rows: unknown[]): Transaction[] {
+    return (rows as RecordData[]).map(row => ({ ...row, details: row.details === null ? null : JSON.parse(row.details) })) as Transaction[];
+}
+function decodeCatalogRows(rows: unknown[]): RecordData[] {
     return (rows as RecordData[]).map(row => {
         const details = row.details === null ? null : JSON.parse(row.details);
-        if (details && typeof row.quantities === 'string') {
-            const quantities: unknown[] = JSON.parse(row.quantities);
-            details.quantity = quantities.reduce<number>((sum, value) => {
+        if (details && (typeof row.movement_quantity === 'number' || typeof row.movements === 'string')) {
+            const movements: [string, unknown][] = row.movements ? JSON.parse(row.movements) : [];
+            details.quantity = row.movement_quantity ?? movements.reduce<number>((sum, [type, value]) => {
                 const parsed = value === null || value === undefined || value === '' ? 1 : Number(value);
-                return sum + (Number.isFinite(parsed) ? parsed : 1);
+                const quantity = Number.isFinite(parsed) ? parsed : 1;
+                return sum + (type === 'sale' ? -quantity : quantity);
             }, 0);
+            // SQL already resolves each flat sale's stock descriptor. Treat its
+            // signed quantity as a movement instead of repeating sale normalization.
+            return { id: row.id, type: 'update_stock', category: row.category, details };
         }
-        return { ...row, details };
-    }) as Transaction[];
+        return { id: row.id, type: row.type, category: row.category, amount: row.amount, description: row.description, details };
+    });
 }
 const stockFields = "'club','removedFromOrder','category','name','itemName','subCategory','brand','size','color','linkedColor','quantity'";
+const trimWhitespace = 'char(9,10,11,12,13,32,160,5760,8192,8193,8194,8195,8196,8197,8198,8199,8200,8201,8202,8232,8233,8239,8287,12288,65279)';
+const stockCategorySQL = (prefix = '') =>
+    `lower(trim(coalesce(nullif(json_extract(${prefix}details,'$.category'),''),${prefix}category,''),${trimWhitespace}))`;
 const scalarJSON = (alias: string) => `CASE WHEN ${alias}.type IN ('object','array') THEN json(${alias}.value) ELSE ${alias}.value END`;
 const nestedStockItems = `(SELECT json_group_array(json((
     SELECT json_group_object(sku.key, ${scalarJSON('sku')})
@@ -137,7 +147,9 @@ const stockDetails = `(SELECT json_group_object(field.key,
     FROM json_each(t.details) field
     WHERE field.key IN (${stockFields},'items')
         AND NOT (field.key IN ('name','itemName','subCategory')
-            AND lower(trim(coalesce(nullif(json_extract(t.details,'$.category'),''),t.category,''))) IN ('shirts','blanks')))`;
+            AND ${stockCategorySQL('t.')} IN ('shirts','blanks')))`;
+// Materialize the projection stages: inlining the grouped JSON expressions can
+// exceed D1's planner-memory budget even for a modest transaction history.
 const catalogSnapshotSQL = `/* public_catalog_snapshot */
     WITH history AS (
         SELECT t.*,row_number() OVER (ORDER BY date DESC,created_at DESC,id DESC) AS position FROM transactions t
@@ -162,19 +174,19 @@ const catalogSnapshotSQL = `/* public_catalog_snapshot */
         SELECT d.id,d.type,d.category,d.date,d.created_at,d.description,d.details,coalesce(p.first_position,d.position) AS position
         FROM definitions d LEFT JOIN first_positions p ON p.name=lower(trim(json_extract(d.details,'$.name')))
             AND p.kind=CASE WHEN d.type IN ('define_product','delete_product') THEN 'product' ELSE 'brand' END
-        WHERE d.latest=1
+        WHERE d.latest=1 AND d.type<>'delete_product'
         UNION ALL
         SELECT id,type,category,date,created_at,description,details,position FROM history
         WHERE type IN ('expense','update_stock','sale','voucher')
             AND (type NOT IN ('expense','update_stock') OR (
                 coalesce(json_extract(details,'$.club'),0) IN (0,'')
-                AND lower(trim(coalesce(nullif(json_extract(details,'$.category'),''),category,''))) NOT IN ('general','ads','club','system')
+                AND ${stockCategorySQL()} NOT IN ('general','ads','club','system')
             ))
             AND (type<>'sale' OR (
                 coalesce(json_extract(details,'$.removedFromOrder'),0) IN (0,'')
                 AND coalesce(json_extract(details,'$.club'),'')<>'downtown-dinks'
             ))
-    ), projected AS (
+    ), projected AS MATERIALIZED (
         SELECT id,type,category,'0' AS amount,date,created_at,position,
             CASE WHEN type='sale' AND lower(trim(category)) NOT IN ('shirts','blanks')
                 AND coalesce(json_extract(details,'$.itemName'),json_extract(details,'$.name'),'')=''
@@ -183,16 +195,53 @@ const catalogSnapshotSQL = `/* public_catalog_snapshot */
                 WHEN type IN ('define_product','delete_product','define_brand','delete_brand','voucher') THEN details
                 ELSE ${stockDetails} END AS details
         FROM relevant t
+    ), normalized_stock AS MATERIALIZED (
+        SELECT *,
+            CASE WHEN type='sale' THEN
+                CASE WHEN ${stockCategorySQL()} IN ('shirts','blanks') THEN 'shirts'
+                    WHEN ${stockCategorySQL()} IN ('','sale','sales','general') THEN
+                        CASE WHEN coalesce(json_extract(details,'$.size'),'') NOT IN ('','N/A') THEN 'shirts' ELSE 'accessories' END
+                    ELSE ${stockCategorySQL()} END
+                ELSE ${stockCategorySQL()} END AS stock_category
+        FROM projected WHERE type IN ('expense','update_stock','sale') AND details IS NOT NULL
+            AND coalesce(json_type(details,'$.items'),'')<>'array'
+    ), stock_descriptors AS MATERIALIZED (
+        SELECT id,type,category,date,created_at,position,
+            json_object(
+                'category',CASE WHEN stock_category IN ('shirts','blanks') THEN 'shirts' ELSE stock_category END,
+                'brand',CASE WHEN stock_category IN ('shirts','blanks') THEN
+                    lower(coalesce(nullif(json_extract(details,'$.brand'),''),'Sypik')) END,
+                'linkedColor',CASE WHEN stock_category IN ('shirts','blanks') THEN
+                    lower(coalesce(nullif(json_extract(details,'$.linkedColor'),''),json_extract(details,'$.color'),'')) END,
+                'size',CASE WHEN stock_category IN ('shirts','blanks') THEN
+                    lower(coalesce(nullif(json_extract(details,'$.size'),''),CASE WHEN type='sale' THEN 'N/A' ELSE '' END)) END,
+                'subCategory',CASE WHEN stock_category NOT IN ('shirts','blanks') THEN
+                    lower(coalesce(nullif(json_extract(details,'$.subCategory'),''),
+                        nullif(json_extract(details,'$.itemName'),''),
+                        nullif(json_extract(details,'$.name'),''),
+                        CASE WHEN type='sale' THEN coalesce(nullif(description,''),'Unknown Item') ELSE '' END)) END
+            ) AS descriptor,
+            json_quote(json_extract(details,'$.quantity')) AS quantity_json,
+            CASE WHEN json_extract(details,'$.quantity') IS NULL OR json_extract(details,'$.quantity')='' THEN 1
+                WHEN json_type(details,'$.quantity') IN ('integer','true','false') THEN json_extract(details,'$.quantity')
+                WHEN json_type(details,'$.quantity')='text' AND json_valid(json_extract(details,'$.quantity')) THEN
+                    CASE WHEN json_type(json_extract(details,'$.quantity'))='integer'
+                        THEN CAST(json_extract(details,'$.quantity') AS INTEGER) END
+            END AS integer_quantity
+        FROM normalized_stock
     ), compact AS (
-        SELECT id,type,category,amount,date,created_at,description,details,position,1 AS movement_count,NULL AS quantities
+        SELECT id,type,category,amount,date,created_at,description,details,position,
+            NULL AS movement_quantity,NULL AS movements
         FROM projected
         WHERE type NOT IN ('expense','update_stock','sale') OR json_type(details,'$.items')='array'
         UNION ALL
-        SELECT min(id),type,category,'0',max(date),max(created_at),description,json_remove(details,'$.quantity'),min(position),
-            count(*),json_group_array(json_extract(details,'$.quantity'))
-        FROM projected WHERE type IN ('expense','update_stock','sale') AND coalesce(json_type(details,'$.items'),'')<>'array'
-        GROUP BY type,category,description,json_remove(details,'$.quantity')
-    ) SELECT * FROM compact ORDER BY position`;
+        SELECT min(id),'update_stock','stock','0',max(date),max(created_at),NULL,descriptor,min(position),
+            CASE WHEN count(integer_quantity)=count(*) AND total(abs(CAST(integer_quantity AS REAL)))<=9007199254740991
+                THEN total(CASE WHEN type='sale' THEN -CAST(integer_quantity AS REAL) ELSE integer_quantity END) END,
+            CASE WHEN count(integer_quantity)=count(*) AND total(abs(CAST(integer_quantity AS REAL)))<=9007199254740991
+                THEN NULL ELSE json_group_array(json_array(type,json(quantity_json))) END
+        FROM stock_descriptors GROUP BY descriptor
+    ) SELECT id,type,category,amount,description,details,movement_quantity,movements FROM compact ORDER BY position`;
 const voucherUsageSQL = `SELECT json_extract(details,'$.voucherCode') AS code,
     count(DISTINCT CASE WHEN coalesce(json_extract(details,'$.orderId'),'') NOT IN ('',0)
         THEN 'order:'||json_extract(details,'$.orderId') ELSE 'transaction:'||id END) AS used
@@ -221,7 +270,7 @@ async function loadCatalog(env: AppEnv): Promise<{ catalog: Catalog; revision: n
         const entry = row as { code: string; used: number };
         return [entry.code, entry.used] as const;
     }));
-    const snapshot = { catalog: buildPublicCatalog(decodeRows(results[0]?.results || []), usage), revision: revision! };
+    const snapshot = { catalog: buildPublicCatalog(decodeCatalogRows(results[0]?.results || []), usage), revision: revision! };
     catalogCache.set(env.DB, snapshot);
     return snapshot;
 }

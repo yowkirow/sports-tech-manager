@@ -171,6 +171,43 @@ test('catalog reconstruction is cached by database identity and refreshed after 
     assert.equal((await call(other.env, '/api/public/catalog')).body.stock['acc-practice-ball'], 500);
 });
 
+test('compacted stock descriptors retain whitespace, fallback and quantity normalization semantics', async t => {
+    const { env } = fixture(t);
+    let seed = 47123;
+    const pick = values => {
+        seed = (seed * 1664525 + 1013904223) >>> 0;
+        return values[seed % values.length];
+    };
+    for (let index = 0; index < 350; index++) {
+        const details = {
+            category: pick(['shirts', 'blanks', 'sale', 'sales', 'general', 'Accessories', 'balls', '', ' shirts ', '\tshirts\n', '\u00a0blanks\u00a0']),
+            name: pick([' Ball Pack ', 'Cap', '', null, '  ']),
+            itemName: pick(['Practice  Ball', '', null, '  ']),
+            subCategory: pick(['Spare  Balls', '', null, '  ']),
+            brand: pick(['Sypik', ' Six  Zero ', '', null, '  ']),
+            size: pick(['M', ' L ', 'N/A', '', null, '  ']),
+            color: pick(['Black', ' White ', '', null, '  ']),
+            linkedColor: pick(['Blue', '', null, '  ']),
+            quantity: pick([0, 1, 7, '3', '', null, 'bad', '0x10', true, false, [], [2], 1.5]),
+            removedFromOrder: pick([false, true]),
+            club: pick(['', null, 'downtown-dinks'])
+        };
+        insert(env, uid(20000 + index), pick(['sale', 'expense', 'update_stock']), details, '0',
+            pick(['shirts', 'blanks', 'sales', 'general', 'accessories']));
+    }
+    const fullRows = env.DB.sqlite.prepare('SELECT * FROM transactions ORDER BY date DESC,created_at DESC,id DESC').all()
+        .map(row => ({ ...row, details: JSON.parse(row.details) }));
+    assert.deepEqual((await call(env, '/api/public/catalog')).body.stock, buildPublicCatalog(fullRows).stock);
+});
+
+test('null historical details cannot create a synthetic stock movement', async t => {
+    const { env } = fixture(t);
+    const before = (await call(env, '/api/public/catalog')).body.stock;
+    env.DB.sqlite.prepare(`INSERT INTO transactions(id,type,category,amount,date,details)
+        VALUES (?,'sale','shirts','500',?,NULL)`).run(uid(24000), DATE);
+    assert.deepEqual((await call(env, '/api/public/catalog')).body.stock, before);
+});
+
 test('measured-shape synthetic history stays projected and uses revision-only warm reads', async t => {
     const { env } = fixture(t);
     const privatePayload = 'synthetic-private-metadata-'.repeat(80);

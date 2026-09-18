@@ -1,4 +1,4 @@
-import { getSaleItems } from './orderItems.js';
+import { getItemCategory, getSaleItems } from './orderItems.js';
 
 const DEFAULT_BRAND = 'Sypik';
 const SHIRT_CATEGORIES = new Set(['blanks', 'shirts']);
@@ -94,9 +94,40 @@ const forEachMovement = (transactions, addMovement) => {
 
 export const getStockCounts = (transactions = []) => {
     const counts = Object.create(null);
-    forEachMovement(transactions, (key, _descriptor, _transactionId, quantity) => {
+    const add = (source, category, quantity) => {
+        const key = getStockKey(source, category);
+        if (!key) return;
         counts[key] = (counts[key] || 0) + quantity;
-    });
+    };
+    for (const transaction of transactions) {
+        const parent = transaction?.details;
+        if (!transaction?.id || !parent) continue;
+        if (transaction.type === 'expense' || transaction.type === 'update_stock') {
+            const category = getCategory(transaction, transaction.category);
+            if (parent.club || EXCLUDED_STOCK_CATEGORIES.has(category)) continue;
+            if (!SHIRT_CATEGORIES.has(category) && !normalizeWhitespace(parent.subCategory || parent.itemName || parent.name)) continue;
+            add(transaction, category, quantityOr(parent.quantity));
+            continue;
+        }
+        if (transaction.type !== 'sale' || parent.club === 'downtown-dinks' || parent.removedFromOrder) continue;
+        // Counts do not need financial allocation, customer data, shipping or
+        // per-source history. Keep the same field precedence as getSaleItems.
+        const items = Array.isArray(parent.items) ? parent.items : [parent];
+        for (const source of items) {
+            const item = source.details || source;
+            if ((Object.hasOwn(parent, 'removedFromOrder') ? parent.removedFromOrder : item.removedFromOrder)) continue;
+            const details = {
+                subCategory: Object.hasOwn(parent, 'subCategory') ? parent.subCategory : item.subCategory,
+                itemName: item.itemName || item.name || transaction.description || 'Unknown Item',
+                brand: item.brand || parent.brand || DEFAULT_BRAND,
+                category: getItemCategory(item, transaction.category),
+                size: item.size || 'N/A',
+                linkedColor: Object.hasOwn(parent, 'linkedColor') ? parent.linkedColor : item.linkedColor,
+                color: item.linkedColor || item.color || parent.linkedColor || parent.color || ''
+            };
+            add(details, transaction.category, -quantityOr(item.quantity));
+        }
+    }
     return { ...counts };
 };
 

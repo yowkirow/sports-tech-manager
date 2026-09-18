@@ -77,6 +77,16 @@ come from D1, not browser storage, editable user metadata or Access headers alon
 Inactive/unrecognized members are denied. Key-service/database failures produce
 explicit service errors, not successful anonymous fallbacks.
 
+Resellers can edit only their own unpaid, pending orders. The server rebuilds
+quantity/removal pricing using the existing reseller policy, verifies complete
+source snapshots and ownership inside the write batch, and rechecks membership
+on retries. Payment, fulfillment, tracking, product replacement, discounts and
+arbitrary price adjustments are not reseller permissions. Metadata-only edits
+retain exact historical amounts. Ambiguous duplicate legacy-item removals and
+quantity changes inside wrapped legacy items explicitly require owner review.
+Implementing this capability does not grant any legacy account access; the
+owner still approves which identities to enable.
+
 ## Application and API boundaries
 
 | Endpoint | Behavior |
@@ -148,8 +158,26 @@ history; they do not silently truncate at the requested page size. A cheap
 revision endpoint avoids repeatedly transferring unchanged history. Print-source
 selection follows its `nextOffset` cursor. Public catalog reads compact historical
 definition and stock events in SQL before reconstructing them with shared helpers.
+Stock-only reads no longer allocate order pricing, customer or shipping objects.
+The catalog query groups resolved stock descriptors, sums safe integer movements
+in D1, and retains an exact JavaScript conversion path for unusual legacy
+quantities. Its projection stages are explicitly materialized to avoid D1 planner
+memory growth from repeated grouped JSON expressions. Cold-cache correctness is
+verified independently of the in-memory revision cache; cache hits are not a
+substitute for a working cold path.
 Cold and warm real-data CPU measurements, not just synthetic runs, are required
 to confirm Free-tier suitability.
+
+The September 18 staging follow-up reduced the imported catalog projection from
+312 to 166 rows without changing its 51 products or 94 stock keys. Three isolated
+cold catalog samples used 9, 5 and 5 ms CPU. This does not clear the overall Free
+plan gate: optimized, correlated cold reseller saves used 13 ms for two lines,
+32 ms for 27 lines and 74-97 ms for 150 lines, above the 10 ms Free allowance.
+All six saves had correct atomic results, but correctness is not a CPU pass.
+The reseller path reuses unchanged pricing builds and indexed item lookups;
+further CPU reduction or a separately approved architecture/plan decision is
+required before live cutover. Keep staging read-only and production unchanged;
+do not split atomic saves, silently cap orders or upgrade to hide this limit.
 
 Source migration exports must be protected, reconciled and kept outside Git.
 Database JSON exports without stored file bytes and auth recovery information are
