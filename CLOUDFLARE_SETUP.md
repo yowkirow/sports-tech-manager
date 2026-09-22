@@ -13,8 +13,11 @@ authenticated Wrangler profile or your secret manager; never commit tokens,
 `.dev.vars`, `.env`, exported customer data, or SMS credentials.
 
 `wrangler.staging.jsonc` targets only `sportstech-staging`. The D1 binding is a
-separate database, not a link to any existing app's database. There is deliberately
-no production Worker config, route, custom domain, or preview URL enabled here.
+separate database, not a link to any existing app's database.
+`wrangler.production.jsonc` prepares a separate production Worker, D1 database
+and R2 bucket. It deliberately has no routes, no `workers.dev` endpoint, no preview
+URLs, no Access audience, no writes and no enabled printing. Deploying it is
+preparation only: it cannot replace the current live store.
 
 ```powershell
 npm run check:worker
@@ -34,6 +37,43 @@ uploads an arbitrary older `dist`. Production builds keep printing off unless
 Apply migrations in order. `0002_transaction_date_pattern.sql` corrects a D1
 50-byte GLOB-pattern limit in the original schema while preserving all data and
 indexes. Do not edit or replay an already-applied migration to repair a database.
+
+## Workers Paid and CPU limits
+
+The owner upgraded to Workers Paid and authorized continuing on September 22,
+2026. This supersedes the earlier Free-only Worker CPU gate; it does not authorize
+upgrading the zone, Access or any other subscription. Both Worker configs set
+`limits.cpu_ms` to **1000 ms**, rather than the Paid default of 30 seconds.
+The latest pre-upgrade correlated cold reseller samples peaked at 97 ms for
+150 lines. With the explicit Paid ceiling, two subsequent cold 150-line saves
+used 71 and 80 ms and preserved the exact expected atomic results. These isolated
+probes excluded Access JWT verification and their temporary Worker/database were
+removed afterward. Keep measuring authenticated requests and larger input shapes;
+the configured ceiling is not a guarantee that every future workload fits.
+
+Workers Standard currently includes 10 million requests and 30 million CPU
+milliseconds per month for a minimum $5/account/month. Usage above the included
+amounts is metered, and usage across other Workers in the account also counts.
+The per-request CPU ceiling is **not a monthly spending cap**. D1 and R2 usage
+must be monitored separately; do not promise a fixed total bill or enable other
+paid services. See the official [pricing](https://developers.cloudflare.com/workers/platform/pricing/)
+and [limits](https://developers.cloudflare.com/workers/platform/limits/).
+
+The preparation commands below build production assets with printing off.
+Do not set frontend `VITE_PRINT_QUEUE_ENABLED=true` until the later employee
+rollout, and keep it consistent with the Worker's `PRINT_QUEUE_ENABLED` flag.
+
+```powershell
+npm run db:production
+npm run deploy:production
+```
+
+Production provisioning and schema application do not constitute a migration.
+Before adding any route, configure a distinct production Access audience and
+the approved individual memberships, install a production-only guest/settings
+secret, disable the bucket's public development URL, reconcile the final
+write-frozen data/file copy and complete the cutover checklist below.
+Never copy the staging Access audience or its secrets into production.
 
 ## Access configuration
 
@@ -166,7 +206,7 @@ memory growth from repeated grouped JSON expressions. Cold-cache correctness is
 verified independently of the in-memory revision cache; cache hits are not a
 substitute for a working cold path.
 Cold and warm real-data CPU measurements, not just synthetic runs, are required
-to confirm Free-tier suitability.
+to confirm the configured CPU budget.
 
 The September 18 staging follow-up reduced the imported catalog projection from
 312 to 166 rows without changing its 51 products or 94 stock keys. Three isolated
@@ -174,10 +214,11 @@ cold catalog samples used 9, 5 and 5 ms CPU. This does not clear the overall Fre
 plan gate: optimized, correlated cold reseller saves used 13 ms for two lines,
 32 ms for 27 lines and 74-97 ms for 150 lines, above the 10 ms Free allowance.
 All six saves had correct atomic results, but correctness is not a CPU pass.
-The reseller path reuses unchanged pricing builds and indexed item lookups;
-further CPU reduction or a separately approved architecture/plan decision is
-required before live cutover. Keep staging read-only and production unchanged;
-do not split atomic saves, silently cap orders or upgrade to hide this limit.
+The reseller path reuses unchanged pricing builds and indexed item lookups.
+These measurements failed the original Free gate. The owner's subsequent
+Workers Paid upgrade permits a higher, explicit CPU budget without weakening
+atomicity or permissions. Keep staging read-only and production unrouted until
+the remaining identity, final-data-copy and rollback gates pass.
 
 Source migration exports must be protected, reconciled and kept outside Git.
 Database JSON exports without stored file bytes and auth recovery information are

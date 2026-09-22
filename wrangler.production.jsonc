@@ -1,19 +1,20 @@
 {
   "$schema": "./node_modules/wrangler/config-schema.json",
-  "name": "sportstech-staging",
+  "name": "sportstech-production",
   "account_id": "e6ef673047a124edf93818f0a51ace71",
   "main": "worker/index.ts",
   "compatibility_date": "2026-09-17",
-  "workers_dev": true,
+  "workers_dev": false,
   "preview_urls": false,
+  "routes": [],
   "limits": {
     "cpu_ms": 1000
   },
   "vars": {
-    "ENVIRONMENT": "staging",
+    "ENVIRONMENT": "production",
     "ACCESS_TEAM_DOMAIN": "jolly-fog-e8df.cloudflareaccess.com",
-    "ACCESS_AUDIENCE": "ee3e0d310a6943197b1764a7c89ec1a242de63d4827ea64879a128aa6e2d8120",
-    "PRINT_QUEUE_ENABLED": "true",
+    "ACCESS_AUDIENCE": "",
+    "PRINT_QUEUE_ENABLED": "false",
     "MUTATIONS_ENABLED": "false"
   },
   "assets": {
@@ -26,13 +27,13 @@
     "binding": "VERSION"
   },
   "r2_buckets": [
-    { "binding": "MEDIA", "bucket_name": "sportstech-staging-media" }
+    { "binding": "MEDIA", "bucket_name": "sportstech-production-media" }
   ],
   "d1_databases": [
     {
       "binding": "DB",
-      "database_name": "sportstech-staging",
-      "database_id": "e0c1ab2a-79c6-44f1-8e52-dc58f830c5f2",
+      "database_name": "sportstech-production",
+      "database_id": "582f755c-fced-4778-bdc4-af93c2f7c22c",
       "migrations_dir": "worker/migrations"
     }
   ]

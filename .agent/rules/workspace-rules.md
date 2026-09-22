@@ -26,8 +26,8 @@ Working branches use Vercel preview deployments. Production remains tied to `mai
 ## Cloudflare Migration Staging
 
 Until the separately verified production cutover, Vercel and Supabase remain the
-live application. Worker changes use `wrangler.staging.jsonc` and the isolated
-`sportstech-staging` resources only.
+live application. Owner review uses `wrangler.staging.jsonc` and the isolated
+`sportstech-staging` resources.
 
 For a completed staging change set, run `npm run check:worker`, the relevant tests
 and the frontend build; apply required staging migrations, commit/push the working
@@ -35,3 +35,15 @@ branch, and run `npm run deploy:staging`. Verify the exact Worker version and th
 expected authentication-denial behavior as well as the branch's Vercel preview.
 Do not interpret a successful staging deploy as permission to change Hostinger
 nameservers, redirect the live domain, grant employee access, or retire Supabase.
+
+The owner approved Workers Paid on September 22, 2026. Keep the explicit
+1,000 ms per-request CPU ceiling; it is not a monthly spending cap or permission
+to upgrade other services.
+
+Production preparation uses `wrangler.production.jsonc` with separate D1/R2
+resources, writes and printing disabled, no public routes, `workers.dev` disabled,
+and preview URLs disabled. Run `npm run deploy:production` to build fresh
+non-staging assets before upload. Do not build/deploy staging and production
+concurrently because they share `dist`. Preparing an unrouted production Worker
+does not authorize a live cutover; production Access, account approval, the
+write-frozen final import, reconciliation and rollback gates still apply.
