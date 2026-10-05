@@ -12,6 +12,8 @@ const SIZES = {
     xl: 'sm:max-w-4xl',
 };
 
+const openStack = [];
+
 /**
  * Accessible modal surface. `center` is a dialog on wide screens and a bottom sheet on phones;
  * `drawer` slides in from the right on wide screens and fills the screen on phones.
@@ -41,10 +43,13 @@ export default function Dialog({
         const { overflow } = document.body.style;
         document.body.style.overflow = 'hidden';
         const panel = panelRef.current;
+        const token = {};
+        openStack.push(token);
         const target = initialFocusRef?.current || panel?.querySelector('[data-autofocus]') || panel;
         target?.focus({ preventScroll: true });
 
         const onKeyDown = (event) => {
+            if (openStack[openStack.length - 1] !== token) return;
             if (event.key === 'Escape') {
                 event.stopPropagation();
                 onCloseRef.current?.();
@@ -66,8 +71,9 @@ export default function Dialog({
         document.addEventListener('keydown', onKeyDown);
         return () => {
             document.removeEventListener('keydown', onKeyDown);
-            document.body.style.overflow = overflow;
-            if (previouslyFocused instanceof HTMLElement) previouslyFocused.focus({ preventScroll: true });
+            openStack.splice(openStack.indexOf(token), 1);
+            if (!openStack.length) document.body.style.overflow = overflow;
+            if (previouslyFocused instanceof HTMLElement && previouslyFocused.isConnected) previouslyFocused.focus({ preventScroll: true });
         };
     }, [initialFocusRef]);
 

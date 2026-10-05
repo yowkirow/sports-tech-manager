@@ -34,3 +34,4 @@ dist-ssr
 .impeccable/mocks/
 .impeccable/review/
 .playwright-mcp/
+.impeccable/hook.cache.json

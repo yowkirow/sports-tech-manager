@@ -1,32 +1,35 @@
 import React from 'react';
-import { motion } from 'framer-motion';
 import { Lock, LogOut } from 'lucide-react';
 import { api } from '../../lib/apiClient';
+import Logo from '../ui/Logo';
 
 export default function Login({ error, onRetry, denied = false }) {
     return (
-        <div className="fixed inset-0 flex items-center justify-center bg-slate-900 p-4 font-sans selection:bg-primary/30">
-            <motion.div
-                initial={{ opacity: 0, scale: 0.95 }}
-                animate={{ opacity: 1, scale: 1 }}
-                className="glass-panel w-full max-w-sm p-8 relative z-10 flex flex-col items-center"
-            >
-                <div className="mb-6 flex flex-col items-center">
-                    <img src="/logo.png" alt="SportsTech" className="h-24 w-auto object-contain mb-4" />
-                    <h1 className="text-xl font-bold text-white">Manager Access</h1>
-                    <p className="text-slate-400 text-sm mt-2 text-center">
+        <div className="fixed inset-0 grid bg-ground text-ink lg:grid-cols-2">
+            <div className="relative hidden overflow-hidden border-r border-line lg:block" aria-hidden="true">
+                <img src="/hero-court.jpg" alt="" className="size-full object-cover" />
+                <div className="absolute inset-0 bg-gradient-to-t from-ground via-ground/20 to-transparent" />
+                <p className="display absolute bottom-10 left-10 max-w-[12ch] text-6xl italic">SportsTech Manager</p>
+            </div>
+            <main className="flex items-center justify-center overflow-y-auto p-6">
+                <div className="w-full max-w-sm">
+                    <Logo className="h-12" />
+                    <h1 className="display mt-10 text-5xl">Manager access</h1>
+                    <p className="mt-3 text-ink-2">
                         {denied ? 'Your account does not have access to this workspace. Contact the owner.' : 'Sign in securely with your approved work email.'}
                     </p>
+                    {error && <p role="alert" className="mt-5 rounded-xl border border-red-500/40 bg-red-500/10 p-3 text-sm text-red-200">{error}</p>}
+                    <div className="mt-8 space-y-3">
+                        {!denied && <a href="/admin" className="btn-primary h-12 w-full text-base"><Lock size={18} aria-hidden="true" /> Continue to secure sign in</a>}
+                        {onRetry && <button type="button" onClick={onRetry} className="btn-secondary h-12 w-full">Retry account check</button>}
+                    </div>
+                    <div className="mt-8 border-t border-line pt-6">
+                        <button type="button" onClick={api.logout} className="btn-ghost -ml-3 text-sm">
+                            <LogOut size={16} aria-hidden="true" /> Sign out or use another account
+                        </button>
+                    </div>
                 </div>
-                {error && <p role="alert" className="text-sm text-red-300 mb-4">{error}</p>}
-                {!denied && <a href="/admin" className="btn-primary w-full py-3"><Lock size={18} /> Continue to secure sign in</a>}
-                {onRetry && <button type="button" onClick={onRetry} className="btn-secondary w-full mt-3">Retry account check</button>}
-                <div className="mt-6 pt-6 border-t border-white/5 w-full flex justify-center">
-                    <button type="button" onClick={api.logout} className="text-red-400 hover:text-red-300 text-sm flex items-center gap-2">
-                        <LogOut size={16} /> Sign out / use another account
-                    </button>
-                </div>
-            </motion.div>
+            </main>
         </div>
     );
 }
