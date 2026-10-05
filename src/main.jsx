@@ -1,5 +1,6 @@
 import React from 'react'
 import ReactDOM from 'react-dom/client'
+import { MotionConfig } from 'framer-motion'
 import App from './App.jsx'
 import './index.css'
 
@@ -22,9 +23,10 @@ class ErrorBoundary extends React.Component {
     render() {
         if (this.state.hasError) {
             return (
-                <div role="alert" className="min-h-screen flex flex-col items-center justify-center gap-4 bg-slate-900 p-6 text-center text-slate-100">
-                    <h1 className="text-xl font-bold">Unable to open this screen</h1>
-                    <p className="max-w-md text-slate-300">Check your connection, then reload SportsTech. Unsaved changes may be lost.</p>
+                <div role="alert" className="min-h-dvh flex flex-col items-center justify-center gap-5 bg-ground p-6 text-center text-ink">
+                    <img src="/logo.png" alt="SportsTech" className="h-16 w-auto" />
+                    <h1 className="display text-4xl">Unable to open this screen</h1>
+                    <p className="max-w-md text-ink-2">Check your connection, then reload SportsTech. Unsaved changes may be lost.</p>
                     <button type="button" className="btn-primary" onClick={() => window.location.reload()}>Reload SportsTech</button>
                 </div>
             );
@@ -37,9 +39,11 @@ class ErrorBoundary extends React.Component {
 ReactDOM.createRoot(document.getElementById('root')).render(
     <React.StrictMode>
         <ErrorBoundary>
-            <ToastProvider>
-                <App />
-            </ToastProvider>
+            <MotionConfig reducedMotion="user">
+                <ToastProvider>
+                    <App />
+                </ToastProvider>
+            </MotionConfig>
         </ErrorBoundary>
     </React.StrictMode>,
 )

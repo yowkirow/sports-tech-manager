@@ -1,96 +1,265 @@
 @import "tailwindcss";
+@import "@fontsource/barlow-condensed/latin-600.css";
+@import "@fontsource/barlow-condensed/latin-700.css";
+@import "@fontsource/barlow-condensed/latin-800.css";
+@import "@fontsource/barlow-condensed/latin-800-italic.css";
+
+/*
+ * SportsTech: the category standard, dark athletic commerce.
+ * One near-black ground, flat charcoal surfaces, one red for action.
+ * Barlow Condensed for display; the platform sans for reading and money.
+ */
+@theme {
+  --font-sans: ui-sans-serif, system-ui, -apple-system, "Segoe UI", Roboto, "Helvetica Neue", Arial, sans-serif;
+  --font-display: "Barlow Condensed", "Arial Narrow", ui-sans-serif, system-ui, sans-serif;
+
+  /* Neutral ground. The legacy slate utilities resolve to this scale. */
+  --color-slate-50: #f7f7f8;
+  --color-slate-100: #efeff1;
+  --color-slate-200: #e2e2e6;
+  --color-slate-300: #c9c9cf;
+  --color-slate-400: #a8a8b0;
+  --color-slate-500: #8b8b93;
+  --color-slate-600: #4a4a50;
+  --color-slate-700: #2c2c31;
+  --color-slate-800: #18181b;
+  --color-slate-900: #0b0b0c;
+  --color-slate-950: #050506;
+
+  --color-ground: #0b0b0c;
+  --color-surface: #141416;
+  --color-raised: #1c1c1f;
+  --color-well: #1f1f22;
+  --color-line: #2a2a2f;
+  --color-ink: #f4f4f5;
+  --color-ink-2: #a8a8b0;
+  --color-ink-3: #8b8b93;
+
+  /* Brand red: #ef4444 reads on the ground; #dc2626 carries white text. */
+  --color-primary: #ef4444;
+  --color-primary-strong: #dc2626;
+  --color-primary-deep: #b91c1c;
+  --color-secondary: #f4f4f5;
+  --color-accent: #dc2626;
+  --color-background: #0b0b0c;
+
+  --radius-control: 0.5rem;
+  --radius-card: 0.875rem;
+
+  --shadow-lift: 0 12px 32px -12px rgb(0 0 0 / 0.7), 0 2px 6px -2px rgb(0 0 0 / 0.5);
+  --shadow-sheet: 0 -16px 48px -16px rgb(0 0 0 / 0.8);
+
+  --ease-out-expo: cubic-bezier(0.16, 1, 0.3, 1);
+
+  --animate-fade-in: fade-in 180ms var(--ease-out-expo) both;
+  --animate-slide-up: slide-up 260ms var(--ease-out-expo) both;
+  --animate-bump: bump 320ms var(--ease-out-expo);
+}
+
+@keyframes fade-in {
+  from { opacity: 0; }
+  to { opacity: 1; }
+}
+
+@keyframes slide-up {
+  from { opacity: 0; transform: translateY(12px); }
+  to { opacity: 1; transform: translateY(0); }
+}
+
+@keyframes bump {
+  0% { transform: scale(1); }
+  40% { transform: scale(1.18); }
+  100% { transform: scale(1); }
+}
 
 :root {
   --primary: #ef4444;
-  /* Sports Red */
-  --secondary: #f8fafc;
-  /* White/Slate-50 */
-  --accent: #dc2626;
-  /* Darker Red */
-  --background: #0f172a;
-  /* Slate-900 */
-  --surface: #1e293b;
-  /* Slate-800 */
-  --text-main: #f8fafc;
-  --text-muted: #94a3b8;
   --success: #22c55e;
   --danger: #ef4444;
-  --warning: #eab308;
+  --warning: #f59e0b;
+  --text-muted: #a8a8b0;
+  color-scheme: dark;
+  accent-color: #dc2626;
+  caret-color: #ef4444;
+  scrollbar-color: #3a3a40 transparent;
+  -webkit-tap-highlight-color: transparent;
 }
 
 @layer base {
+  html {
+    background: var(--color-ground);
+  }
+
   body {
-    @apply bg-slate-900 text-slate-50 antialiased;
-    background-image:
-      radial-gradient(at 0% 0%, rgba(239, 68, 68, 0.15) 0px, transparent 50%),
-      radial-gradient(at 100% 0%, rgba(220, 38, 38, 0.15) 0px, transparent 50%),
-      radial-gradient(at 100% 100%, rgba(185, 28, 28, 0.15) 0px, transparent 50%),
-      radial-gradient(at 0% 100%, rgba(239, 68, 68, 0.10) 0px, transparent 50%);
-    background-attachment: fixed;
+    @apply bg-ground text-ink antialiased font-sans;
+    font-size: 16px;
+    line-height: 1.5;
+    text-rendering: optimizeLegibility;
+  }
+
+  ::selection {
+    background: rgb(239 68 68 / 0.35);
+    color: #fff;
+  }
+
+  :focus-visible {
+    outline: 2px solid #f4f4f5;
+    outline-offset: 2px;
+  }
+
+  a {
+    text-underline-offset: 3px;
+  }
+
+  table,
+  .num {
+    font-variant-numeric: tabular-nums;
+  }
+
+  input::placeholder,
+  textarea::placeholder {
+    color: var(--color-ink-3);
+    opacity: 1;
+  }
+
+  option {
+    background: #18181b;
+    color: #f4f4f5;
+  }
+
+  h1, h2, h3, h4 {
+    text-wrap: balance;
   }
 }
 
 @layer components {
-  .glass-panel {
-    @apply bg-white/5 backdrop-blur-xl border border-white/10 shadow-xl;
+  /* Flat surfaces. The legacy glass-* names are kept so every screen inherits the system. */
+  .glass-panel,
+  .surface {
+    @apply bg-surface border border-line rounded-2xl;
   }
 
   .glass-card {
-    @apply bg-white/5 backdrop-blur-lg border border-white/10 rounded-2xl p-6 transition-all duration-300 hover:bg-white/10 hover:shadow-lg hover:scale-[1.02];
+    @apply bg-surface border border-line rounded-2xl p-6 transition-colors duration-150 hover:border-slate-600;
   }
 
-  .glass-input {
-    @apply bg-white/5 border border-white/10 rounded-lg px-4 py-3 outline-none focus:border-indigo-500/50 focus:bg-white/10 transition-all w-full text-slate-200 placeholder-slate-500;
+  .glass-input,
+  .field {
+    @apply w-full min-h-11 rounded-lg border border-line bg-[#101012] px-3.5 py-2.5 text-[15px] text-ink outline-none transition-colors duration-150;
+    @apply hover:border-slate-600 focus:border-slate-300 focus-visible:outline-none disabled:cursor-not-allowed disabled:opacity-50;
   }
 
+  select.glass-input,
+  select.field {
+    @apply cursor-pointer appearance-none pr-10;
+    background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='16' height='16' fill='none' stroke='%23a8a8b0' stroke-width='2' stroke-linecap='round' stroke-linejoin='round' viewBox='0 0 24 24'%3E%3Cpath d='m6 9 6 6 6-6'/%3E%3C/svg%3E");
+    background-repeat: no-repeat;
+    background-position: right 0.85rem center;
+  }
+
+  .field-label {
+    @apply mb-1.5 block text-sm font-medium text-ink-2;
+  }
+
+  .btn,
+  .btn-primary,
+  .glass-button,
+  .btn-light,
+  .btn-secondary,
+  .btn-ghost,
+  .btn-danger,
+  .btn-success {
+    @apply inline-flex min-h-11 select-none items-center justify-center gap-2 rounded-full px-5 py-2.5 text-[15px] font-semibold leading-tight transition-colors duration-150;
+    @apply disabled:cursor-not-allowed disabled:opacity-45 active:translate-y-px;
+  }
+
+  .btn-primary,
   .glass-button {
-    @apply px-6 py-3 rounded-xl font-semibold transition-all duration-300 active:scale-95 disabled:opacity-50 disabled:cursor-not-allowed flex items-center justify-center gap-2;
+    @apply bg-primary-strong text-white hover:bg-primary-deep;
   }
 
-  .btn-primary {
-    @apply px-6 py-3 rounded-xl font-semibold transition-all duration-300 active:scale-95 disabled:opacity-50 disabled:cursor-not-allowed flex items-center justify-center gap-2 bg-gradient-to-r from-red-600 to-red-500 hover:shadow-lg hover:shadow-red-500/25 text-white border border-white/10;
+  .btn-light {
+    @apply bg-ink text-ground hover:bg-white;
   }
 
   .btn-secondary {
-    @apply px-6 py-3 rounded-xl font-semibold transition-all duration-300 active:scale-95 disabled:opacity-50 disabled:cursor-not-allowed flex items-center justify-center gap-2 bg-white/5 hover:bg-white/10 text-slate-300 border border-white/10;
+    @apply border border-slate-600 bg-transparent text-ink hover:border-slate-400 hover:bg-white/5;
+  }
+
+  .btn-ghost {
+    @apply bg-transparent px-3 text-ink-2 hover:bg-white/5 hover:text-ink;
   }
 
   .btn-danger {
-    @apply px-6 py-3 rounded-xl font-semibold transition-all duration-300 active:scale-95 disabled:opacity-50 disabled:cursor-not-allowed flex items-center justify-center gap-2 bg-red-500/10 hover:bg-red-500/20 text-red-400 border border-red-500/20;
+    @apply border border-red-500/40 bg-transparent text-red-400 hover:bg-red-500/10;
   }
 
   .btn-success {
-    @apply px-6 py-3 rounded-xl font-semibold transition-all duration-300 active:scale-95 disabled:opacity-50 disabled:cursor-not-allowed flex items-center justify-center gap-2 bg-emerald-500/10 hover:bg-emerald-500/20 text-emerald-400 border border-emerald-500/20;
+    @apply border border-emerald-500/40 bg-transparent text-emerald-400 hover:bg-emerald-500/10;
+  }
+
+  .icon-btn {
+    @apply inline-flex size-11 shrink-0 items-center justify-center rounded-full text-ink-2 transition-colors duration-150 hover:bg-white/8 hover:text-ink disabled:opacity-40;
+  }
+
+  .chip {
+    @apply inline-flex h-10 shrink-0 items-center gap-2 rounded-full border border-slate-600 px-4 text-sm font-semibold text-ink-2 transition-colors duration-150 hover:border-slate-400 hover:text-ink;
+  }
+
+  .chip[aria-pressed="true"],
+  .chip-active {
+    @apply border-ink bg-ink text-ground hover:text-ground;
+  }
+
+  .display {
+    @apply font-display font-extrabold uppercase leading-[0.95] tracking-[0.005em];
+  }
+
+  .section-title {
+    @apply font-display text-lg font-bold uppercase tracking-[0.02em] text-ink;
+  }
+
+  .badge {
+    @apply inline-flex items-center gap-1.5 whitespace-nowrap rounded-full border px-2.5 py-1 text-xs font-semibold leading-none;
+  }
+
+  .scrollbar-hide,
+  .hide-scrollbar {
+    scrollbar-width: none;
+  }
+
+  .scrollbar-hide::-webkit-scrollbar,
+  .hide-scrollbar::-webkit-scrollbar {
+    display: none;
   }
 }
 
-/* Custom Scrollbar */
 ::-webkit-scrollbar {
-  width: 8px;
-  height: 8px;
+  width: 10px;
+  height: 10px;
 }
 
 ::-webkit-scrollbar-track {
-  @apply bg-slate-900;
+  background: transparent;
 }
 
 ::-webkit-scrollbar-thumb {
-  @apply bg-slate-700 rounded-full hover:bg-slate-600;
+  background: #2f2f35;
+  border: 3px solid var(--color-ground);
+  border-radius: 999px;
 }
 
-/* Animations */
-.animate-fade-in {
-  animation: fadeIn 0.5s ease-out;
+::-webkit-scrollbar-thumb:hover {
+  background: #44444b;
 }
 
-@keyframes fadeIn {
-  from {
-    opacity: 0;
-    transform: translateY(10px);
-  }
-
-  to {
-    opacity: 1;
-    transform: translateY(0);
+@media (prefers-reduced-motion: reduce) {
+  *,
+  *::before,
+  *::after {
+    animation-duration: 0.01ms !important;
+    animation-iteration-count: 1 !important;
+    transition-duration: 0.01ms !important;
+    scroll-behavior: auto !important;
   }
 }

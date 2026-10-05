@@ -47,57 +47,25 @@ export const ToastProvider = ({ children }) => {
     return (
         <ToastContext.Provider value={contextValue}>
             {children}
-            <div style={{
-                position: 'fixed',
-                bottom: '20px',
-                right: '16px',
-                width: 'min(360px, calc(100vw - 32px))',
-                zIndex: 9999,
-                display: 'flex',
-                flexDirection: 'column',
-                gap: '10px'
-            }}>
+            <div className="pointer-events-none fixed inset-x-3 bottom-[calc(5.5rem+env(safe-area-inset-bottom))] z-[9999] flex flex-col items-center gap-2 sm:inset-x-auto sm:right-6 sm:bottom-6 sm:w-[min(380px,calc(100vw-48px))] sm:items-stretch lg:bottom-6">
                 {toasts.map(toast => (
                     <div
                         key={toast.id}
                         role={toast.type === 'error' ? 'alert' : 'status'}
-                        className="animate-slide-up"
-                        style={{
-                            background: 'rgba(23, 23, 23, 0.95)',
-                            backdropFilter: 'blur(10px)',
-                            border: `1px solid ${
-                                toast.type === 'success' ? 'var(--success)' : 
-                                toast.type === 'error' ? 'var(--danger)' : 
-                                'var(--primary)'
-                            }`,
-                            padding: '12px 16px',
-                            borderRadius: '8px',
-                            boxShadow: '0 4px 12px rgba(0,0,0,0.5)',
-                            display: 'flex',
-                            alignItems: 'center',
-                            gap: '12px',
-                            overflowWrap: 'anywhere',
-                            color: '#fff',
-                        }}
+                        className="pointer-events-auto flex w-full max-w-[420px] animate-slide-up items-start gap-3 rounded-xl border border-line bg-raised py-3 pr-2 pl-4 text-[15px] text-ink shadow-lift"
+                        style={{ overflowWrap: 'anywhere' }}
                     >
-                        {toast.type === 'success' && <CheckCircle size={20} color="var(--success)" />}
-                        {toast.type === 'error' && <AlertCircle size={20} color="var(--danger)" />}
-                        {toast.type === 'info' && <Info size={20} color="var(--primary)" />}
-                        
-                        <span style={{ flex: 1, minWidth: 0, fontSize: '0.9rem' }}>{toast.message}</span>
-                        
-                        <button 
+                        <span className="mt-0.5 shrink-0">
+                            {toast.type === 'success' && <CheckCircle size={20} className="text-emerald-400" aria-hidden="true" />}
+                            {toast.type === 'error' && <AlertCircle size={20} className="text-red-400" aria-hidden="true" />}
+                            {toast.type === 'info' && <Info size={20} className="text-ink-2" aria-hidden="true" />}
+                        </span>
+                        <span className="min-w-0 flex-1 pt-0.5 leading-snug">{toast.message}</span>
+                        <button
+                            type="button"
                             onClick={() => removeToast(toast.id)}
                             aria-label="Dismiss notification"
-                            style={{ 
-                                background: 'transparent', 
-                                border: 'none', 
-                                color: '#aaa', 
-                                cursor: 'pointer',
-                                padding: '4px',
-                                display: 'flex',
-                                alignItems: 'center'
-                            }}
+                            className="-my-1 inline-flex size-9 shrink-0 items-center justify-center rounded-full text-ink-3 hover:bg-white/8 hover:text-ink"
                         >
                             <X size={16} />
                         </button>
