@@ -30,7 +30,8 @@ export function JobHeading({ job, owner = false }) {
         <div>
             <h3>{job.designName}</h3>
             <p>{[job.brand, job.color || 'Color not specified', job.size].join(' · ')}</p>
-            <p className="production-reference">{job.jobCode}{owner && ` · ${job.orderId} · ${job.assignee.name}`}</p>
+            <p className="production-reference">{job.jobCode}</p>
+            {owner && <p className="production-owner-reference">{job.orderId} · {job.assignee.name}</p>}
         </div>
         <span className={`production-status production-status-${job.status}`}>
             {job.status === 'completed' && <CheckCircle2 size={16} aria-hidden="true" />}

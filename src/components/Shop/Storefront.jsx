@@ -69,23 +69,23 @@ function StoreHeader({ itemCount, onOpenBag, onTrack }) {
 function Hero({ onTrack }) {
     return (
         <section className="relative isolate overflow-hidden border-b border-line" aria-labelledby="store-title">
-            <div className="mx-auto grid max-w-7xl lg:grid-cols-[minmax(0,1fr)_minmax(0,46%)]">
-                <div className="flex min-h-[380px] flex-col justify-end px-4 pt-24 pb-8 sm:min-h-[440px] sm:px-6 lg:min-h-[540px] lg:justify-center lg:px-8 lg:py-16">
-                    <h1 id="store-title" className="display max-w-[11ch] text-[58px] italic sm:text-7xl lg:text-8xl">
+            <div className="absolute inset-0 -z-10 lg:left-auto lg:w-1/2" aria-hidden="true">
+                <img src="/hero-court.jpg" alt="" width="585" height="455" fetchPriority="high"
+                    className="size-full object-cover object-[22%_45%] lg:object-[30%_50%]" />
+                <div className="absolute inset-0 bg-gradient-to-t from-ground from-10% via-ground/80 to-ground/30 lg:bg-gradient-to-r lg:from-ground lg:from-0% lg:via-ground/0 lg:via-30% lg:to-transparent" />
+            </div>
+            <div className="mx-auto max-w-7xl">
+                <div className="flex min-h-[312px] flex-col justify-end px-4 pt-14 pb-6 sm:min-h-[420px] sm:px-6 sm:pb-10 lg:min-h-[540px] lg:w-1/2 lg:justify-center lg:px-8 lg:py-16">
+                    <h1 id="store-title" className="display max-w-[11ch] text-[50px] italic sm:text-7xl lg:text-8xl">
                         Shirts &amp; pickleball gear
                     </h1>
-                    <p className="mt-4 max-w-md text-base text-ink-2 sm:text-lg">
+                    <p className="mt-3 max-w-md text-[15px] text-ink-2 sm:mt-4 sm:text-lg">
                         Custom and plain shirts, pickleball balls and accessories from SportsTech PH, shipped anywhere in the Philippines.
                     </p>
-                    <div className="mt-7 flex flex-wrap gap-3">
+                    <div className="mt-5 flex flex-wrap gap-3 sm:mt-7">
                         <a href="#shop" className="btn-primary h-12 px-7">Shop now</a>
                         <button type="button" onClick={onTrack} className="btn-secondary h-12 px-6">Track an order</button>
                     </div>
-                </div>
-                <div className="absolute inset-0 -z-10 lg:relative lg:inset-auto lg:z-auto" aria-hidden="true">
-                    <img src="/hero-court.jpg" alt="" width="585" height="455" fetchPriority="high"
-                        className="size-full object-cover object-[22%_45%] lg:object-center" />
-                    <div className="absolute inset-0 bg-gradient-to-t from-ground from-15% via-ground/75 to-ground/25 lg:bg-gradient-to-r lg:from-ground lg:from-0% lg:via-ground/0 lg:via-35% lg:to-transparent" />
                 </div>
             </div>
         </section>
@@ -172,7 +172,7 @@ function ProductSheet({ product, getStock, onClose, onAdd }) {
             footer={<button type="button" onClick={add} disabled={!ready} className="btn-primary h-12 w-full text-base">{addLabel}</button>}>
             <div className="grid gap-6 sm:grid-cols-2">
                 <div>
-                    <div className="aspect-square overflow-hidden rounded-xl bg-well">
+                    <div className="mx-auto aspect-square max-h-[38dvh] overflow-hidden rounded-xl bg-well sm:max-h-none">
                         <ProductImage src={images[imageIdx]} alt={images.length ? `${product.name}, image ${imageIdx + 1} of ${images.length}` : ''} />
                     </div>
                     {images.length > 1 && (
@@ -278,7 +278,7 @@ function Field({ id, label, children, hint }) {
 
 function ChoiceCard({ name, value, checked, onChange, icon: Icon, label, detail, aside }) {
     return (
-        <label className={clsx('flex cursor-pointer items-center gap-3 rounded-xl border p-3.5 transition-colors has-[:focus-visible]:outline-2 has-[:focus-visible]:outline-offset-2 has-[:focus-visible]:outline-ink',
+        <label className={clsx('relative flex cursor-pointer items-center gap-3 rounded-xl border p-3.5 transition-colors has-[:focus-visible]:outline-2 has-[:focus-visible]:outline-offset-2 has-[:focus-visible]:outline-ink',
             checked ? 'border-ink bg-white/[0.04]' : 'border-line hover:border-slate-600')}>
             <input type="radio" name={name} value={value} checked={checked} onChange={onChange} className="sr-only" />
             <span className={clsx('grid size-5 shrink-0 place-items-center rounded-full border-2', checked ? 'border-ink' : 'border-slate-600')} aria-hidden="true">
@@ -670,13 +670,13 @@ export default function Storefront({ catalog }) {
                 <Hero onTrack={() => setIsTrackModalOpen(true)} />
                 <Facts />
 
-                <section id="shop" className="mx-auto max-w-7xl scroll-mt-20 px-4 pt-10 pb-28 sm:px-6 sm:pt-14 lg:px-8" aria-labelledby="shop-title">
+                <section id="shop" className="mx-auto max-w-7xl scroll-mt-20 px-4 pt-7 pb-28 sm:px-6 sm:pt-14 lg:px-8" aria-labelledby="shop-title">
                     <div className="flex items-end justify-between gap-4">
                         <h2 id="shop-title" className="display text-4xl sm:text-5xl">{selectedBrand === 'All' ? 'All products' : selectedBrand}</h2>
                         <p className="num pb-1 text-sm text-ink-2" aria-live="polite">{filteredProducts.length} {filteredProducts.length === 1 ? 'item' : 'items'}</p>
                     </div>
 
-                    <div className="mt-5 flex flex-col gap-3 md:flex-row md:items-center md:justify-between">
+                    <div className="mt-4 flex flex-col gap-3 sm:mt-5 md:flex-row md:items-center md:justify-between">
                         <div role="group" aria-label="Filter by brand" className="-mx-4 flex gap-2 overflow-x-auto px-4 scrollbar-hide md:mx-0 md:px-0">
                             <button type="button" className="chip" aria-pressed={selectedBrand === 'All'} onClick={() => setSelectedBrand('All')}>All</button>
                             {brands.map(b => (
@@ -693,7 +693,7 @@ export default function Storefront({ catalog }) {
                     </div>
 
                     {filteredProducts.length > 0 ? (
-                        <ul className="mt-6 grid grid-cols-2 gap-x-3 gap-y-8 sm:grid-cols-3 sm:gap-x-5 lg:grid-cols-4 lg:gap-y-10">
+                        <ul className="mt-5 grid grid-cols-2 gap-x-3 gap-y-8 sm:mt-6 sm:grid-cols-3 sm:gap-x-5 lg:grid-cols-4 lg:gap-y-10">
                             {filteredProducts.map(product => <ProductTile key={product.id} product={product} onOpen={setActiveProduct} />)}
                         </ul>
                     ) : (
@@ -942,7 +942,7 @@ export default function Storefront({ catalog }) {
                                                 </button>
                                             </div>
                                         ) : (
-                                            <label className="flex flex-1 cursor-pointer flex-col items-center justify-center gap-2 rounded-xl border border-dashed border-slate-600 p-6 text-center transition-colors hover:border-slate-400 has-[:focus-visible]:outline-2 has-[:focus-visible]:outline-ink">
+                                            <label className="relative flex flex-1 cursor-pointer flex-col items-center justify-center gap-2 rounded-xl border border-dashed border-slate-600 p-6 text-center transition-colors hover:border-slate-400 has-[:focus-visible]:outline-2 has-[:focus-visible]:outline-ink">
                                                 {uploadingProof ? (
                                                     <><Loader2 size={22} className="animate-spin text-ink-2" aria-hidden="true" /><span className="text-sm text-ink-2">Uploading…</span></>
                                                 ) : (

@@ -344,7 +344,7 @@ export default function OrderTracking() {
                                             <Thumb src={item.details.imageUrl} />
                                             <div className="min-w-0 flex-1">
                                                 <p className="font-semibold leading-snug">{item.details.itemName}</p>
-                                                <p className="mt-0.5 text-sm text-ink-2">Size {item.details.size} · Qty {item.details.quantity}</p>
+                                                <p className="mt-0.5 text-sm text-ink-2">{item.details.size && item.details.size !== 'N/A' ? `Size ${item.details.size} · ` : ''}Qty {item.details.quantity}</p>
                                             </div>
                                             <p className="num shrink-0 font-semibold">{peso(item.details.originalAmount || item.amount)}</p>
                                         </li>

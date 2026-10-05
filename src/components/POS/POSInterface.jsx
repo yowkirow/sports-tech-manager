@@ -1,7 +1,9 @@
 import React, { useState, useMemo, useRef } from 'react';
-import { motion, AnimatePresence, Reorder } from 'framer-motion';
-import { Search, ShoppingCart, Trash2, CheckCircle, Package, Plus, Loader2, Edit, X, Upload, Ruler, GripVertical } from 'lucide-react';
+import { Reorder } from 'framer-motion';
+import clsx from 'clsx';
+import { Search, ShoppingCart, Trash2, CheckCircle, Package, Plus, Loader2, Edit, X, Upload, Ruler, GripVertical, Minus } from 'lucide-react';
 import { useToast } from '../ui/Toast';
+import Dialog from '../ui/Dialog';
 import { api, apiRequest } from '../../lib/apiClient';
 import { useRawInventory, useProducts, useColors, useBrands } from '../../hooks/useInventory';
 import useCustomers from '../../hooks/useCustomers';
@@ -13,6 +15,15 @@ import { getCartUnitPrice, isBallProduct, priceOrder } from '../../lib/orderPric
 import { getCheckoutStatuses } from '../../lib/checkoutPolicy';
 
 const SIZES = ['XS', 'S', 'M', 'L', 'XL', '2XL'];
+const BALL_QUANTITIES = [1, 5, 10, 20, 50, 100];
+const PAYMENT_MODES = ['Cash', 'Gcash', 'Bank Transfer', 'COD'];
+const CATEGORY_FALLBACK = 'shirts';
+const BRAND_FALLBACK = 'Sypik';
+
+const peso = (value) => `₱${(Number(value) || 0).toLocaleString()}`;
+const titleCase = (value) => String(value || '')
+    .replace(/[-_]/g, ' ')
+    .replace(/\b\w/g, char => char.toUpperCase());
 
 export default function POSInterface({ transactions, onAddTransaction, onAddTransactions, onDeleteTransaction, userRole }) {
     const { showToast } = useToast();
@@ -24,6 +35,8 @@ export default function POSInterface({ transactions, onAddTransaction, onAddTran
     // State
     const [cart, setCart] = useState([]);
     const [searchTerm, setSearchTerm] = useState('');
+    const [selectedCategory, setSelectedCategory] = useState('All');
+    const [selectedBrand, setSelectedBrand] = useState('All');
     const [checkoutLoading, setCheckoutLoading] = useState(false);
     const checkoutPending = useRef(false);
     const checkoutAttempt = useRef(null);
@@ -144,8 +157,6 @@ export default function POSInterface({ transactions, onAddTransaction, onAddTran
         setShowSuggestions(false);
     };
 
-    const PAYMENT_MODES = ['Cash', 'Gcash', 'Bank Transfer', 'COD'];
-
     // Derived Data
     const rawInventory = useRawInventory(transactions);
     const products = useProducts(transactions);
@@ -168,9 +179,14 @@ export default function POSInterface({ transactions, onAddTransaction, onAddTran
         }));
     }, [isReorderMode, localOrderedProducts, products, isReseller]);
 
-    const filteredProducts = effectiveProducts.filter(p =>
-        p.name.toLowerCase().includes(searchTerm.toLowerCase())
-    );
+    const categoryOptions = useMemo(() => ['All', ...new Set(effectiveProducts.map(p => p.category || CATEGORY_FALLBACK))], [effectiveProducts]);
+    const brandOptions = useMemo(() => ['All', ...new Set(effectiveProducts.map(p => p.brand || BRAND_FALLBACK))], [effectiveProducts]);
+    const filteredProducts = useMemo(() => effectiveProducts.filter(p => {
+        const matchesSearch = p.name.toLowerCase().includes(searchTerm.toLowerCase());
+        const matchesCategory = selectedCategory === 'All' || (p.category || CATEGORY_FALLBACK) === selectedCategory;
+        const matchesBrand = selectedBrand === 'All' || (p.brand || BRAND_FALLBACK) === selectedBrand;
+        return matchesSearch && matchesCategory && matchesBrand;
+    }), [effectiveProducts, searchTerm, selectedCategory, selectedBrand]);
 
     // Unique Customers for suggestions
     const uniqueCustomers = useMemo(() => {
@@ -239,29 +255,28 @@ export default function POSInterface({ transactions, onAddTransaction, onAddTran
         return rawInventory[key] || 0;
     };
 
-    const addToCart = (product, size) => {
+    const addToCart = (product, size, quantity = 1) => {
         const cartId = `${product.name}-${size}`;
         setCart(prev => {
             const existing = prev.find(i => i.cartId === cartId);
             if (existing) {
                 return prev.map(i => {
                     if (i.cartId !== cartId) return i;
-                    const nextQuantity = i.quantity + 1;
+                    const nextQuantity = i.quantity + quantity;
                     return { ...i, quantity: nextQuantity, price: getCartUnitPrice(i, nextQuantity) };
                 });
             }
             return [...prev, {
                 ...product,
-                price: getCartUnitPrice(product, 1),
+                price: getCartUnitPrice(product, quantity),
                 size,
                 cartId,
-                quantity: 1,
+                quantity,
                 linkedColor: product.linkedColor
             }];
         });
         setActiveProduct(null); // Close size selector
     };
-
     const handleCheckout = async () => {
         if (checkoutPending.current) return;
         if (cart.length === 0) {
@@ -423,8 +438,24 @@ export default function POSInterface({ transactions, onAddTransaction, onAddTran
         }
     };
 
+    const cartItemCount = cart.reduce((a, b) => a + b.quantity, 0);
+    const cartTotal = cart.reduce((a, b) => a + (getCartUnitPrice(b) * b.quantity), 0);
+    const showProductChoices = !isSelectionMode && !isReorderMode;
+
+    const handleProductAction = (product) => {
+        if (isSelectionMode) {
+            toggleSelection(product.name);
+            return;
+        }
+        if (product.category === 'shirts' || isBallProduct(product)) {
+            setActiveProduct(product);
+            return;
+        }
+        addToCart(product, 'N/A');
+    };
+
     return (
-        <div className="flex flex-col lg:flex-row gap-6 h-[calc(100vh-120px)] relative">
+        <div className="relative flex h-[calc(100dvh-8rem)] min-h-[620px] flex-col gap-4 lg:h-[calc(100vh-120px)] lg:flex-row lg:gap-6">
             {showProductModal && (
                 <ProductDefinitionModal
                     editingProduct={editingProduct}
@@ -496,110 +527,137 @@ export default function POSInterface({ transactions, onAddTransaction, onAddTran
                 <SizeSelectorModal
                     activeProduct={activeProduct}
                     onClose={() => setActiveProduct(null)}
-                    onSelectSize={(size) => addToCart(activeProduct, size)}
+                    onSelectSize={(size, quantity) => addToCart(activeProduct, size, quantity)}
                     getStockForProduct={getStockForProduct}
                 />
             )}
+            <div className="flex min-h-0 flex-1 flex-col pb-24 lg:pb-0">
+                <div className="surface mb-4 p-4 sm:p-5">
+                    <div className="flex flex-wrap items-end justify-between gap-3">
+                        <div className="min-w-[min(100%,22rem)] flex-1">
+                            <label htmlFor="pos-product-search" className="field-label">Search products</label>
+                            <div className="relative">
+                                <Search className="pointer-events-none absolute left-3.5 top-1/2 -translate-y-1/2 text-ink-3" size={20} aria-hidden="true" />
+                                <input
+                                    id="pos-product-search"
+                                    type="text"
+                                    placeholder="Search products..."
+                                    className="field pl-11"
+                                    value={searchTerm}
+                                    onChange={(e) => setSearchTerm(e.target.value)}
+                                />
+                            </div>
+                        </div>
 
-            <div className="flex-1 flex flex-col min-h-0 pb-20 lg:pb-0">
-                <div className="mb-6 flex gap-4 items-center">
-                    <div className="relative flex-1">
-                        <Search className="absolute left-4 top-1/2 -translate-y-1/2 text-slate-400" size={20} />
-                        <input
-                            type="text"
-                            placeholder="Search products..."
-                            className="glass-input pl-12"
-                            value={searchTerm}
-                            onChange={(e) => setSearchTerm(e.target.value)}
-                        />
+                        <div className="flex flex-wrap items-center gap-2">
+                            {!isReseller && !isSelectionMode && !isReorderMode && (
+                                <>
+                                    <button type="button" onClick={() => setIsSelectionMode(true)} className="btn-secondary">Select</button>
+                                    <button type="button" onClick={() => setIsReorderMode(true)} className="btn-secondary">Reorder</button>
+                                    <button type="button" onClick={() => { setEditingProduct(null); setShowProductModal(true); }} className="btn-secondary whitespace-nowrap"><Plus size={20} aria-hidden="true" /> <span className="hidden sm:inline">Define Product</span></button>
+                                </>
+                            )}
+                            {isSelectionMode && (
+                                <>
+                                    <button type="button" onClick={handleBulkDelete} disabled={selectedProducts.size === 0} className="btn-danger"><Trash2 size={18} aria-hidden="true" /> Delete ({selectedProducts.size})</button>
+                                    <button type="button" onClick={() => { setIsSelectionMode(false); setSelectedProducts(new Set()); }} className="btn-secondary">Cancel</button>
+                                </>
+                            )}
+                            {isReorderMode && (
+                                <>
+                                    <button type="button" onClick={handleSaveOrder} className="btn-success"><CheckCircle size={18} aria-hidden="true" /> Save Order</button>
+                                    <button type="button" onClick={() => setIsReorderMode(false)} className="btn-secondary">Cancel</button>
+                                </>
+                            )}
+                        </div>
                     </div>
 
-                    <div className="flex gap-2">
-                        {!isReseller && !isSelectionMode && !isReorderMode && (
-                            <>
-                                <button onClick={() => setIsSelectionMode(true)} className="px-4 py-2 bg-white/5 hover:bg-white/10 text-slate-300 rounded-xl font-bold border border-white/10 transition-colors">Select</button>
-                                <button onClick={() => setIsReorderMode(true)} className="px-4 py-2 bg-white/5 hover:bg-white/10 text-slate-300 rounded-xl font-bold border border-white/10 transition-colors">Reorder</button>
-                                <button onClick={() => { setEditingProduct(null); setShowProductModal(true); }} className="btn-secondary whitespace-nowrap"><Plus size={20} /> <span className="hidden sm:inline">Define Product</span></button>
-                            </>
-                        )}
-                        {isSelectionMode && (
-                            <div className="flex gap-2">
-                                <button onClick={handleBulkDelete} disabled={selectedProducts.size === 0} className="px-4 py-2 bg-red-500 hover:bg-red-600 text-white rounded-xl font-bold transition-colors flex items-center gap-2"><Trash2 size={18} /> Delete ({selectedProducts.size})</button>
-                                <button onClick={() => { setIsSelectionMode(false); setSelectedProducts(new Set()); }} className="px-4 py-2 bg-white/10 hover:bg-white/20 text-white rounded-xl font-bold transition-colors">Cancel</button>
+                    {showProductChoices && (
+                        <div className="mt-4 space-y-3">
+                            <div className="flex items-center gap-2 overflow-x-auto pb-1 scrollbar-hide" aria-label="Category filters">
+                                {categoryOptions.map(category => (
+                                    <button key={category} type="button" className="chip" aria-pressed={selectedCategory === category} onClick={() => setSelectedCategory(category)}>
+                                        {category === 'All' ? 'All categories' : titleCase(category)}
+                                    </button>
+                                ))}
                             </div>
-                        )}
-                        {isReorderMode && (
-                            <div className="flex gap-2">
-                                <button onClick={handleSaveOrder} className="px-4 py-2 bg-green-600 hover:bg-green-700 text-white rounded-xl font-bold transition-colors flex items-center gap-2"><CheckCircle size={18} /> Save Order</button>
-                                <button onClick={() => setIsReorderMode(false)} className="px-4 py-2 bg-white/10 hover:bg-white/20 text-slate-300 rounded-xl font-bold transition-colors">Cancel</button>
+                            <div className="flex items-center gap-2 overflow-x-auto pb-1 scrollbar-hide" aria-label="Brand filters">
+                                {brandOptions.map(brand => (
+                                    <button key={brand} type="button" className="chip" aria-pressed={selectedBrand === brand} onClick={() => setSelectedBrand(brand)}>
+                                        {brand === 'All' ? 'All brands' : brand}
+                                    </button>
+                                ))}
                             </div>
-                        )}
-                    </div>
-                </div>
-
-                <div className="flex-1 overflow-y-auto pr-2 grid grid-cols-[repeat(auto-fill,minmax(140px,1fr))] gap-4 content-start">
-                    {!isSelectionMode && !isReorderMode && !isReseller && (
-                        <div onClick={() => { setEditingProduct(null); setShowProductModal(true); }} className="glass-card flex flex-col items-center justify-center gap-4 border-dashed border-white/20 hover:border-primary/50 cursor-pointer min-h-[200px] group opacity-60 hover:opacity-100">
-                            <Plus size={24} className="text-slate-400 group-hover:text-primary transition-transform group-hover:scale-110" />
-                            <span className="font-medium text-slate-400 text-sm">New Product</span>
                         </div>
                     )}
+                </div>
 
+                <div className="min-h-0 flex-1 overflow-y-auto pr-1">
                     {isReorderMode ? (
-                        <Reorder.Group axis="y" values={localOrderedProducts} onReorder={setLocalOrderedProducts}>
+                        <Reorder.Group axis="y" values={localOrderedProducts} onReorder={setLocalOrderedProducts} className="space-y-2">
                             {localOrderedProducts.map(product => (
-                                <Reorder.Item key={product.id} value={product} className="bg-white/5 mb-2 rounded-xl flex items-center p-2 cursor-grab active:cursor-grabbing border border-white/5 hover:border-white/20">
-                                    <GripVertical size={20} className="text-slate-400 mr-3" />
-                                    <div className="w-12 h-12 rounded bg-black/30 overflow-hidden shrink-0">
-                                        {product.imageUrl && <img src={product.imageUrl} className="w-full h-full object-cover" />}
+                                <Reorder.Item key={product.id} value={product} className="flex cursor-grab items-center rounded-xl border border-line bg-surface p-2 active:cursor-grabbing">
+                                    <GripVertical size={20} className="mr-3 shrink-0 text-ink-3" aria-hidden="true" />
+                                    <div className="size-12 shrink-0 overflow-hidden rounded-lg bg-well">
+                                        {product.imageUrl ? <img src={product.imageUrl} className="size-full object-cover" alt="" /> : <div className="grid size-full place-items-center text-ink-3"><Package size={20} aria-hidden="true" /></div>}
                                     </div>
-                                    <div className="ml-3 flex-1">
-                                        <h3 className="font-bold text-white">{product.name}</h3>
-                                        <p className="text-xs text-primary">₱{product.price}</p>
+                                    <div className="ml-3 min-w-0 flex-1">
+                                        <h3 className="truncate text-sm font-semibold text-ink">{product.name}</h3>
+                                        <p className="num text-sm font-semibold text-ink-2">{peso(product.price)}</p>
                                     </div>
                                 </Reorder.Item>
                             ))}
                         </Reorder.Group>
                     ) : (
-                        <AnimatePresence>
-                            {filteredProducts.map(product => (
-                                <motion.div
-                                    key={product.id}
-                                    initial={{ opacity: 0, scale: 0.9 }}
-                                    animate={{ opacity: 1, scale: 1 }}
-                                    className={`glass-card p-0 overflow-hidden cursor-pointer group flex flex-col min-h-[220px] relative ${selectedProducts.has(product.name) ? 'ring-2 ring-primary bg-primary/10' : ''}`}
-                                    onClick={() => isSelectionMode ? toggleSelection(product.name) : (product.category === 'shirts' ? setActiveProduct(product) : addToCart(product, 'N/A'))}
-                                >
-                                    {isSelectionMode && (
-                                        <div className="absolute top-2 left-2 z-20"><div className={`w-6 h-6 rounded-full border-2 flex items-center justify-center ${selectedProducts.has(product.name) ? 'bg-primary border-primary' : 'border-white/40 bg-black/40'}`}>{selectedProducts.has(product.name) && <CheckCircle size={14} className="text-white" />}</div></div>
-                                    )}
-                                    {!isSelectionMode && !isReseller && (
-                                        <button onClick={(e) => { e.stopPropagation(); setEditingProduct(product); setShowProductModal(true); }} className="absolute top-2 right-2 z-30 p-2 bg-black/60 hover:bg-primary rounded-lg text-white opacity-0 group-hover:opacity-100 transition-all"><Edit size={14} /></button>
-                                    )}
-                                    <div className="relative w-full overflow-hidden bg-slate-800" style={{ paddingBottom: '120%' }}>
-                                        {product.imageUrl ? <img src={product.imageUrl} className="absolute inset-0 w-full h-full object-cover transition-transform duration-500 group-hover:scale-110" /> : <div className="absolute inset-0 flex items-center justify-center opacity-20"><Package size={48} /></div>}
-                                        <div className="absolute inset-0 bg-black/40 opacity-0 group-hover:opacity-100 transition-opacity z-10 flex flex-col items-center justify-center p-4 backdrop-blur-[2px]">
-                                            <span className="text-white font-bold text-sm mb-2">{product.name}</span>
-                                            <div className="bg-primary text-black text-[10px] font-bold px-3 py-1 rounded-full">QUICK ADD</div>
-                                        </div>
+                        <div className="grid content-start gap-3 sm:grid-cols-[repeat(auto-fill,minmax(150px,1fr))] sm:gap-4 [grid-template-columns:repeat(auto-fill,minmax(142px,1fr))]">
+                            {!isSelectionMode && !isReseller && (
+                                <button type="button" onClick={() => { setEditingProduct(null); setShowProductModal(true); }} className="min-h-[214px] rounded-2xl border border-dashed border-line bg-surface p-4 text-left transition-colors hover:border-slate-500">
+                                    <span className="grid size-12 place-items-center rounded-xl bg-well text-ink-3" aria-hidden="true"><Plus size={24} /></span>
+                                    <span className="mt-4 block text-sm font-semibold text-ink">New Product</span>
+                                </button>
+                            )}
+
+                            {filteredProducts.map(product => {
+                                const selected = selectedProducts.has(product.name);
+                                return (
+                                    <div key={product.id} className={clsx('relative rounded-2xl border bg-surface p-2 transition-colors', selected ? 'border-ink' : 'border-line hover:border-slate-500')}>
+                                        {isSelectionMode && (
+                                            <span className={clsx('absolute left-3 top-3 z-10 grid size-7 place-items-center rounded-full border-2', selected ? 'border-ink bg-ink text-ground' : 'border-slate-500 bg-ground/90 text-transparent')} aria-hidden="true">
+                                                {selected && <CheckCircle size={16} />}
+                                            </span>
+                                        )}
+                                        {!isSelectionMode && !isReseller && (
+                                            <button type="button" onClick={(e) => { e.stopPropagation(); setEditingProduct(product); setShowProductModal(true); }} className="icon-btn absolute right-3 top-3 z-10 bg-ground/90" aria-label={`Edit ${product.name}`}>
+                                                <Edit size={16} />
+                                            </button>
+                                        )}
+                                        <button type="button" className="flex h-full w-full flex-col text-left" onClick={() => handleProductAction(product)} aria-pressed={isSelectionMode ? selected : undefined}>
+                                            <span className="relative block aspect-[4/5] overflow-hidden rounded-xl bg-well">
+                                                {product.imageUrl ? <img src={product.imageUrl} className="size-full object-cover" alt="" /> : <span className="grid size-full place-items-center text-ink-3"><Package size={40} aria-hidden="true" /></span>}
+                                            </span>
+                                            <span className="flex flex-1 flex-col px-1 pt-3 pb-1">
+                                                <span className="line-clamp-2 text-[15px] font-semibold leading-snug text-ink">{product.name}</span>
+                                                <span className="mt-1 truncate text-xs text-ink-2">{product.brand || BRAND_FALLBACK}</span>
+                                                <span className="num mt-2 text-[15px] font-semibold text-ink">{peso(product.price)}</span>
+                                            </span>
+                                        </button>
                                     </div>
-                                    <div className="p-3 bg-white/5 flex-1 flex flex-col justify-between">
-                                        <div>
-                                            <h3 className="font-semibold text-white text-sm line-clamp-1">{product.name}</h3>
-                                            <p className="text-[10px] text-slate-500 uppercase font-mono mt-0.5">{product.brand || 'Sypik'}</p>
-                                        </div>
-                                        <span className="text-primary font-bold text-sm mt-2">₱{product.price}</span>
-                                    </div>
-                                </motion.div>
-                            ))}
-                        </AnimatePresence>
+                                );
+                            })}
+                            {filteredProducts.length === 0 && (
+                                <div className="col-span-full rounded-2xl border border-dashed border-line px-6 py-12 text-center">
+                                    <Package size={30} className="mx-auto text-ink-3" aria-hidden="true" />
+                                    <p className="mt-3 text-ink-2">{searchTerm || selectedCategory !== 'All' || selectedBrand !== 'All' ? 'No products match your search or filters.' : 'No products to sell yet.'}</p>
+                                </div>
+                            )}
+                        </div>
                     )}
                 </div>
             </div>
 
-            {/* Desktop Cart */}
-            <div className="hidden lg:flex w-[400px] glass-panel rounded-2xl flex-col h-full overflow-hidden">
+            <div className="hidden w-[400px] shrink-0 overflow-hidden rounded-2xl border border-line bg-surface lg:flex">
                 <CartContent
+                    idPrefix="desktop-pos"
                     cart={cart}
                     updateCartQuantity={updateCartQuantity}
                     handleCheckout={handleCheckout}
@@ -639,62 +697,55 @@ export default function POSInterface({ transactions, onAddTransaction, onAddTran
                 />
             </div>
 
-            {/* Mobile Float Cart */}
-            <div className="fixed bottom-4 left-4 right-4 lg:hidden z-40">
-                <button onClick={() => setCartOpenMobile(true)} disabled={cart.length === 0} className="w-full btn-primary py-4 shadow-2xl flex justify-between px-6 items-center">
-                    <div className="flex items-center gap-3"><ShoppingCart size={20} /> <span className="font-bold">{cart.reduce((a, b) => a + b.quantity, 0)} items</span></div>
-                    <span className="font-bold text-lg">₱{cart.reduce((a, b) => a + (getCartUnitPrice(b) * b.quantity), 0).toLocaleString()}</span>
+            <div className="fixed inset-x-4 bottom-16 z-40 pb-[env(safe-area-inset-bottom)] lg:hidden">
+                <button type="button" onClick={() => setCartOpenMobile(true)} disabled={cart.length === 0} className="btn-primary min-h-14 w-full justify-between px-5 text-base">
+                    <span className="flex items-center gap-3"><ShoppingCart size={20} aria-hidden="true" /> <span>{cartItemCount} items</span></span>
+                    <span className="num text-lg font-semibold">{peso(cartTotal)}</span>
                 </button>
             </div>
-
-            {/* Mobile Cart Modal */}
-            <AnimatePresence>
-                {cartOpenMobile && (
-                    <motion.div initial={{ y: '100%' }} animate={{ y: 0 }} exit={{ y: '100%' }} className="fixed inset-0 z-50 bg-slate-900 lg:hidden flex flex-col">
-                        <div className="p-4 border-b border-white/10 flex justify-between items-center"><h2 className="font-bold text-lg flex items-center gap-2 text-white"><ShoppingCart /> Cart</h2><button onClick={() => setCartOpenMobile(false)} className="p-2"><X /></button></div>
-                        <div className="flex-1 overflow-hidden">
-                            <CartContent
-                                cart={cart}
-                                updateCartQuantity={updateCartQuantity}
-                                handleCheckout={handleCheckout}
-                                checkoutLoading={checkoutLoading}
-                                customerName={customerName}
-                                setCustomerName={setCustomerName}
-                                customerContact={customerContact}
-                                setCustomerContact={setCustomerContact}
-                                customerAddress={customerAddress}
-                                setCustomerAddress={setCustomerAddress}
-                                fulfillmentStatus={fulfillmentStatus}
-                                setFulfillmentStatus={setFulfillmentStatus}
-                                paymentStatus={paymentStatus}
-                                setPaymentStatus={setPaymentStatus}
-                                paymentMode={paymentMode}
-                                setPaymentMode={setPaymentMode}
-                                showSuggestions={showSuggestions}
-                                setShowSuggestions={setShowSuggestions}
-                                customerSuggestions={customerSuggestions}
-                                handleSelectCustomer={handleSelectCustomer}
-                                shippingRegion={shippingRegion}
-                                setShippingRegion={setShippingRegion}
-                                customerProvince={customerProvince}
-                                setCustomerProvince={setCustomerProvince}
-                                customerCity={customerCity}
-                                setCustomerCity={setCustomerCity}
-                                customerBarangay={customerBarangay}
-                                setCustomerBarangay={setCustomerBarangay}
-                                provinceCode={provinceCode}
-                                setProvinceCode={setProvinceCode}
-                                cityCode={cityCode}
-                                setCityCode={setCityCode}
-                                provincesList={provincesList}
-                                citiesList={citiesList}
-                                barangaysList={barangaysList}
-                                isReseller={isReseller}
-                            />
-                        </div>
-                    </motion.div>
-                )}
-            </AnimatePresence>
+            {cartOpenMobile && (
+                <Dialog variant="drawer" onClose={() => setCartOpenMobile(false)} title="Cart" closeLabel="Close cart" bodyClassName="p-0" className="lg:hidden">
+                    <CartContent
+                        idPrefix="mobile-pos"
+                        cart={cart}
+                        updateCartQuantity={updateCartQuantity}
+                        handleCheckout={handleCheckout}
+                        checkoutLoading={checkoutLoading}
+                        customerName={customerName}
+                        setCustomerName={setCustomerName}
+                        customerContact={customerContact}
+                        setCustomerContact={setCustomerContact}
+                        customerAddress={customerAddress}
+                        setCustomerAddress={setCustomerAddress}
+                        fulfillmentStatus={fulfillmentStatus}
+                        setFulfillmentStatus={setFulfillmentStatus}
+                        paymentStatus={paymentStatus}
+                        setPaymentStatus={setPaymentStatus}
+                        paymentMode={paymentMode}
+                        setPaymentMode={setPaymentMode}
+                        showSuggestions={showSuggestions}
+                        setShowSuggestions={setShowSuggestions}
+                        customerSuggestions={customerSuggestions}
+                        handleSelectCustomer={handleSelectCustomer}
+                        shippingRegion={shippingRegion}
+                        setShippingRegion={setShippingRegion}
+                        customerProvince={customerProvince}
+                        setCustomerProvince={setCustomerProvince}
+                        customerCity={customerCity}
+                        setCustomerCity={setCustomerCity}
+                        customerBarangay={customerBarangay}
+                        setCustomerBarangay={setCustomerBarangay}
+                        provinceCode={provinceCode}
+                        setProvinceCode={setProvinceCode}
+                        cityCode={cityCode}
+                        setCityCode={setCityCode}
+                        provincesList={provincesList}
+                        citiesList={citiesList}
+                        barangaysList={barangaysList}
+                        isReseller={isReseller}
+                    />
+                </Dialog>
+            )}
         </div>
     );
 }
@@ -722,10 +773,10 @@ const ProductDefinitionModal = ({ editingProduct, onClose, onSave, onDelete, col
             if (!newUrl) throw new Error('The uploaded image could not be verified.');
             setForm(p => {
                 const newImages = [...(p.images || []), newUrl];
-                return { 
-                    ...p, 
+                return {
+                    ...p,
                     imageUrl: newImages[0], // Keep first as main
-                    images: newImages 
+                    images: newImages
                 };
             });
             showToast('Image added to gallery!', 'success');
@@ -746,163 +797,268 @@ const ProductDefinitionModal = ({ editingProduct, onClose, onSave, onDelete, col
     };
 
     return (
-        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/80 backdrop-blur-sm p-4">
-            <div className="glass-panel w-full max-w-md p-6 relative">
-                <button onClick={onClose} className="absolute top-4 right-4 text-slate-400 hover:text-white"><X size={20} /></button>
-                <h3 className="text-xl font-bold mb-6 text-white">{editingProduct ? 'Edit Product' : 'New Product'}</h3>
-                <div className="space-y-4">
-                    <div className="flex gap-2 overflow-x-auto pb-2 scrollbar-hide">
-                        <div 
-                            onClick={() => fileRef.current?.click()} 
-                            className="w-24 h-24 rounded-xl border-2 border-dashed border-white/20 flex flex-col items-center justify-center cursor-pointer hover:bg-white/5 bg-black/20 shrink-0"
-                        >
-                            {uploading ? <Loader2 className="animate-spin text-primary" size={20} /> : <Plus size={20} className="text-slate-500" />}
-                            <span className="text-[10px] uppercase font-bold text-slate-500 mt-1">Add Photo</span>
+        <Dialog
+            onClose={onClose}
+            title={editingProduct ? 'Edit Product' : 'New Product'}
+            closeLabel="Close product form"
+            size="md"
+            footer={(
+                <div className="flex gap-2">
+                    {editingProduct && <button type="button" onClick={() => window.confirm(`Delete ${form.name}?`) && onDelete(form.name)} className="btn-danger px-4" aria-label={`Delete ${form.name}`}><Trash2 size={20} aria-hidden="true" /></button>}
+                    <button type="button" onClick={() => onSave(form)} disabled={!form.name || uploading} className="btn-primary flex-1">{uploading ? 'Processing...' : 'Save Product'}</button>
+                </div>
+            )}
+        >
+            <div className="space-y-5">
+                <div className="flex gap-2 overflow-x-auto pb-1 scrollbar-hide">
+                    <button
+                        type="button"
+                        onClick={() => fileRef.current?.click()}
+                        className="flex size-24 shrink-0 flex-col items-center justify-center rounded-xl border border-dashed border-line bg-well text-ink-2 transition-colors hover:border-slate-500 hover:text-ink"
+                        aria-label="Add photo"
+                    >
+                        {uploading ? <Loader2 className="animate-spin text-primary" size={20} aria-hidden="true" /> : <Upload size={20} aria-hidden="true" />}
+                        <span className="mt-1 text-xs font-semibold">Add photo</span>
+                    </button>
+
+                    {(form.images || []).map((img, idx) => (
+                        <div key={idx} className="group relative size-24 shrink-0 overflow-hidden rounded-xl border border-line bg-well">
+                            <img src={img} className="size-full object-cover" alt={`Product ${idx}`} />
+                            <button
+                                type="button"
+                                onClick={() => removeImage(img)}
+                                className="icon-btn absolute right-1 top-1 size-9 bg-ground/90"
+                                aria-label={`Remove product image ${idx + 1}`}
+                            >
+                                <X size={14} />
+                            </button>
+                            {idx === 0 && (
+                                <div className="absolute inset-x-0 bottom-0 bg-ground/90 py-1 text-center text-xs font-semibold text-ink">Main visual</div>
+                            )}
                         </div>
-                        
-                        {(form.images || []).map((img, idx) => (
-                            <div key={idx} className="w-24 h-24 rounded-xl relative group shrink-0 overflow-hidden ring-1 ring-white/10">
-                                <img src={img} className="w-full h-full object-cover" alt={`Product ${idx}`} />
-                                <button 
-                                    onClick={() => removeImage(img)}
-                                    className="absolute top-1 right-1 p-1 bg-black/60 rounded-lg text-white opacity-0 group-hover:opacity-100 transition-opacity"
-                                >
-                                    <X size={12} />
-                                </button>
-                                {idx === 0 && (
-                                    <div className="absolute bottom-0 left-0 right-0 bg-primary/90 text-black text-[8px] font-bold py-0.5 text-center uppercase tracking-tighter">Main Visual</div>
-                                )}
+                    ))}
+                </div>
+                <input type="file" ref={fileRef} className="hidden" onChange={handleUpload} aria-label="Product photo" />
+
+                <div className="grid grid-cols-2 gap-4">
+                    <div className="col-span-2">
+                        <label htmlFor="product-name" className="field-label">Product name</label>
+                        <input id="product-name" className="field" value={form.name} onChange={e => setForm({ ...form, name: e.target.value })} placeholder="e.g. Sypik Classic White" />
+                    </div>
+                    <div>
+                        <label htmlFor="product-price" className="field-label">Price (₱)</label>
+                        <input id="product-price" type="number" className="field num" value={form.price} onChange={e => setForm({ ...form, price: Number(e.target.value) })} />
+                    </div>
+                    <div>
+                        <label htmlFor="product-category" className="field-label">Category</label>
+                        <select id="product-category" className="field" value={form.category} onChange={e => setForm({ ...form, category: e.target.value })}>{['shirts', 'balls', 'accessories', 'equipment'].map(c => <option key={c} value={c} className="capitalize">{c}</option>)}</select>
+                    </div>
+                </div>
+
+                {form.category === 'shirts' && (
+                    <div className="grid grid-cols-2 gap-4 border-t border-line pt-4">
+                        <div>
+                            <label htmlFor="product-brand" className="field-label">Brand</label>
+                            <select id="product-brand" className="field" value={form.brand} onChange={e => setForm({ ...form, brand: e.target.value })}>{brands.map(b => <option key={b.name} value={b.name}>{b.name}</option>)}</select>
+                        </div>
+                        <div>
+                            <label htmlFor="product-color" className="field-label">Inventory color</label>
+                            <select id="product-color" className="field" value={form.linkedColor} onChange={e => setForm({ ...form, linkedColor: e.target.value })}>{colors.map(c => <option key={c.name} value={c.name}>{c.name}</option>)}</select>
+                        </div>
+                    </div>
+                )}
+            </div>
+        </Dialog>
+    );
+};
+const SizeSelectorModal = ({ activeProduct, onClose, onSelectSize, getStockForProduct }) => {
+    const isBall = isBallProduct(activeProduct);
+    const [selectedQuantity, setSelectedQuantity] = useState(BALL_QUANTITIES[0]);
+    const [selectedSize, setSelectedSize] = useState('');
+
+    return (
+        <Dialog
+            onClose={onClose}
+            title={activeProduct.name}
+            description={[activeProduct.brand, activeProduct.linkedColor].filter(Boolean).join(' • ') || undefined}
+            closeLabel="Close product"
+            footer={(
+                <button type="button" onClick={() => isBall ? onSelectSize('N/A', selectedQuantity) : onSelectSize(selectedSize)} disabled={!isBall && !selectedSize} className="btn-primary h-12 w-full text-base">
+                    Add to cart
+                </button>
+            )}
+        >
+            <div className="space-y-5">
+                <div className="flex gap-4">
+                    <div className="size-24 shrink-0 overflow-hidden rounded-xl bg-well">
+                        {activeProduct.imageUrl ? <img src={activeProduct.imageUrl} className="size-full object-cover" alt="" /> : <div className="grid size-full place-items-center text-ink-3"><Package size={28} aria-hidden="true" /></div>}
+                    </div>
+                    <div className="min-w-0 flex-1">
+                        <p className="num text-2xl font-semibold text-ink">{peso(activeProduct.price)}</p>
+                        <p className="mt-1 text-sm text-ink-2">{isBall ? 'Choose the quantity for this cart line.' : 'Choose an available size.'}</p>
+                    </div>
+                </div>
+
+                {isBall ? (
+                    <div>
+                        <h3 id="ball-quantity-label" className="flex items-center gap-2 text-sm font-semibold text-ink"><ShoppingCart size={18} className="text-ink-3" aria-hidden="true" /> Select quantity</h3>
+                        <div role="radiogroup" aria-labelledby="ball-quantity-label" className="mt-3 grid grid-cols-3 gap-2">
+                            {BALL_QUANTITIES.map(quantity => {
+                                const selected = selectedQuantity === quantity;
+                                const unitPrice = getCartUnitPrice(activeProduct, quantity);
+                                return (
+                                    <button key={quantity} type="button" role="radio" aria-checked={selected} onClick={() => setSelectedQuantity(quantity)}
+                                        className={clsx('min-h-14 rounded-lg border px-2 py-2 text-center transition-colors', selected ? 'border-ink bg-ink text-ground' : 'border-slate-600 text-ink hover:border-slate-300')}>
+                                        <span className="num block text-base font-semibold">{quantity} {quantity === 1 ? 'pc' : 'pcs'}</span>
+                                        <span className={clsx('num mt-1 block text-xs', selected ? 'text-ground/70' : 'text-ink-2')}>{peso(unitPrice)}/pc</span>
+                                    </button>
+                                );
+                            })}
+                        </div>
+                    </div>
+                ) : (
+                    <div>
+                        <h3 id="size-label" className="flex items-center gap-2 text-sm font-semibold text-ink"><Ruler size={18} className="text-ink-3" aria-hidden="true" /> Select size</h3>
+                        <div role="radiogroup" aria-labelledby="size-label" className="mt-3 grid grid-cols-3 gap-2">
+                            {SIZES.map(size => {
+                                const stock = getStockForProduct(activeProduct, size);
+                                const hasStock = stock > 0;
+                                const selected = selectedSize === size;
+                                return (
+                                    <button key={size} type="button" role="radio" aria-checked={selected} disabled={!hasStock} onClick={() => setSelectedSize(size)}
+                                        className={clsx('min-h-14 rounded-lg border px-3 py-2 text-center transition-colors disabled:cursor-not-allowed disabled:border-line disabled:text-ink-3 disabled:opacity-60', selected ? 'border-ink bg-ink text-ground' : 'border-slate-600 text-ink hover:border-slate-300')}>
+                                        <span className="block text-base font-semibold">{size}</span>
+                                        <span className={clsx('num mt-1 block text-xs', selected ? 'text-ground/70' : 'text-ink-2')}>{stock} pcs</span>
+                                    </button>
+                                );
+                            })}
+                        </div>
+                    </div>
+                )}
+            </div>
+        </Dialog>
+    );
+};
+
+const CartContent = ({ idPrefix, cart, updateCartQuantity, handleCheckout, checkoutLoading, customerName, setCustomerName, customerContact, setCustomerContact, customerAddress, setCustomerAddress, shippingRegion, setShippingRegion, customerProvince, setCustomerProvince, customerCity, setCustomerCity, customerBarangay, setCustomerBarangay, provinceCode, setProvinceCode, cityCode, setCityCode, provincesList, citiesList, barangaysList, fulfillmentStatus, setFulfillmentStatus, paymentStatus, setPaymentStatus, paymentMode, setPaymentMode, showSuggestions, setShowSuggestions, customerSuggestions, handleSelectCustomer, isReseller }) => {
+    const total = cart.reduce((a, b) => a + (getCartUnitPrice(b) * b.quantity), 0);
+
+    return (
+        <div className="flex h-full min-h-0 flex-col bg-surface">
+            <div className="flex shrink-0 items-center justify-between border-b border-line px-4 py-4 sm:px-5">
+                <h2 className="section-title flex items-center gap-2"><ShoppingCart className="text-ink-3" size={20} aria-hidden="true" /> Current Cart</h2>
+                <span className="badge border-line text-ink-2"><span className="num">{cart.length}</span> lines</span>
+            </div>
+
+            <div className="min-h-0 flex-1 overflow-y-auto px-4 sm:px-5">
+                {cart.length > 0 ? (
+                    <div className="divide-y divide-line">
+                        {cart.map(item => (
+                            <div key={item.cartId} className="flex items-center gap-3 py-3">
+                                <div className="size-12 shrink-0 overflow-hidden rounded-lg bg-well">
+                                    {item.imageUrl ? <img src={item.imageUrl} className="size-full object-cover" alt="" /> : <div className="grid size-full place-items-center text-ink-3"><Package size={20} aria-hidden="true" /></div>}
+                                </div>
+                                <div className="min-w-0 flex-1">
+                                    <h4 className="truncate text-sm font-semibold text-ink">{item.name}</h4>
+                                    <div className="mt-1 flex flex-wrap items-center gap-2 text-xs text-ink-2">
+                                        {item.size !== 'N/A' && <span className="badge border-line text-ink-2">{item.size}</span>}
+                                        <span className="num">{peso(getCartUnitPrice(item))}/pc</span>
+                                    </div>
+                                </div>
+                                <div className="flex shrink-0 items-center gap-1 rounded-full border border-line bg-raised p-1">
+                                    <button type="button" onClick={() => updateCartQuantity(item.cartId, -1)} className="icon-btn size-9" aria-label={`Decrease quantity for ${item.name}`}><Minus size={16} /></button>
+                                    <span className="num min-w-6 text-center text-sm font-semibold text-ink">{item.quantity}</span>
+                                    <button type="button" onClick={() => updateCartQuantity(item.cartId, 1)} className="icon-btn size-9" aria-label={`Increase quantity for ${item.name}`}><Plus size={16} /></button>
+                                </div>
+                                <button type="button" onClick={() => updateCartQuantity(item.cartId, -999)} className="icon-btn size-10 text-red-400 hover:bg-red-500/10 hover:text-red-300" aria-label={`Remove ${item.name} from cart`}><Trash2 size={17} /></button>
                             </div>
                         ))}
                     </div>
-                    <input type="file" ref={fileRef} className="hidden" onChange={handleUpload} />
-                    <div className="grid grid-cols-2 gap-4">
-                        <div className="col-span-2">
-                            <label className="text-[10px] text-slate-400 font-bold uppercase">Product Name</label>
-                            <input className="glass-input mt-1" value={form.name} onChange={e => setForm({ ...form, name: e.target.value })} placeholder="e.g. Sypik Classic White" />
+                ) : (
+                    <div className="my-5 flex min-h-48 flex-col items-center justify-center rounded-2xl border border-dashed border-line px-4 text-center text-ink-2">
+                        <ShoppingCart size={32} className="text-ink-3" aria-hidden="true" />
+                        <p className="mt-3 text-sm">Your cart is feeling lonely</p>
+                    </div>
+                )}
+            </div>
+            <div className="shrink-0 space-y-5 border-t border-line bg-surface px-4 pt-4 pb-[max(1rem,env(safe-area-inset-bottom))] sm:px-5">
+                <div className="flex items-end justify-between border-b border-line pb-4">
+                    <span className="text-sm font-medium text-ink-2">Order Total</span>
+                    <span className="num text-2xl font-semibold text-ink">{peso(total)}</span>
+                </div>
+
+                <div className="space-y-4">
+                    <div className="flex items-center justify-between gap-3">
+                        <h3 className="text-sm font-semibold text-ink">Customer Profile</h3>
+                        <button type="button" onClick={() => updateCartQuantity('clear')} className="btn-ghost text-red-400 hover:bg-red-500/10 hover:text-red-300">Clear Order</button>
+                    </div>
+
+                    <div className="grid grid-cols-1 gap-3 sm:grid-cols-2 lg:grid-cols-1 xl:grid-cols-2">
+                        <div className="relative z-30">
+                            <label htmlFor={`${idPrefix}-customer-name`} className="field-label">Full Name</label>
+                            <input id={`${idPrefix}-customer-name`} className="field" placeholder="Full Name" value={customerName} onChange={e => { setCustomerName(e.target.value); setShowSuggestions(true); }} onFocus={() => setShowSuggestions(true)} onBlur={() => setTimeout(() => setShowSuggestions(false), 200)} />
+                            {showSuggestions && customerSuggestions?.length > 0 && (
+                                <div className="absolute left-0 top-full z-40 mt-1 max-h-60 w-full overflow-y-auto rounded-xl border border-line bg-raised shadow-lift">
+                                    {customerSuggestions.map(c => <button key={c.id} type="button" onClick={() => handleSelectCustomer(c)} className="flex w-full items-center justify-between gap-3 border-b border-line px-4 py-3 text-left text-sm transition-colors last:border-0 hover:bg-white/[0.04]"><span className="font-semibold text-ink">{c.name}</span>{c.total_spent > 0 && <span className="num text-ink-2">{peso(c.total_spent)}</span>}</button>)}
+                                </div>
+                            )}
                         </div>
                         <div>
-                            <label className="text-[10px] text-slate-400 font-bold uppercase">Price (₱)</label>
-                            <input type="number" className="glass-input mt-1" value={form.price} onChange={e => setForm({ ...form, price: Number(e.target.value) })} />
-                        </div>
-                        <div>
-                            <label className="text-[10px] text-slate-400 font-bold uppercase">Category</label>
-                            <select className="glass-input mt-1" value={form.category} onChange={e => setForm({ ...form, category: e.target.value })}>{['shirts', 'balls', 'accessories', 'equipment'].map(c => <option key={c} value={c} className="bg-slate-900 capitalize">{c}</option>)}</select>
+                            <label htmlFor={`${idPrefix}-customer-contact`} className="field-label">Contact Number</label>
+                            <input id={`${idPrefix}-customer-contact`} className="field" placeholder="Contact Number" value={customerContact} onChange={e => setCustomerContact(e.target.value)} />
                         </div>
                     </div>
-                    {form.category === 'shirts' && (
-                        <div className="grid grid-cols-2 gap-4 pt-2 border-t border-white/5">
-                            <div>
-                                <label className="text-[10px] text-slate-400 font-bold uppercase">Brand</label>
-                                <select className="glass-input mt-1" value={form.brand} onChange={e => setForm({ ...form, brand: e.target.value })}>{brands.map(b => <option key={b.name} value={b.name} className="bg-slate-900">{b.name}</option>)}</select>
+
+                    <div className="flex gap-2" role="group" aria-label="Shipping region">
+                        <button type="button" onClick={() => setShippingRegion('MM')} className="chip flex-1 justify-center" aria-pressed={shippingRegion === 'MM'}>Metro Manila</button>
+                        <button type="button" onClick={() => setShippingRegion('Provincial')} className="chip flex-1 justify-center" aria-pressed={shippingRegion === 'Provincial'}>Provincial</button>
+                    </div>
+
+                    <div className="grid grid-cols-1 gap-3 sm:grid-cols-2 lg:grid-cols-1 xl:grid-cols-2">
+                        {shippingRegion === 'Provincial' && (
+                            <div className="sm:col-span-2 lg:col-span-1 xl:col-span-2">
+                                <label htmlFor={`${idPrefix}-province`} className="field-label">Province</label>
+                                <select id={`${idPrefix}-province`} className="field" value={provinceCode} onChange={e => { setProvinceCode(e.target.value); setCustomerProvince(e.target.options[e.target.selectedIndex].text); }}><option value="" disabled>Select Province</option>{provincesList.map(p => <option key={p.code} value={p.code}>{p.name}</option>)}</select>
                             </div>
-                            <div>
-                                <label className="text-[10px] text-slate-400 font-bold uppercase">Inventory Color</label>
-                                <select className="glass-input mt-1" value={form.linkedColor} onChange={e => setForm({ ...form, linkedColor: e.target.value })}>{colors.map(c => <option key={c.name} value={c.name} className="bg-slate-900">{c.name}</option>)}</select>
-                            </div>
+                        )}
+                        <div>
+                            <label htmlFor={`${idPrefix}-city`} className="field-label">City / Town</label>
+                            <select id={`${idPrefix}-city`} className="field" value={cityCode} onChange={e => { setCityCode(e.target.value); setCustomerCity(e.target.options[e.target.selectedIndex].text); }} disabled={!citiesList.length}><option value="" disabled>City / Town</option>{citiesList.map(c => <option key={c.code} value={c.code}>{c.name}</option>)}</select>
+                        </div>
+                        <div>
+                            <label htmlFor={`${idPrefix}-barangay`} className="field-label">Barangay</label>
+                            <select id={`${idPrefix}-barangay`} className="field" value={customerBarangay} onChange={e => setCustomerBarangay(e.target.value)} disabled={!barangaysList.length}><option value="" disabled>Barangay</option>{barangaysList.map(b => <option key={b.code} value={b.name}>{b.name}</option>)}</select>
+                        </div>
+                    </div>
+
+                    <div>
+                        <label htmlFor={`${idPrefix}-address`} className="field-label">Street Address / Room / landmarks</label>
+                        <input id={`${idPrefix}-address`} className="field" placeholder="Street Address / Room / landmarks" value={customerAddress} onChange={e => setCustomerAddress(e.target.value)} />
+                    </div>
+
+                    <div className="grid grid-cols-1 gap-3 sm:grid-cols-2 lg:grid-cols-1 xl:grid-cols-2">
+                        <div>
+                            <label htmlFor={`${idPrefix}-payment-mode`} className="field-label">Payment mode</label>
+                            <select id={`${idPrefix}-payment-mode`} className="field" value={paymentMode} onChange={e => setPaymentMode(e.target.value)}>{PAYMENT_MODES.map(m => <option key={m} value={m}>{m}</option>)}</select>
+                        </div>
+                        <div>
+                            <label htmlFor={`${idPrefix}-payment-status`} className="field-label">Payment status</label>
+                            <select id={`${idPrefix}-payment-status`} disabled={isReseller} className="field capitalize" value={paymentStatus} onChange={e => setPaymentStatus(e.target.value)}>{['unpaid', 'paid'].map(s => <option key={s} value={s}>{s}</option>)}</select>
+                        </div>
+                    </div>
+
+                    {!isReseller && (
+                        <div>
+                            <label htmlFor={`${idPrefix}-fulfillment-status`} className="field-label">Fulfillment status</label>
+                            <select id={`${idPrefix}-fulfillment-status`} className="field capitalize" value={fulfillmentStatus} onChange={e => setFulfillmentStatus(e.target.value)}>{['pending', 'in_progress', 'ready', 'shipped'].map(s => <option key={s} value={s}>{s.replace('_', ' ')}</option>)}</select>
                         </div>
                     )}
-                    <div className="flex gap-2 mt-6">
-                        {editingProduct && <button onClick={() => window.confirm(`Delete ${form.name}?`) && onDelete(form.name)} className="p-3 rounded-xl bg-red-500/10 text-red-400 hover:bg-red-500/20 border border-red-500/20 transition-colors"><Trash2 size={20} /></button>}
-                        <button onClick={() => onSave(form)} disabled={!form.name || uploading} className="btn-primary flex-1 py-3">{uploading ? 'Processing...' : 'Save Product'}</button>
-                    </div>
                 </div>
+
+                <button type="button" onClick={handleCheckout} disabled={checkoutLoading || cart.length === 0} className="btn-primary h-12 w-full text-base font-semibold">
+                    {checkoutLoading ? <Loader2 className="animate-spin" aria-label="Processing" /> : 'Confirm order'}
+                </button>
             </div>
         </div>
     );
 };
-
-const SizeSelectorModal = ({ activeProduct, onClose, onSelectSize, getStockForProduct }) => (
-    <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/60 backdrop-blur-sm p-4" onClick={onClose}>
-        <motion.div initial={{ scale: 0.9, opacity: 0 }} animate={{ scale: 1, opacity: 1 }} className="glass-panel p-6 max-w-sm w-full relative" onClick={e => e.stopPropagation()}>
-            <div className="flex gap-4 mb-6">
-                <div className="w-20 h-20 rounded-xl bg-white/5 overflow-hidden ring-1 ring-white/10">{activeProduct.imageUrl ? <img src={activeProduct.imageUrl} className="w-full h-full object-cover" /> : <div className="w-full h-full flex items-center justify-center opacity-20"><Package /></div>}</div>
-                <div>
-                    <h3 className="font-bold text-lg text-white leading-tight">{activeProduct.name}</h3>
-                    <p className="text-[10px] text-slate-400 uppercase font-mono mt-1">{activeProduct.brand} • {activeProduct.linkedColor} Canvas</p>
-                    <p className="text-primary font-bold text-lg mt-2 font-sans">₱{activeProduct.price}</p>
-                </div>
-            </div>
-            <h4 className="text-[10px] font-bold text-slate-400 uppercase mb-3 tracking-widest flex items-center gap-2"><Ruler size={14} className="text-primary" /> Select Size</h4>
-            <div className="grid grid-cols-3 gap-2">
-                {SIZES.map(size => {
-                    const stock = getStockForProduct(activeProduct, size);
-                    const hasStock = stock > 0;
-                    return (
-                        <button key={size} disabled={!hasStock} onClick={() => onSelectSize(size)} className={`p-3 rounded-xl border text-center transition-all flex flex-col items-center justify-center ${hasStock ? 'border-white/10 hover:border-primary hover:bg-primary/10 text-white' : 'border-white/5 text-slate-600 bg-black/20 cursor-not-allowed opacity-50'}`}>
-                            <span className="font-bold text-sm">{size}</span>
-                            <span className="text-[9px] mt-1 opacity-60">{stock} PCS</span>
-                        </button>
-                    );
-                })}
-            </div>
-        </motion.div>
-    </div>
-);
-
-const CartContent = ({ cart, updateCartQuantity, handleCheckout, checkoutLoading, customerName, setCustomerName, customerContact, setCustomerContact, customerAddress, setCustomerAddress, shippingRegion, setShippingRegion, customerProvince, setCustomerProvince, customerCity, setCustomerCity, customerBarangay, setCustomerBarangay, provinceCode, setProvinceCode, cityCode, setCityCode, provincesList, citiesList, barangaysList, fulfillmentStatus, setFulfillmentStatus, paymentStatus, setPaymentStatus, paymentMode, setPaymentMode, showSuggestions, setShowSuggestions, customerSuggestions, handleSelectCustomer, isReseller }) => (
-    <div className="flex flex-col h-full bg-slate-900/50">
-        <div className="p-6 border-b border-white/5"><h2 className="text-lg font-bold text-white flex items-center gap-2"><ShoppingCart className="text-primary" size={20} /> Current Cart</h2></div>
-        <div className="flex-1 overflow-y-auto p-4 space-y-3">
-            {cart.map(item => (
-                <div key={item.cartId} className="bg-white/5 rounded-xl p-3 flex items-center gap-3 border border-white/5">
-                    <div className="w-12 h-12 rounded-lg bg-black/40 overflow-hidden shrink-0 ring-1 ring-white/5">{item.imageUrl ? <img src={item.imageUrl} className="w-full h-full object-cover" /> : <Package size={20} className="m-auto mt-3 opacity-20" />}</div>
-                    <div className="flex-1 min-w-0">
-                        <h4 className="font-medium text-slate-200 text-sm truncate">{item.name}</h4>
-                        <div className="flex gap-2 items-center mt-1">
-                            {item.size !== 'N/A' && <span className="text-[9px] bg-primary/20 text-primary px-1.5 py-0.5 rounded font-bold">{item.size}</span>}
-                            <span className="text-[10px] text-slate-400">₱{getCartUnitPrice(item)}/pc</span>
-                        </div>
-                    </div>
-                    <div className="flex items-center gap-2 bg-black/40 rounded-lg p-1 border border-white/5">
-                        <button onClick={() => updateCartQuantity(item.cartId, -1)} className="w-6 h-6 flex items-center justify-center hover:bg-white/10 rounded transition-colors">-</button>
-                        <span className="text-xs font-bold w-4 text-center">{item.quantity}</span>
-                        <button onClick={() => updateCartQuantity(item.cartId, 1)} className="w-6 h-6 flex items-center justify-center hover:bg-white/10 rounded transition-colors">+</button>
-                    </div>
-                    <button onClick={() => updateCartQuantity(item.cartId, -999)} className="text-red-400/60 hover:text-red-400 p-1 transition-colors"><Trash2 size={16} /></button>
-                </div>
-            ))}
-            {cart.length === 0 && <div className="text-center py-20 text-slate-600 flex flex-col items-center gap-3"><ShoppingCart size={40} className="opacity-20" /><p className="text-sm">Your cart is feeling lonely</p></div>}
-        </div>
-        <div className="p-6 border-t border-white/10 bg-black/40 space-y-6">
-            <div className="flex justify-between items-end border-b border-white/10 pb-4"><span className="text-slate-400 font-medium">Order Total</span><span className="text-2xl font-bold text-white">₱{cart.reduce((a, b) => a + (getCartUnitPrice(b) * b.quantity), 0).toLocaleString()}</span></div>
-            <div className="space-y-4">
-                <div className="flex items-center justify-between"><h3 className="text-[10px] font-bold text-slate-500 uppercase tracking-[0.2em]">Customer Profile</h3><button onClick={() => updateCartQuantity('clear')} className="text-[10px] text-red-400/60 hover:text-red-400 uppercase font-bold transition-colors">Clear Order</button></div>
-                <div className="grid grid-cols-2 gap-3">
-                    <div className="relative z-30">
-                        <input className="glass-input text-xs py-3" placeholder="Full Name" value={customerName} onChange={e => { setCustomerName(e.target.value); setShowSuggestions(true); }} onFocus={() => setShowSuggestions(true)} onBlur={() => setTimeout(() => setShowSuggestions(false), 200)} />
-                        {showSuggestions && customerSuggestions?.length > 0 && (
-                            <div className="absolute top-full left-0 w-full mt-1 bg-slate-800 border border-white/10 rounded-xl shadow-2xl overflow-hidden z-40">
-                                {customerSuggestions.map(c => <button key={c.id} onClick={() => handleSelectCustomer(c)} className="w-full text-left px-4 py-3 hover:bg-primary/20 hover:text-primary text-xs flex justify-between items-center transition-colors border-b border-white/5 last:border-0"><span className="font-semibold">{c.name}</span>{c.total_spent > 0 && <span className="opacity-60">₱{c.total_spent.toLocaleString()}</span>}</button>)}
-                            </div>
-                        )}
-                    </div>
-                    <input className="glass-input text-xs py-3" placeholder="Contact Number" value={customerContact} onChange={e => setCustomerContact(e.target.value)} />
-                </div>
-                <div className="flex gap-2">
-                    <button onClick={() => setShippingRegion('MM')} className={`flex-1 py-2 rounded-xl text-[10px] font-bold border transition-all ${shippingRegion === 'MM' ? 'bg-primary/10 border-primary text-primary' : 'bg-black/20 border-white/5 text-slate-500'}`}>METRO MANILA</button>
-                    <button onClick={() => setShippingRegion('Provincial')} className={`flex-1 py-2 rounded-xl text-[10px] font-bold border transition-all ${shippingRegion === 'Provincial' ? 'bg-amber-500/10 border-amber-500 text-amber-500' : 'bg-black/20 border-white/5 text-slate-500'}`}>PROVINCIAL</button>
-                </div>
-                <div className="grid grid-cols-2 gap-3">
-                    {shippingRegion === 'Provincial' && <select className="glass-input text-xs py-2 col-span-2" value={provinceCode} onChange={e => { setProvinceCode(e.target.value); setCustomerProvince(e.target.options[e.target.selectedIndex].text); }}><option value="" disabled>Select Province</option>{provincesList.map(p => <option key={p.code} value={p.code} className="bg-slate-900">{p.name}</option>)}</select>}
-                    <select className="glass-input text-xs py-2" value={cityCode} onChange={e => { setCityCode(e.target.value); setCustomerCity(e.target.options[e.target.selectedIndex].text); }} disabled={!citiesList.length}><option value="" disabled>City / Town</option>{citiesList.map(c => <option key={c.code} value={c.code} className="bg-slate-900">{c.name}</option>)}</select>
-                    <select className="glass-input text-xs py-2" value={customerBarangay} onChange={e => setCustomerBarangay(e.target.value)} disabled={!barangaysList.length}><option value="" disabled>Barangay</option>{barangaysList.map(b => <option key={b.code} value={b.name} className="bg-slate-900">{b.name}</option>)}</select>
-                </div>
-                <input className="glass-input text-xs py-3" placeholder="Street Address / Room / landmarks" value={customerAddress} onChange={e => setCustomerAddress(e.target.value)} />
-                <div className="grid grid-cols-2 gap-3 pt-2">
-                    <select className="glass-input text-[11px] py-3" value={paymentMode} onChange={e => setPaymentMode(e.target.value)}>{['Cash', 'Gcash', 'Bank Transfer', 'COD'].map(m => <option key={m} value={m} className="bg-slate-900">{m}</option>)}</select>
-                    <select aria-label="Payment status" disabled={isReseller} className="glass-input text-[11px] py-3 capitalize" value={paymentStatus} onChange={e => setPaymentStatus(e.target.value)}>{['unpaid', 'paid'].map(s => <option key={s} value={s} className="bg-slate-900">{s}</option>)}</select>
-                </div>
-                {!isReseller && <select className="glass-input text-[11px] py-3 capitalize" value={fulfillmentStatus} onChange={e => setFulfillmentStatus(e.target.value)}>{['pending', 'in_progress', 'ready', 'shipped'].map(s => <option key={s} value={s} className="bg-slate-900">{s.replace('_', ' ')}</option>)}</select>}
-            </div>
-            <button onClick={handleCheckout} disabled={checkoutLoading || cart.length === 0} className="w-full btn-primary py-4 text-sm font-bold shadow-[0_10px_30px_rgba(var(--primary-rgb),0.3)]">{checkoutLoading ? <Loader2 className="animate-spin m-auto" /> : 'CONFIRM ORDER'}</button>
-        </div>
-    </div>
-);
-
-const ArrowRightIcon = ({ className, size = 16 }) => (
-    <svg xmlns="http://www.w3.org/2000/svg" width={size} height={size} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" className={className}>
-        <path d="M5 12h14" />
-        <path d="m12 5 7 7-7 7" />
-    </svg>
-);

@@ -1,9 +1,9 @@
 import React, { useState, useEffect } from 'react';
 import { useToast } from '../ui/Toast';
 import { Plus, Loader2, X, Save } from 'lucide-react';
-import clsx from 'clsx';
 import { useActivityLog } from '../../hooks/useActivityLog';
 import { api } from '../../lib/apiClient';
+import { withLocalDate } from '../../lib/transactionDate';
 
 const DEFAULT_CATEGORIES = [
     'Rent',
@@ -180,68 +180,74 @@ export default function AddExpenseForm({ onAddTransaction, onUpdateTransaction, 
     };
 
     return (
-        <div className="bg-slate-900 border border-white/10 rounded-2xl max-w-lg w-full mx-auto shadow-2xl relative flex flex-col">
-            <div className="p-6 border-b border-white/10 flex justify-between items-center shrink-0">
-                <h2 className="text-xl font-bold text-white">{initialData ? 'Edit Expense' : 'Record Expense'}</h2>
+        <div className="mx-auto flex max-h-[92dvh] w-full max-w-lg flex-col overflow-hidden rounded-2xl border border-line bg-surface text-ink shadow-sheet">
+            <div className="flex shrink-0 items-start justify-between gap-3 border-b border-line px-5 py-4">
+                <h2 className="display text-2xl">{initialData ? 'Edit Expense' : 'Record Expense'}</h2>
                 <button
+                    type="button"
                     onClick={onClose}
-                    className="text-slate-400 hover:text-white transition-colors bg-white/5 p-2 rounded-lg hover:bg-white/10"
+                    className="icon-btn -mr-2 -mt-1"
+                    aria-label="Close"
                 >
-                    <X size={20} />
+                    <X size={22} aria-hidden="true" />
                 </button>
             </div>
 
-            <div className="p-6">
-                <form onSubmit={handleSubmit} className="space-y-4">
-                    <div className="space-y-2">
-                        <label className="text-sm text-slate-400">Assign To</label>
+            <form onSubmit={handleSubmit} className="flex min-h-0 flex-1 flex-col">
+                <div className="min-h-0 flex-1 space-y-4 overflow-y-auto p-5">
+                    <div>
+                        <label htmlFor="expense-owner" className="field-label">Assign To</label>
                         <select
+                            id="expense-owner"
                             value={owner}
                             onChange={(e) => setOwner(e.target.value)}
-                            className="glass-input appearance-none"
+                            className="field"
                         >
-                            <option value="business" className="bg-slate-900">SportsTech</option>
-                            <option value={CLUB_SLUG} className="bg-slate-900">Downtown Dinks</option>
+                            <option value="business">SportsTech</option>
+                            <option value={CLUB_SLUG}>Downtown Dinks</option>
                         </select>
                     </div>
 
-                    <div className="space-y-2">
-                        <label className="text-sm text-slate-400">Category</label>
+                    <div>
+                        <label htmlFor="expense-category" className="field-label">Category</label>
                         <select
+                            id="expense-category"
                             value={category}
                             disabled={isStockExpense}
                             onChange={(e) => setCategory(e.target.value)}
-                            className="glass-input appearance-none"
+                            className="field"
                         >
-                            {expenseCategories.map(c => <option key={c} value={c} className="bg-slate-900">{c}</option>)}
+                            {expenseCategories.map(c => <option key={c} value={c}>{c}</option>)}
                         </select>
-                        {isStockExpense && <p className="text-xs text-slate-400">Stock category and item details are preserved. This form edits the expense only.</p>}
+                        {isStockExpense && <p className="mt-1.5 text-xs text-ink-2">Stock category and item details are preserved. This form edits the expense only.</p>}
                     </div>
 
                     {(category === 'Other' || category === 'Marketing/Ads') && (
-                        <div className="space-y-2">
-                            <label className="text-sm text-slate-400">
+                        <div>
+                            <label htmlFor="expense-custom-category" className="field-label">
                                 {category === 'Marketing/Ads' ? 'Ad Platform' : 'Specify Category'}
                             </label>
                             <input
+                                id="expense-custom-category"
                                 type="text"
                                 value={customCategory}
                                 disabled={isStockExpense}
                                 onChange={(e) => setCustomCategory(e.target.value)}
-                                className="glass-input"
+                                className="field"
                                 placeholder={category === 'Marketing/Ads' ? 'e.g. Facebook, TikTok' : 'e.g. Office Supplies'}
                                 required
                             />
                         </div>
                     )}
 
-                    <div className="space-y-2">
-                        <label className="text-sm text-slate-400">Amount (₱)</label>
+                    <div>
+                        <label htmlFor="expense-amount" className="field-label">Amount (₱)</label>
                         <input
+                            id="expense-amount"
                             type="number"
                             value={amount}
                             onChange={(e) => setAmount(e.target.value)}
-                            className="glass-input"
+                            className="field num"
                             placeholder="0.00"
                             min="0"
                             step="0.01"
@@ -249,49 +255,53 @@ export default function AddExpenseForm({ onAddTransaction, onUpdateTransaction, 
                         />
                     </div>
 
-                    <div className="space-y-2">
-                        <label className="text-sm text-slate-400">Description (Optional)</label>
+                    <div>
+                        <label htmlFor="expense-description" className="field-label">Description (Optional)</label>
                         <input
+                            id="expense-description"
                             type="text"
                             value={description}
                             onChange={(e) => setDescription(e.target.value)}
-                            className="glass-input"
+                            className="field"
                             placeholder="Details..."
                         />
                     </div>
 
-                    <div className="space-y-2">
-                        <label className="text-sm text-slate-400">Date</label>
+                    <div>
+                        <label htmlFor="expense-date" className="field-label">Date</label>
                         <input
+                            id="expense-date"
                             type="date"
                             value={date}
                             onChange={(e) => setDate(e.target.value)}
-                            className="glass-input appearance-none w-full"
+                            className="field w-full"
                             required
                         />
                     </div>
 
-                    <div className="space-y-4 p-4 bg-white/5 rounded-xl border border-white/5">
-                        <div className="space-y-2">
-                            <label className="text-sm text-slate-400">Reimbursement Status</label>
+                    <div className="space-y-4 rounded-xl border border-line bg-raised p-4">
+                        <div>
+                            <label htmlFor="expense-reimbursement-status" className="field-label">Reimbursement Status</label>
                             <select
+                                id="expense-reimbursement-status"
                                 value={reimbursementStatus}
                                 onChange={(e) => setReimbursementStatus(e.target.value)}
-                                className="glass-input appearance-none"
+                                className="field"
                             >
-                                <option value="none" className="bg-slate-900">Not Reimbursed</option>
-                                <option value="partial" className="bg-slate-900">Partially Reimbursed</option>
-                                <option value="full" className="bg-slate-900">Fully Reimbursed</option>
+                                <option value="none">Not Reimbursed</option>
+                                <option value="partial">Partially Reimbursed</option>
+                                <option value="full">Fully Reimbursed</option>
                             </select>
                         </div>
                         {reimbursementStatus === 'partial' && (
-                            <div className="space-y-2">
-                                <label className="text-sm text-slate-400">Reimbursed Amount (₱)</label>
+                            <div>
+                                <label htmlFor="expense-reimbursed-amount" className="field-label">Reimbursed Amount (₱)</label>
                                 <input
+                                    id="expense-reimbursed-amount"
                                     type="number"
                                     value={reimbursedAmount}
                                     onChange={(e) => setReimbursedAmount(e.target.value)}
-                                    className="glass-input"
+                                    className="field num"
                                     placeholder="0.00"
                                     min="0"
                                     step="0.01"
@@ -300,21 +310,19 @@ export default function AddExpenseForm({ onAddTransaction, onUpdateTransaction, 
                             </div>
                         )}
                     </div>
+                </div>
 
-                    <div className="pt-2">
-                        <button
-                            type="submit"
-                            disabled={loading}
-                            className="btn-primary w-full py-3 shadow-lg shadow-indigo-500/20"
-                        >
-                            {loading ? <Loader2 className="animate-spin" /> : (initialData ? <Save size={18} /> : <Plus size={18} />)}
-                            {loading ? 'Saving...' : (initialData ? 'Update Expense' : 'Record Expense')}
-                        </button>
-                    </div>
-
-                </form >
-            </div >
-        </div >
+                <div className="shrink-0 border-t border-line bg-surface px-5 pt-4 pb-[max(1rem,env(safe-area-inset-bottom))]">
+                    <button
+                        type="submit"
+                        disabled={loading}
+                        className="btn-primary w-full"
+                    >
+                        {loading ? <Loader2 className="animate-spin" aria-hidden="true" /> : (initialData ? <Save size={18} aria-hidden="true" /> : <Plus size={18} aria-hidden="true" />)}
+                        {loading ? 'Saving...' : (initialData ? 'Update Expense' : 'Record Expense')}
+                    </button>
+                </div>
+            </form>
+        </div>
     );
 }
-import { withLocalDate } from '../../lib/transactionDate';
