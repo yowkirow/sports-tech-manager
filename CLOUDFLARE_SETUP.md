@@ -15,9 +15,11 @@ authenticated Wrangler profile or your secret manager; never commit tokens,
 `wrangler.staging.jsonc` targets only `sportstech-staging`. The D1 binding is a
 separate database, not a link to any existing app's database.
 `wrangler.production.jsonc` prepares a separate production Worker, D1 database
-and R2 bucket. It deliberately has no routes, no `workers.dev` endpoint, no preview
-URLs, no Access audience, no writes and no enabled printing. Deploying it is
-preparation only: it cannot replace the current live store.
+and R2 bucket. Until cutover it has no committed routes, no `workers.dev`
+endpoint, no preview URLs, no writes and no enabled printing; it does carry the
+production Access audience. Deploying it is preparation only and cannot replace the
+current live store. (Before cutover, only the probe routes `/health` and
+`/api/session` on `www` reach it; see the cutover checklist.)
 
 ```powershell
 npm run check:worker
@@ -69,7 +71,7 @@ npm run deploy:production
 ```
 
 Production provisioning and schema application do not constitute a migration.
-Before adding any route, configure a distinct production Access audience and
+Before adding the full routes, configure a distinct production Access audience and
 the approved individual memberships, install a production-only guest/settings
 secret, disable the bucket's public development URL, reconcile the final
 write-frozen data/file copy and complete the cutover checklist below.
@@ -278,25 +280,39 @@ afterward. Production D1 itself still contains only the owner.
 
 ### 1. Before the cutover window (no customer-visible change)
 
-1. **Hostinger nameservers.** DNSSEC is off and the pending Cloudflare zone already
-   answers with the same apex `A` and `www` `CNAME` as Hostinger, both DNS-only.
-   Replace `ns1/ns2.dns-parking.com` with `salvador.ns.cloudflare.com` and
-   `shaz.ns.cloudflare.com`. The site keeps serving from Vercel. Cloudflare deletes
-   Free zones left pending for 28 days; this zone was created September 16, 2026,
-   so switch before about **October 14** or the zone must be added again.
-   Wait for the zone to become **Active** and confirm `www` still serves Vercel.
-2. **Production Access.** Create **one** self-hosted Access application whose
-   destinations are `www.sportstechph.store/admin` and `www.sportstechph.store/print`,
-   with the saved **SportsTech owner** policy. One application yields one audience
-   (the Worker accepts exactly one); never protect `/`, `/track`, or `/api/public`.
-   Put its AUD in `ACCESS_AUDIENCE` in `wrangler.production.jsonc`. The Worker also
-   verifies the signed cookie on private `/api/*` calls.
-3. **Accounts.** Production launches with only the approved owner. The four legacy
+Completed October 5, 2026:
+
+1. **Nameservers.** Hostinger now delegates to `salvador`/`shaz.ns.cloudflare.com`;
+   the zone became **Active** at 14:56 PHT (DNSSEC off, no mail records). Hostinger
+   can no longer edit its old copy but still answers it, so resolvers that cached
+   the old 24-hour nameserver records keep reaching Vercel directly until they
+   expire (~15:00 PHT October 6). Wait for that before freezing, otherwise those
+   visitors would see the frozen old store.
+2. **Proxy and TLS.** The apex `A` and `www` `CNAME` still target Vercel but are
+   **Proxied**; the universal edge certificate is active, encryption is
+   **Full (strict)** and **Always Use HTTPS** is on. The live store is unchanged
+   (same Vercel bundle; the bare domain still redirects to `www`).
+3. **Production Access.** Application **SportsTech production**
+   (`bbbd8f96-a2b4-4d8d-a213-b61af9670f40`) protects exactly
+   `www.sportstechph.store/admin` and `/print` with the **SportsTech owner**
+   policy, a 24-hour session, an HttpOnly cookie and no path-scoped cookie (so the
+   signed cookie also reaches `/api/*`). Its AUD is in `wrangler.production.jsonc`.
+   The dashboard form silently dropped the subdomain and paths once; always verify
+   the saved destinations before relying on them. Until cutover, Access also asks
+   for the owner code before the old Vercel `/admin`.
+4. **Route permission probe.** The production Worker already serves only
+   `www.sportstechph.store/health` and `/api/session`; everything else still reaches
+   Vercel. This proves the CLI can attach routes, so the cutover needs no DNS edits.
+5. **Accounts.** Production launches with only the approved owner. The four legacy
    logins (two admins, one reseller, one staff) stay archived, not enabled; none
    has signed in since June 2026. Add any of them later only by explicit decision.
-4. Optionally re-run `sync-media.mjs` so only new files remain for the window.
+
+Optionally re-run `sync-media.mjs` first so only new files remain for the window.
 
 ### 2. Cutover window
+
+Confirm first that public resolvers (including OpenDNS `208.67.222.222`) return the
+Cloudflare nameservers for `sportstechph.store`.
 
 ```powershell
 $W = "$P\cutover-YYYYMMDD"
@@ -314,23 +330,22 @@ not frozen; anything changed there after the export is not migrated.
 
 Then route traffic to the Worker:
 
-1. In `wrangler.production.jsonc`, set `MUTATIONS_ENABLED` to `"true"` and add the
+1. In `wrangler.production.jsonc`, set `MUTATIONS_ENABLED` to `"true"` and set the
    routes `www.sportstechph.store/*` and `sportstechph.store/*` (zone
-   `sportstechph.store`). Run `npm run deploy:production`.
-2. In Cloudflare DNS, switch the apex and `www` records to **Proxied**. Requests
-   now reach the Worker; the bare domain redirects to `www`.
-3. Sign in at `/admin` and confirm the owner session, order history, catalog,
-   order tracking and product images. `/health` must report the deployed version.
-4. Merge the branch to `main` only **after** DNS serves the Worker: `vercel.json`
-   then permanently redirects `sports-tech-manager.vercel.app` to
+   `sportstechph.store`). Run `npm run deploy:production`. The proxied records now
+   deliver every request to the Worker; the bare domain redirects to `www`.
+2. Confirm `/health` reports the deployed version, then the storefront, catalog,
+   product images and order tracking. Sign in at `/admin` (the owner enters the
+   emailed Access code) and confirm the owner session and order history.
+3. Merge the branch to `main` only **after** the Worker serves the domain:
+   `vercel.json` then permanently redirects `sports-tech-manager.vercel.app` to
    `www.sportstechph.store`. Merging earlier would serve the new frontend on Vercel
    without its APIs.
 
 ### 3. Rollback
 
-- **Before production accepts writes:** remove the routes (deploy with
-  `routes: []`), set the DNS records back to DNS-only, and reopen the old database
-  exactly with
+- **Before production accepts writes:** redeploy with no routes (traffic returns
+  to Vercel through the proxy) and reopen the old database exactly with
   `source-freeze.mjs --mode=unfreeze --snapshot=<saved snapshot> --confirm=unfreeze-sportstech-source`.
 - **After production accepts writes:** switch `MUTATIONS_ENABLED` back to `"false"`
   first. Orders taken on Cloudflare must be copied back into Supabase and
