@@ -11,4 +11,6 @@ export interface AppEnv extends AccessConfiguration {
     SMS_DEVICE_ID?: string;
     PRINT_QUEUE_ENABLED?: string;
     MUTATIONS_ENABLED?: string;
+    CANONICAL_HOST?: string;
+    REDIRECT_HOSTS?: string;
 }

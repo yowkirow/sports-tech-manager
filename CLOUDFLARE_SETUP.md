@@ -253,38 +253,98 @@ release work, approve QA, change quantities on orders, mark payments or ship ord
 
 ## Protected import and production cutover
 
-`scripts/prepare-migration.mjs` validates the source export, exact decimals, all
-source columns and verified file mappings against the complete D1 schema before
-writing an import file. Run it only with restricted files outside the repository:
+Every cutover command writes customer data, keys and file bytes only to a private
+directory outside the repository; the tools refuse paths inside the Git worktree.
+`$P` below is that restricted directory (it must already contain
+`production-worker-secrets.json`). Production resources already exist; never
+recreate them or reuse the staging Access audience or secret.
+
+| Tool | Purpose |
+| --- | --- |
+| `scripts\cutover\source-freeze.mjs` | Reversibly removes every browser-role write grant on the old Supabase database while leaving reads intact. `status`, forced-rollback `rehearse`, `freeze`, and exact `unfreeze` from the saved grant snapshot. |
+| `scripts\cutover\export-source.mjs` | One consistent source export plus SMS settings encrypted directly with the production key (plaintext never written). `--require-frozen=true` refuses an export unless the freeze holds before and after it. |
+| `scripts\cutover\sync-media.mjs` | Copies source files into the production bucket, reusing cached copies only when their size and source checksum match, verifies every upload by SHA-256 round trip, and records referenced files the source confirms are already missing. |
+| `scripts\prepare-migration.mjs` | Builds the import and rehearses it against the full D1 schema locally. |
+| `scripts\cutover\load-target.mjs` | Imports only into a migrated database containing just the approved owner, then exports the remote database and reconciles every migrated column exactly. Refuses a second import. |
+
+The October 5, 2026 rehearsal used a fresh live export (1,638 transactions,
+361 orders, 131 files): all 131 files are now in `sportstech-production-media`
+and passed SHA-256 round trips; the temporary database reconciled exactly,
+rejected a duplicate import, decrypted SMS settings only with the production key,
+and produced the same 51-product/94-stock-key catalog as the full history. The
+freeze was rehearsed live inside a forced-rollback transaction: browser writes
+dropped to zero while all reads remained, and the original grants were unchanged
+afterward. Production D1 itself still contains only the owner.
+
+### 1. Before the cutover window (no customer-visible change)
+
+1. **Hostinger nameservers.** DNSSEC is off and the pending Cloudflare zone already
+   answers with the same apex `A` and `www` `CNAME` as Hostinger, both DNS-only.
+   Replace `ns1/ns2.dns-parking.com` with `salvador.ns.cloudflare.com` and
+   `shaz.ns.cloudflare.com`. The site keeps serving from Vercel. Cloudflare deletes
+   Free zones left pending for 28 days; this zone was created September 16, 2026,
+   so switch before about **October 14** or the zone must be added again.
+   Wait for the zone to become **Active** and confirm `www` still serves Vercel.
+2. **Production Access.** Create **one** self-hosted Access application whose
+   destinations are `www.sportstechph.store/admin` and `www.sportstechph.store/print`,
+   with the saved **SportsTech owner** policy. One application yields one audience
+   (the Worker accepts exactly one); never protect `/`, `/track`, or `/api/public`.
+   Put its AUD in `ACCESS_AUDIENCE` in `wrangler.production.jsonc`. The Worker also
+   verifies the signed cookie on private `/api/*` calls.
+3. **Accounts.** Production launches with only the approved owner. The four legacy
+   logins (two admins, one reseller, one staff) stay archived, not enabled; none
+   has signed in since June 2026. Add any of them later only by explicit decision.
+4. Optionally re-run `sync-media.mjs` so only new files remain for the window.
+
+### 2. Cutover window
 
 ```powershell
-node scripts\prepare-migration.mjs --source=C:\private\baseline.json --media=C:\private\media-manifest.json --sms=C:\private\sms-settings-encrypted.json --output=C:\private\import.sql
+$W = "$P\cutover-YYYYMMDD"
+node scripts\cutover\source-freeze.mjs --mode=rehearse --work-dir=$W\work
+node scripts\cutover\source-freeze.mjs --mode=freeze --work-dir=$W\work --confirm=freeze-sportstech-source
+node scripts\cutover\export-source.mjs --out-dir=$W --work-dir=$W\work --settings-secret-file=$P\production-worker-secrets.json --require-frozen=true
+node scripts\cutover\sync-media.mjs --export=$W\source-export.json --cache-dir=$P\storage-objects --config=wrangler.production.jsonc --manifest=$P\production-media-manifest.json --missing=$W\missing-media.json
+node scripts\prepare-migration.mjs --source=$W\source-export.json --media=$P\production-media-manifest.json --sms=$W\sms-settings-encrypted.json --missing-media=$W\missing-media.json --output=$W\import.sql
+node scripts\cutover\load-target.mjs --config=wrangler.production.jsonc --import=$W\import.sql --work-dir=$W\work --owner-email=jerrosyap05@gmail.com --confirm=load-sportstech-production
 ```
 
-An optional `--missing-media=C:\private\missing-media.json` file may describe
-references individually verified as already missing from the source. Those
-references remain explicit 404s; they must not be reported as successfully copied.
-The original records remain in `migration_archive`. Use `--validate-only=true`
-to repeat the local restore rehearsal without writing another import.
+From the freeze onward the old site is read-only: browsing still works, but its
+checkout and admin saves fail. Supabase Storage uploads and auth-profile edits are
+not frozen; anything changed there after the export is not migrated.
 
-Before cutover, use separate production D1/R2 bindings, a production Access
-application for protected UI paths (not the public storefront), and fresh,
-appropriately protected Worker secrets. The Worker also verifies signed Access
-cookies on private APIs; hidden navigation is not an authorization boundary.
-Re-encrypt imported SMS settings with the target environment's settings key.
-Do not reuse staging guest-signing secrets in production or copy encrypted
-settings while changing their key without a verified re-encryption step.
-Preserve existing owner/reseller/staff attribution in archives and review legacy
-login grants rather than promoting every historical account to owner.
+Then route traffic to the Worker:
 
-Freeze source writes at the database, take and reconcile a final consistent
-export, copy new files, validate production privately, and then switch web routing.
-Only one backend may accept live financial writes. Preserve Hostinger registration
-and all applicable DNS/mail records. Do not change nameservers until the confirmed
-Cloudflare zone contains verified records. Keep the old database and a rollback
-procedure: after the new backend accepts writes, reverting requires another
-freeze and reconciliation, not merely changing DNS.
+1. In `wrangler.production.jsonc`, set `MUTATIONS_ENABLED` to `"true"` and add the
+   routes `www.sportstechph.store/*` and `sportstechph.store/*` (zone
+   `sportstechph.store`). Run `npm run deploy:production`.
+2. In Cloudflare DNS, switch the apex and `www` records to **Proxied**. Requests
+   now reach the Worker; the bare domain redirects to `www`.
+3. Sign in at `/admin` and confirm the owner session, order history, catalog,
+   order tracking and product images. `/health` must report the deployed version.
+4. Merge the branch to `main` only **after** DNS serves the Worker: `vercel.json`
+   then permanently redirects `sports-tech-manager.vercel.app` to
+   `www.sportstechph.store`. Merging earlier would serve the new frontend on Vercel
+   without its APIs.
 
-Do not cancel paid source services, delete projects, or destroy backups without
-explicit approval after a verified cutover. The initial staging snapshot is not
-the final write-frozen production export.
+### 3. Rollback
+
+- **Before production accepts writes:** remove the routes (deploy with
+  `routes: []`), set the DNS records back to DNS-only, and reopen the old database
+  exactly with
+  `source-freeze.mjs --mode=unfreeze --snapshot=<saved snapshot> --confirm=unfreeze-sportstech-source`.
+- **After production accepts writes:** switch `MUTATIONS_ENABLED` back to `"false"`
+  first. Orders taken on Cloudflare must be copied back into Supabase and
+  reconciled before unfreezing it; changing DNS alone would lose them. This
+  reverse copy is manual and not automated.
+
+Only one backend may accept live financial writes. Keep the frozen Supabase
+project, the Vercel project and every private export. Do not cancel paid source
+services, delete projects, or destroy backups without explicit approval after a
+verified cutover.
+
+### 4. Employee printing (after a stable cutover)
+
+Add the employee's exact email as a second policy on the same Access application,
+prepare their account under Production > Employee accounts, then set `PRINT_QUEUE_ENABLED` to
+`"true"` and build with `VITE_PRINT_QUEUE_ENABLED=true` in the same release. Start
+with a practice job before releasing real work.

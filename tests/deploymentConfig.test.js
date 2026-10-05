@@ -30,6 +30,9 @@ test('pre-cutover production has isolated data, no public routing and no employe
     assert.equal(production.d1_databases[0].database_name, 'sportstech-production');
     assert.equal(production.r2_buckets[0].bucket_name, 'sportstech-production-media');
     assert.equal(Object.hasOwn(production.vars, 'GUEST_TOKEN_SECRET'), false);
+    assert.equal(production.vars.CANONICAL_HOST, 'www.sportstechph.store');
+    assert.equal(production.vars.REDIRECT_HOSTS, 'sportstechph.store');
+    assert.equal(Object.hasOwn(staging.vars, 'CANONICAL_HOST'), false);
 });
 
 test('production deploy rebuilds non-staging assets and migrations target only production', () => {

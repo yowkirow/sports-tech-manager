@@ -47,3 +47,9 @@ non-staging assets before upload. Do not build/deploy staging and production
 concurrently because they share `dist`. Preparing an unrouted production Worker
 does not authorize a live cutover; production Access, account approval, the
 write-frozen final import, reconciliation and rollback gates still apply.
+
+The cutover tools in `scripts\cutover` write only to private directories outside
+the repository. `freeze`, `unfreeze` and `load-target` require explicit `--confirm`
+values. Freeze the live source only inside a cutover window where production Access,
+the final import and DNS routing can follow immediately; a freeze makes the old
+store read-only. Rehearsals must stay rollback-only or use temporary resources.

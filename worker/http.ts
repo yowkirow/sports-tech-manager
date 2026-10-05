@@ -58,6 +58,21 @@ export function sameOriginMutation(request: Request): void {
     }
 }
 
+// Alternate hostnames (for example the bare domain) permanently move to the one
+// canonical storefront host, keeping the path and query. Unlisted hosts are untouched.
+export function canonicalRedirect(request: Request, canonicalHost?: string, redirectHosts?: string): Response | null {
+    if (!canonicalHost || !redirectHosts) return null;
+    if (!/^[a-z0-9](?:[a-z0-9.-]*[a-z0-9])?$/.test(canonicalHost)) return null;
+    const url = new URL(request.url);
+    const hosts = redirectHosts.split(',').map(host => host.trim().toLowerCase()).filter(Boolean);
+    if (!hosts.includes(url.hostname.toLowerCase()) || url.hostname.toLowerCase() === canonicalHost) return null;
+    const location = new URL(`${url.pathname}${url.search}`, `https://${canonicalHost}`).href;
+    return new Response(null, {
+        status: ['GET', 'HEAD'].includes(request.method) ? 301 : 308,
+        headers: { Location: location, 'Cache-Control': 'public, max-age=3600' }
+    });
+}
+
 export function isObject(value: unknown): value is Record<string, unknown> {
     return value !== null && typeof value === 'object' && !Array.isArray(value);
 }

@@ -1,7 +1,7 @@
 import { findMember, verifyAccessIdentity } from './auth.ts';
 import { HttpError } from './errors.ts';
 import type { AppEnv } from './env.ts';
-import { json, sameOriginMutation } from './http.ts';
+import { canonicalRedirect, json, sameOriginMutation } from './http.ts';
 import { OrderStoreError } from './order-store.ts';
 import { handleBusinessRequest } from './business-api.ts';
 import { handlePublicRequest } from './public-api.ts';
@@ -17,6 +17,8 @@ export default {
             if (!['staging', 'production'].includes(env.ENVIRONMENT)) {
                 throw new HttpError(503, 'environment_not_ready', 'This deployment is not configured.');
             }
+            const redirect = canonicalRedirect(request, env.CANONICAL_HOST, env.REDIRECT_HOSTS);
+            if (redirect) return redirect;
             const path = new URL(request.url).pathname;
             sameOriginMutation(request);
             const readOnlyPost = request.method === 'POST' && path === '/api/public/track';

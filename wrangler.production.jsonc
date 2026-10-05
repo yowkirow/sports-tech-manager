@@ -15,7 +15,9 @@
     "ACCESS_TEAM_DOMAIN": "jolly-fog-e8df.cloudflareaccess.com",
     "ACCESS_AUDIENCE": "",
     "PRINT_QUEUE_ENABLED": "false",
-    "MUTATIONS_ENABLED": "false"
+    "MUTATIONS_ENABLED": "false",
+    "CANONICAL_HOST": "www.sportstechph.store",
+    "REDIRECT_HOSTS": "sportstechph.store"
   },
   "assets": {
     "directory": "./dist",
