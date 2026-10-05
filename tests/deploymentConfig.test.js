@@ -23,7 +23,9 @@ test('pre-cutover production has isolated data, no public routing and no employe
     assert.equal(production.workers_dev, false);
     assert.deepEqual(production.routes, []);
     assert.equal(production.vars.PRINT_QUEUE_ENABLED, 'false');
-    assert.equal(production.vars.ACCESS_AUDIENCE, '');
+    // The production Access application (/admin and /print) has its own audience.
+    assert.match(production.vars.ACCESS_AUDIENCE, /^[a-f0-9]{64}$/);
+    assert.equal(production.vars.ACCESS_TEAM_DOMAIN, staging.vars.ACCESS_TEAM_DOMAIN);
     assert.notEqual(production.vars.ACCESS_AUDIENCE, staging.vars.ACCESS_AUDIENCE);
     assert.notEqual(production.d1_databases[0].database_id, staging.d1_databases[0].database_id);
     assert.notEqual(production.r2_buckets[0].bucket_name, staging.r2_buckets[0].bucket_name);
