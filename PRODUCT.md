@@ -20,7 +20,8 @@ web
   and desktop.
 - **Resellers**: sell at fixed ₱400 pricing; may edit only their own unpaid pending orders.
 - **One print employee**: uses `/print` on a phone and must see only owner-released print jobs, with no
-  customer or financial data.
+  customer or financial data, plus their own shirt counter and pay wallet (₱1,000 per complete 30
+  owner-accepted shirts; the owner records payouts).
 
 ## Product Purpose
 

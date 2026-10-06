@@ -272,6 +272,7 @@ The form language is blunt athletic retail: rounded enough to be touchable, neve
 ### Production / Print Queue
 - **Style:** Large Barlow Condensed job references lead each card. Counts sit in divided cells with tabular figures.
 - **Targets:** Print actions use at least 48px height, and mobile production actions expand to a two-column grid with the final action spanning full width.
+- **Wallet:** The employee's compact "My shirts" panel sits above the job list: a condensed `progress/30` figure (denominator in Quiet Ink) with Balance due set beside it, a 10px Main Ink progress bar on Raised Charcoal (`role="progressbar"`, never red), then a label-over-value stats grid. Owner rows repeat the counts in the same grid; payouts use the shared dialog with an explicit "I have paid" confirmation.
 
 ## Do's and Don'ts
 
