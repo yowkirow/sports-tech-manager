@@ -3,6 +3,7 @@ import { Ticket, Plus, Trash2, Tag, Percent, DollarSign, Save, X, ToggleLeft, To
 import clsx from 'clsx';
 import { useToast } from '../ui/Toast';
 import { getVoucherUsage } from '../../lib/voucherUsage';
+import { useReadOnly, READ_ONLY_HINT } from '../ui/ReadOnly';
 
 const formatDiscount = (voucher) => `${voucher.discountType === 'fixed' ? '₱' : ''}${voucher.value}${voucher.discountType === 'percent' ? '%' : ''}`;
 
@@ -11,6 +12,7 @@ export default function VoucherManager({ transactions, onAddTransaction, onUpdat
     const [showAddModal, setShowAddModal] = useState(false);
     const [searchTerm, setSearchTerm] = useState('');
     const [saving, setSaving] = useState(false);
+    const readOnly = useReadOnly();
 
     const vouchers = useMemo(() => {
         const usage = getVoucherUsage(transactions);
@@ -82,7 +84,8 @@ export default function VoucherManager({ transactions, onAddTransaction, onUpdat
             <button
                 type="button"
                 onClick={() => toggleStatus(voucher)}
-                disabled={saving}
+                disabled={readOnly || saving}
+                title={readOnly ? READ_ONLY_HINT : undefined}
                 aria-label={`${voucher.active ? 'Deactivate' : 'Activate'} voucher ${voucher.code}`}
                 aria-pressed={voucher.active}
                 className={clsx('chip h-10', voucher.active && 'chip-active')}
@@ -93,7 +96,8 @@ export default function VoucherManager({ transactions, onAddTransaction, onUpdat
             <button
                 type="button"
                 onClick={() => handleDelete(voucher.id)}
-                disabled={saving}
+                disabled={readOnly || saving}
+                title={readOnly ? READ_ONLY_HINT : undefined}
                 aria-label={`Delete voucher ${voucher.code}`}
                 className="icon-btn hover:text-red-300"
             >
@@ -114,6 +118,8 @@ export default function VoucherManager({ transactions, onAddTransaction, onUpdat
                 <button
                     type="button"
                     onClick={() => setShowAddModal(true)}
+                    disabled={readOnly}
+                    title={readOnly ? READ_ONLY_HINT : undefined}
                     className="btn-primary w-full sm:w-auto"
                 >
                     <Plus size={18} aria-hidden="true" /> Create Voucher
@@ -268,6 +274,7 @@ export default function VoucherManager({ transactions, onAddTransaction, onUpdat
 
 function AddVoucherModal({ onClose, onSave }) {
     const { showToast } = useToast();
+    const readOnly = useReadOnly();
     const [saving, setSaving] = useState(false);
     const [code, setCode] = useState('');
     const [type, setType] = useState('percent');
@@ -306,7 +313,8 @@ function AddVoucherModal({ onClose, onSave }) {
                 </div>
 
                 <form onSubmit={handleSubmit} className="flex min-h-0 flex-1 flex-col">
-                    <div className="min-h-0 flex-1 space-y-4 overflow-y-auto p-5">
+                    <fieldset disabled={readOnly} className="min-w-0 border-0 p-0 m-0 min-h-0 flex-1 overflow-y-auto">
+                        <div className="space-y-4 p-5">
                         <div>
                             <label htmlFor="voucher-code" className="field-label">Voucher Code</label>
                             <div className="relative">
@@ -380,10 +388,11 @@ function AddVoucherModal({ onClose, onSave }) {
                                 />
                             </div>
                         </div>
-                    </div>
+                        </div>
+                    </fieldset>
 
                     <div className="shrink-0 border-t border-line bg-surface px-5 pt-4 pb-[max(1rem,env(safe-area-inset-bottom))]">
-                        <button type="submit" disabled={saving} className="btn-primary w-full">
+                        <button type="submit" disabled={readOnly || saving} title={readOnly ? READ_ONLY_HINT : undefined} className="btn-primary w-full">
                             <Save size={18} aria-hidden="true" /> {saving ? 'Saving...' : 'Save Voucher'}
                         </button>
                     </div>

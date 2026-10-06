@@ -1,8 +1,10 @@
 import React, { useState, useEffect } from 'react';
 import { apiRequest } from '../../lib/apiClient';
 import { Loader2, RefreshCw, Clock, User, Activity } from 'lucide-react';
+import { useReadOnly } from '../ui/ReadOnly';
 
 export default function ActivityLogViewer({ user, userRole }) {
+    const readOnly = useReadOnly();
     const [logs, setLogs] = useState([]);
     const [loading, setLoading] = useState(true);
     const [adminMap, setAdminMap] = useState({});

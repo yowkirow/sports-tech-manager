@@ -2,6 +2,7 @@ import React, { useState } from 'react';
 import { Trash2 } from 'lucide-react';
 import clsx from 'clsx';
 import { isReturnedSale } from '../lib/transactionStatus';
+import { READ_ONLY_HINT } from './ui/ReadOnly';
 
 const formatPeso = (amount) => `₱${Math.abs(amount).toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`;
 
@@ -21,7 +22,7 @@ const FILTERS = [
     { id: 'daily', label: 'Today' },
 ];
 
-const DashboardStats = ({ transactions, onDeleteAll }) => {
+const DashboardStats = ({ transactions, onDeleteAll, readOnly = false }) => {
     const [filter, setFilter] = useState('all'); // all, daily, monthly, yearly
 
     const getFilteredTransactions = () => {
@@ -66,7 +67,8 @@ const DashboardStats = ({ transactions, onDeleteAll }) => {
                     ))}
                 </div>
                 {onDeleteAll && (
-                    <button type="button" onClick={onDeleteAll} className="btn-danger min-h-10 px-4 text-sm" title="Delete all transactions">
+                    <button type="button" onClick={onDeleteAll} disabled={readOnly} className="btn-danger min-h-10 px-4 text-sm"
+                        title={readOnly ? READ_ONLY_HINT : 'Delete all transactions'}>
                         <Trash2 size={15} aria-hidden="true" />
                         Reset Data
                     </button>

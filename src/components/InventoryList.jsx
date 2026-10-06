@@ -3,11 +3,13 @@ import { useMemo, useState } from 'react';
 import clsx from 'clsx';
 import { useToast } from './ui/Toast';
 import { getInventoryRows } from '../lib/inventory.js';
+import { useReadOnly, READ_ONLY_HINT } from './ui/ReadOnly';
 
 const InventoryList = ({ transactions, onAddTransaction, onDeleteTransaction, onOpenAddStock }) => {
     const [searchTerm, setSearchTerm] = useState('');
     const [exporting, setExporting] = useState(false);
     const { showToast } = useToast();
+    const readOnly = useReadOnly();
 
     // Calculate inventory
     const inventoryItems = useMemo(() => getInventoryRows(transactions), [transactions]);
@@ -104,6 +106,8 @@ const InventoryList = ({ transactions, onAddTransaction, onDeleteTransaction, on
                                     console.log('Add Stock Clicked');
                                     onOpenAddStock();
                                 }}
+                                disabled={readOnly}
+                                title={readOnly ? READ_ONLY_HINT : undefined}
                                 className="btn-primary whitespace-nowrap"
                             >
                                 <Plus size={16} aria-hidden="true" /> Add Stock
@@ -145,8 +149,9 @@ const InventoryList = ({ transactions, onAddTransaction, onDeleteTransaction, on
                                         <button
                                             type="button"
                                             onClick={() => handleDeleteItem(item)}
+                                            disabled={readOnly}
                                             className="icon-btn -mr-2 -mt-1"
-                                            title="Delete all history for this item"
+                                            title={readOnly ? READ_ONLY_HINT : 'Delete all history for this item'}
                                             aria-label={`Delete all history for ${item.name} ${item.variant}`}
                                         >
                                             <X size={18} aria-hidden="true" />
@@ -182,8 +187,9 @@ const InventoryList = ({ transactions, onAddTransaction, onDeleteTransaction, on
                                                 <button
                                                     type="button"
                                                     onClick={() => handleDeleteItem(item)}
+                                                    disabled={readOnly}
                                                     className="icon-btn ml-auto"
-                                                    title="Delete all history for this item"
+                                                    title={readOnly ? READ_ONLY_HINT : 'Delete all history for this item'}
                                                     aria-label={`Delete all history for ${item.name} ${item.variant}`}
                                                 >
                                                     <X size={18} aria-hidden="true" />

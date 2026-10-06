@@ -3,6 +3,7 @@ import { Search, Trash2, Calendar, Plus, User, Edit2, Check } from 'lucide-react
 import clsx from 'clsx';
 import { createPortal } from 'react-dom';
 import AddExpenseForm from './Expenses/AddExpenseForm';
+import { useReadOnly, READ_ONLY_HINT } from './ui/ReadOnly';
 
 const CLUB_SLUG = 'downtown-dinks';
 
@@ -19,6 +20,7 @@ const Expenses = ({ transactions, onDeleteTransaction, onAddTransaction, onUpdat
     const [filterCategory, setFilterCategory] = useState('all');
     const [showAddModal, setShowAddModal] = useState(false);
     const [editingTransaction, setEditingTransaction] = useState(null);
+    const readOnly = useReadOnly();
 
     // Filter only expense transactions
     const expenses = useMemo(() => {
@@ -109,11 +111,12 @@ const Expenses = ({ transactions, onDeleteTransaction, onAddTransaction, onUpdat
             <button
                 type="button"
                 onClick={() => toggleReimbursed(transaction)}
+                disabled={readOnly}
                 className={clsx(
                     "icon-btn",
                     isFullyReimbursed(transaction) ? "text-emerald-300" : "text-ink-2"
                 )}
-                title={isFullyReimbursed(transaction) ? "Unmark Reimbursed" : "Mark as Fully Reimbursed"}
+                title={readOnly ? READ_ONLY_HINT : (isFullyReimbursed(transaction) ? "Unmark Reimbursed" : "Mark as Fully Reimbursed")}
                 aria-label={isFullyReimbursed(transaction) ? "Unmark Reimbursed" : "Mark as Fully Reimbursed"}
             >
                 <Check size={16} aria-hidden="true" />
@@ -124,8 +127,9 @@ const Expenses = ({ transactions, onDeleteTransaction, onAddTransaction, onUpdat
                     setEditingTransaction(transaction);
                     setShowAddModal(true);
                 }}
+                disabled={readOnly}
                 className="icon-btn"
-                title="Edit"
+                title={readOnly ? READ_ONLY_HINT : 'Edit'}
                 aria-label="Edit"
             >
                 <Edit2 size={16} aria-hidden="true" />
@@ -133,8 +137,9 @@ const Expenses = ({ transactions, onDeleteTransaction, onAddTransaction, onUpdat
             <button
                 type="button"
                 onClick={() => onDeleteTransaction(transaction.id)}
+                disabled={readOnly}
                 className="icon-btn hover:text-red-300"
-                title="Delete"
+                title={readOnly ? READ_ONLY_HINT : 'Delete'}
                 aria-label="Delete"
             >
                 <Trash2 size={16} aria-hidden="true" />
@@ -169,6 +174,8 @@ const Expenses = ({ transactions, onDeleteTransaction, onAddTransaction, onUpdat
                         <button
                             type="button"
                             onClick={() => { setEditingTransaction(null); setShowAddModal(true); }}
+                            disabled={readOnly}
+                            title={readOnly ? READ_ONLY_HINT : undefined}
                             className="btn-primary w-full whitespace-nowrap sm:w-auto"
                         >
                             <Plus size={16} aria-hidden="true" /> Add Expense

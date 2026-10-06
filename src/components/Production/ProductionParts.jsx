@@ -1,6 +1,7 @@
 import React from 'react';
 import { AlertCircle, CheckCircle2, RefreshCw } from 'lucide-react';
 import { productionStatus } from '../../lib/production.js';
+import { useReadOnly, READ_ONLY_HINT } from '../ui/ReadOnly';
 
 export function ProductionHeader({ title, subtitle, loading, onReload }) {
     return <header className="production-header">
@@ -16,11 +17,12 @@ export function ProductionNotice({ children, error = false }) {
     </div>;
 }
 export function MutationNotice({ mutation, online }) {
+    const readOnly = useReadOnly();
     if (!mutation.error) return null;
     return <ProductionNotice error>
         <p>{mutation.error}</p>
         {mutation.uncertain && <button className="production-button" type="button"
-            disabled={mutation.busy || !online} onClick={mutation.retry}>
+            disabled={readOnly || mutation.busy || !online} title={readOnly ? READ_ONLY_HINT : undefined} onClick={mutation.retry}>
             <RefreshCw size={18} aria-hidden="true" />Retry same save
         </button>}
     </ProductionNotice>;

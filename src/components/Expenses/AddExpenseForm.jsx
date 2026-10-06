@@ -4,6 +4,7 @@ import { Plus, Loader2, X, Save } from 'lucide-react';
 import { useActivityLog } from '../../hooks/useActivityLog';
 import { api } from '../../lib/apiClient';
 import { withLocalDate } from '../../lib/transactionDate';
+import { useReadOnly, READ_ONLY_HINT } from '../ui/ReadOnly';
 
 const DEFAULT_CATEGORIES = [
     'Rent',
@@ -20,6 +21,7 @@ const CLUB_SLUG = 'downtown-dinks';
 export default function AddExpenseForm({ onAddTransaction, onUpdateTransaction, onClose, initialData = null }) {
     const { showToast } = useToast();
     const { logActivity } = useActivityLog();
+    const readOnly = useReadOnly();
     const [loading, setLoading] = useState(false);
     const [expenseCategories, setExpenseCategories] = useState(DEFAULT_CATEGORIES);
 
@@ -194,7 +196,8 @@ export default function AddExpenseForm({ onAddTransaction, onUpdateTransaction, 
             </div>
 
             <form onSubmit={handleSubmit} className="flex min-h-0 flex-1 flex-col">
-                <div className="min-h-0 flex-1 space-y-4 overflow-y-auto p-5">
+                <fieldset disabled={readOnly} className="min-w-0 border-0 p-0 m-0 min-h-0 flex-1 overflow-y-auto">
+                    <div className="space-y-4 p-5">
                     <div>
                         <label htmlFor="expense-owner" className="field-label">Assign To</label>
                         <select
@@ -213,7 +216,7 @@ export default function AddExpenseForm({ onAddTransaction, onUpdateTransaction, 
                         <select
                             id="expense-category"
                             value={category}
-                            disabled={isStockExpense}
+                            disabled={readOnly || isStockExpense}
                             onChange={(e) => setCategory(e.target.value)}
                             className="field"
                         >
@@ -231,7 +234,7 @@ export default function AddExpenseForm({ onAddTransaction, onUpdateTransaction, 
                                 id="expense-custom-category"
                                 type="text"
                                 value={customCategory}
-                                disabled={isStockExpense}
+                                disabled={readOnly || isStockExpense}
                                 onChange={(e) => setCustomCategory(e.target.value)}
                                 className="field"
                                 placeholder={category === 'Marketing/Ads' ? 'e.g. Facebook, TikTok' : 'e.g. Office Supplies'}
@@ -310,12 +313,14 @@ export default function AddExpenseForm({ onAddTransaction, onUpdateTransaction, 
                             </div>
                         )}
                     </div>
-                </div>
+                    </div>
+                </fieldset>
 
                 <div className="shrink-0 border-t border-line bg-surface px-5 pt-4 pb-[max(1rem,env(safe-area-inset-bottom))]">
                     <button
                         type="submit"
-                        disabled={loading}
+                        disabled={readOnly || loading}
+                        title={readOnly ? READ_ONLY_HINT : undefined}
                         className="btn-primary w-full"
                     >
                         {loading ? <Loader2 className="animate-spin" aria-hidden="true" /> : (initialData ? <Save size={18} aria-hidden="true" /> : <Plus size={18} aria-hidden="true" />)}

@@ -3,10 +3,12 @@ import { Palette, Plus, Trash2, Check, X, Loader2 } from 'lucide-react';
 import { useColors } from '../../hooks/useInventory';
 import { useToast } from '../ui/Toast';
 import { useActivityLog } from '../../hooks/useActivityLog';
+import { useReadOnly, READ_ONLY_HINT } from '../ui/ReadOnly';
 
 export default function ColorSettings({ transactions, onAddTransaction }) {
     const { showToast } = useToast();
     const { logActivity } = useActivityLog();
+    const readOnly = useReadOnly();
     const colors = useColors(transactions);
 
     const [isAdding, setIsAdding] = useState(false);
@@ -85,7 +87,7 @@ export default function ColorSettings({ transactions, onAddTransaction }) {
                     <p className="mt-1 text-xs text-ink-2">Manage colors available across the system</p>
                 </div>
                 {!isAdding && (
-                    <button type="button" onClick={() => setIsAdding(true)} className="btn-secondary">
+                    <button type="button" onClick={() => setIsAdding(true)} disabled={readOnly} title={readOnly ? READ_ONLY_HINT : undefined} className="btn-secondary">
                         <Plus size={16} aria-hidden="true" /> Add Color
                     </button>
                 )}
@@ -101,6 +103,7 @@ export default function ColorSettings({ transactions, onAddTransaction }) {
                             value={newName}
                             onChange={(e) => setNewName(e.target.value)}
                             placeholder="e.g., Lavender"
+                            disabled={readOnly}
                             className="field"
                         />
                     </div>
@@ -112,6 +115,7 @@ export default function ColorSettings({ transactions, onAddTransaction }) {
                                 type="color"
                                 value={newHex}
                                 onChange={(e) => setNewHex(e.target.value)}
+                                disabled={readOnly}
                                 className="h-11 w-12 cursor-pointer rounded-lg border border-line bg-transparent p-1"
                             />
                             <input
@@ -119,6 +123,7 @@ export default function ColorSettings({ transactions, onAddTransaction }) {
                                 value={newHex}
                                 onChange={(e) => setNewHex(e.target.value)}
                                 aria-label="Marker Color hex"
+                                disabled={readOnly}
                                 className="field w-28 font-mono text-xs uppercase"
                             />
                         </div>
@@ -127,7 +132,8 @@ export default function ColorSettings({ transactions, onAddTransaction }) {
                         <button
                             type="button"
                             onClick={handleAddColor}
-                            disabled={loading || !newName}
+                            disabled={readOnly || loading || !newName}
+                            title={readOnly ? READ_ONLY_HINT : undefined}
                             className="btn-primary min-h-11 px-4"
                             aria-label="Save color"
                         >
@@ -160,6 +166,8 @@ export default function ColorSettings({ transactions, onAddTransaction }) {
                         <button
                             type="button"
                             onClick={() => handleDeleteColor(color)}
+                            disabled={readOnly}
+                            title={readOnly ? READ_ONLY_HINT : undefined}
                             className="btn-danger min-h-10 px-3 opacity-100 sm:opacity-0 sm:transition-opacity sm:group-hover:opacity-100 sm:focus:opacity-100"
                             aria-label={`Delete ${color.name}`}
                         >

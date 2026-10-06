@@ -4,6 +4,7 @@ import clsx from 'clsx';
 import { Search, ShoppingCart, Trash2, CheckCircle, Package, Plus, Loader2, Edit, X, Upload, Ruler, GripVertical, Minus } from 'lucide-react';
 import { useToast } from '../ui/Toast';
 import Dialog from '../ui/Dialog';
+import { useReadOnly, READ_ONLY_HINT } from '../ui/ReadOnly';
 import { api, apiRequest } from '../../lib/apiClient';
 import { useRawInventory, useProducts, useColors, useBrands } from '../../hooks/useInventory';
 import useCustomers from '../../hooks/useCustomers';
@@ -28,6 +29,7 @@ const titleCase = (value) => String(value || '')
 export default function POSInterface({ transactions, onAddTransaction, onAddTransactions, onDeleteTransaction, userRole }) {
     const { showToast } = useToast();
     const { logActivity } = useActivityLog();
+    const readOnly = useReadOnly();
 
     const isReseller = userRole === 'reseller';
     const RESELLER_PRICE = 400; // Fixed price for resellers
@@ -552,20 +554,20 @@ export default function POSInterface({ transactions, onAddTransaction, onAddTran
                         <div className="flex flex-wrap items-center gap-2">
                             {!isReseller && !isSelectionMode && !isReorderMode && (
                                 <>
-                                    <button type="button" onClick={() => setIsSelectionMode(true)} className="btn-secondary">Select</button>
-                                    <button type="button" onClick={() => setIsReorderMode(true)} className="btn-secondary">Reorder</button>
-                                    <button type="button" onClick={() => { setEditingProduct(null); setShowProductModal(true); }} className="btn-secondary whitespace-nowrap"><Plus size={20} aria-hidden="true" /> <span className="hidden sm:inline">Define Product</span></button>
+                                    <button type="button" onClick={() => setIsSelectionMode(true)} disabled={readOnly} title={readOnly ? READ_ONLY_HINT : undefined} className="btn-secondary">Select</button>
+                                    <button type="button" onClick={() => setIsReorderMode(true)} disabled={readOnly} title={readOnly ? READ_ONLY_HINT : undefined} className="btn-secondary">Reorder</button>
+                                    <button type="button" onClick={() => { setEditingProduct(null); setShowProductModal(true); }} disabled={readOnly} title={readOnly ? READ_ONLY_HINT : undefined} className="btn-secondary whitespace-nowrap"><Plus size={20} aria-hidden="true" /> <span className="hidden sm:inline">Define Product</span></button>
                                 </>
                             )}
                             {isSelectionMode && (
                                 <>
-                                    <button type="button" onClick={handleBulkDelete} disabled={selectedProducts.size === 0} className="btn-danger"><Trash2 size={18} aria-hidden="true" /> Delete ({selectedProducts.size})</button>
+                                    <button type="button" onClick={handleBulkDelete} disabled={readOnly || selectedProducts.size === 0} title={readOnly ? READ_ONLY_HINT : undefined} className="btn-danger"><Trash2 size={18} aria-hidden="true" /> Delete ({selectedProducts.size})</button>
                                     <button type="button" onClick={() => { setIsSelectionMode(false); setSelectedProducts(new Set()); }} className="btn-secondary">Cancel</button>
                                 </>
                             )}
                             {isReorderMode && (
                                 <>
-                                    <button type="button" onClick={handleSaveOrder} className="btn-success"><CheckCircle size={18} aria-hidden="true" /> Save Order</button>
+                                    <button type="button" onClick={handleSaveOrder} disabled={readOnly} title={readOnly ? READ_ONLY_HINT : undefined} className="btn-success"><CheckCircle size={18} aria-hidden="true" /> Save Order</button>
                                     <button type="button" onClick={() => setIsReorderMode(false)} className="btn-secondary">Cancel</button>
                                 </>
                             )}
@@ -611,7 +613,7 @@ export default function POSInterface({ transactions, onAddTransaction, onAddTran
                     ) : (
                         <div className="grid content-start gap-3 sm:grid-cols-[repeat(auto-fill,minmax(150px,1fr))] sm:gap-4 [grid-template-columns:repeat(auto-fill,minmax(142px,1fr))]">
                             {!isSelectionMode && !isReseller && (
-                                <button type="button" onClick={() => { setEditingProduct(null); setShowProductModal(true); }} className="min-h-[214px] rounded-2xl border border-dashed border-line bg-surface p-4 text-left transition-colors hover:border-slate-500">
+                                <button type="button" onClick={() => { setEditingProduct(null); setShowProductModal(true); }} disabled={readOnly} title={readOnly ? READ_ONLY_HINT : undefined} className="min-h-[214px] rounded-2xl border border-dashed border-line bg-surface p-4 text-left transition-colors hover:border-slate-500 disabled:cursor-not-allowed disabled:opacity-50">
                                     <span className="grid size-12 place-items-center rounded-xl bg-well text-ink-3" aria-hidden="true"><Plus size={24} /></span>
                                     <span className="mt-4 block text-sm font-semibold text-ink">New Product</span>
                                 </button>
@@ -627,11 +629,11 @@ export default function POSInterface({ transactions, onAddTransaction, onAddTran
                                             </span>
                                         )}
                                         {!isSelectionMode && !isReseller && (
-                                            <button type="button" onClick={(e) => { e.stopPropagation(); setEditingProduct(product); setShowProductModal(true); }} className="icon-btn absolute right-3 top-3 z-10 bg-ground/90" aria-label={`Edit ${product.name}`}>
+                                            <button type="button" onClick={(e) => { e.stopPropagation(); setEditingProduct(product); setShowProductModal(true); }} disabled={readOnly} title={readOnly ? READ_ONLY_HINT : undefined} className="icon-btn absolute right-3 top-3 z-10 bg-ground/90" aria-label={`Edit ${product.name}`}>
                                                 <Edit size={16} />
                                             </button>
                                         )}
-                                        <button type="button" className="flex h-full w-full flex-col text-left" onClick={() => handleProductAction(product)} aria-pressed={isSelectionMode ? selected : undefined}>
+                                        <button type="button" className="flex h-full w-full flex-col text-left disabled:cursor-not-allowed disabled:opacity-55" onClick={() => handleProductAction(product)} disabled={readOnly} title={readOnly ? READ_ONLY_HINT : undefined} aria-pressed={isSelectionMode ? selected : undefined}>
                                             <span className="relative block aspect-[4/5] overflow-hidden rounded-xl bg-well">
                                                 {product.imageUrl ? <img src={product.imageUrl} className="size-full object-cover" alt="" /> : <span className="grid size-full place-items-center text-ink-3"><Package size={40} aria-hidden="true" /></span>}
                                             </span>
@@ -751,6 +753,7 @@ export default function POSInterface({ transactions, onAddTransaction, onAddTran
 }
 
 const ProductDefinitionModal = ({ editingProduct, onClose, onSave, onDelete, colors, brands }) => {
+    const readOnly = useReadOnly();
     const [form, setForm] = useState({
         name: editingProduct?.name || '',
         price: editingProduct?.price || 450,
@@ -804,16 +807,18 @@ const ProductDefinitionModal = ({ editingProduct, onClose, onSave, onDelete, col
             size="md"
             footer={(
                 <div className="flex gap-2">
-                    {editingProduct && <button type="button" onClick={() => window.confirm(`Delete ${form.name}?`) && onDelete(form.name)} className="btn-danger px-4" aria-label={`Delete ${form.name}`}><Trash2 size={20} aria-hidden="true" /></button>}
-                    <button type="button" onClick={() => onSave(form)} disabled={!form.name || uploading} className="btn-primary flex-1">{uploading ? 'Processing...' : 'Save Product'}</button>
+                    {editingProduct && <button type="button" onClick={() => window.confirm(`Delete ${form.name}?`) && onDelete(form.name)} disabled={readOnly} title={readOnly ? READ_ONLY_HINT : undefined} className="btn-danger px-4" aria-label={`Delete ${form.name}`}><Trash2 size={20} aria-hidden="true" /></button>}
+                    <button type="button" onClick={() => onSave(form)} disabled={readOnly || !form.name || uploading} title={readOnly ? READ_ONLY_HINT : undefined} className="btn-primary flex-1">{uploading ? 'Processing...' : 'Save Product'}</button>
                 </div>
             )}
         >
-            <div className="space-y-5">
+            <fieldset disabled={readOnly} className="min-w-0 border-0 p-0 m-0 space-y-5">
                 <div className="flex gap-2 overflow-x-auto pb-1 scrollbar-hide">
                     <button
                         type="button"
                         onClick={() => fileRef.current?.click()}
+                        disabled={readOnly || uploading}
+                        title={readOnly ? READ_ONLY_HINT : undefined}
                         className="flex size-24 shrink-0 flex-col items-center justify-center rounded-xl border border-dashed border-line bg-well text-ink-2 transition-colors hover:border-slate-500 hover:text-ink"
                         aria-label="Add photo"
                     >
@@ -827,6 +832,8 @@ const ProductDefinitionModal = ({ editingProduct, onClose, onSave, onDelete, col
                             <button
                                 type="button"
                                 onClick={() => removeImage(img)}
+                                disabled={readOnly}
+                                title={readOnly ? READ_ONLY_HINT : undefined}
                                 className="icon-btn absolute right-1 top-1 size-9 bg-ground/90"
                                 aria-label={`Remove product image ${idx + 1}`}
                             >
@@ -838,7 +845,7 @@ const ProductDefinitionModal = ({ editingProduct, onClose, onSave, onDelete, col
                         </div>
                     ))}
                 </div>
-                <input type="file" ref={fileRef} className="hidden" onChange={handleUpload} aria-label="Product photo" />
+                <input type="file" ref={fileRef} className="hidden" onChange={handleUpload} disabled={readOnly} aria-label="Product photo" />
 
                 <div className="grid grid-cols-2 gap-4">
                     <div className="col-span-2">
@@ -867,11 +874,12 @@ const ProductDefinitionModal = ({ editingProduct, onClose, onSave, onDelete, col
                         </div>
                     </div>
                 )}
-            </div>
+            </fieldset>
         </Dialog>
     );
 };
 const SizeSelectorModal = ({ activeProduct, onClose, onSelectSize, getStockForProduct }) => {
+    const readOnly = useReadOnly();
     const isBall = isBallProduct(activeProduct);
     const [selectedQuantity, setSelectedQuantity] = useState(BALL_QUANTITIES[0]);
     const [selectedSize, setSelectedSize] = useState('');
@@ -883,7 +891,7 @@ const SizeSelectorModal = ({ activeProduct, onClose, onSelectSize, getStockForPr
             description={[activeProduct.brand, activeProduct.linkedColor].filter(Boolean).join(' • ') || undefined}
             closeLabel="Close product"
             footer={(
-                <button type="button" onClick={() => isBall ? onSelectSize('N/A', selectedQuantity) : onSelectSize(selectedSize)} disabled={!isBall && !selectedSize} className="btn-primary h-12 w-full text-base">
+                <button type="button" onClick={() => isBall ? onSelectSize('N/A', selectedQuantity) : onSelectSize(selectedSize)} disabled={readOnly || (!isBall && !selectedSize)} title={readOnly ? READ_ONLY_HINT : undefined} className="btn-primary h-12 w-full text-base">
                     Add to cart
                 </button>
             )}
@@ -907,7 +915,7 @@ const SizeSelectorModal = ({ activeProduct, onClose, onSelectSize, getStockForPr
                                 const selected = selectedQuantity === quantity;
                                 const unitPrice = getCartUnitPrice(activeProduct, quantity);
                                 return (
-                                    <button key={quantity} type="button" role="radio" aria-checked={selected} onClick={() => setSelectedQuantity(quantity)}
+                                    <button key={quantity} type="button" role="radio" aria-checked={selected} onClick={() => setSelectedQuantity(quantity)} disabled={readOnly} title={readOnly ? READ_ONLY_HINT : undefined}
                                         className={clsx('min-h-14 rounded-lg border px-2 py-2 text-center transition-colors', selected ? 'border-ink bg-ink text-ground' : 'border-slate-600 text-ink hover:border-slate-300')}>
                                         <span className="num block text-base font-semibold">{quantity} {quantity === 1 ? 'pc' : 'pcs'}</span>
                                         <span className={clsx('num mt-1 block text-xs', selected ? 'text-ground/70' : 'text-ink-2')}>{peso(unitPrice)}/pc</span>
@@ -925,7 +933,7 @@ const SizeSelectorModal = ({ activeProduct, onClose, onSelectSize, getStockForPr
                                 const hasStock = stock > 0;
                                 const selected = selectedSize === size;
                                 return (
-                                    <button key={size} type="button" role="radio" aria-checked={selected} disabled={!hasStock} onClick={() => setSelectedSize(size)}
+                                    <button key={size} type="button" role="radio" aria-checked={selected} disabled={readOnly || !hasStock} title={readOnly ? READ_ONLY_HINT : undefined} onClick={() => setSelectedSize(size)}
                                         className={clsx('min-h-14 rounded-lg border px-3 py-2 text-center transition-colors disabled:cursor-not-allowed disabled:border-line disabled:text-ink-3 disabled:opacity-60', selected ? 'border-ink bg-ink text-ground' : 'border-slate-600 text-ink hover:border-slate-300')}>
                                         <span className="block text-base font-semibold">{size}</span>
                                         <span className={clsx('num mt-1 block text-xs', selected ? 'text-ground/70' : 'text-ink-2')}>{stock} pcs</span>
@@ -941,6 +949,7 @@ const SizeSelectorModal = ({ activeProduct, onClose, onSelectSize, getStockForPr
 };
 
 const CartContent = ({ idPrefix, cart, updateCartQuantity, handleCheckout, checkoutLoading, customerName, setCustomerName, customerContact, setCustomerContact, customerAddress, setCustomerAddress, shippingRegion, setShippingRegion, customerProvince, setCustomerProvince, customerCity, setCustomerCity, customerBarangay, setCustomerBarangay, provinceCode, setProvinceCode, cityCode, setCityCode, provincesList, citiesList, barangaysList, fulfillmentStatus, setFulfillmentStatus, paymentStatus, setPaymentStatus, paymentMode, setPaymentMode, showSuggestions, setShowSuggestions, customerSuggestions, handleSelectCustomer, isReseller }) => {
+    const readOnly = useReadOnly();
     const total = cart.reduce((a, b) => a + (getCartUnitPrice(b) * b.quantity), 0);
 
     return (
@@ -966,11 +975,11 @@ const CartContent = ({ idPrefix, cart, updateCartQuantity, handleCheckout, check
                                     </div>
                                 </div>
                                 <div className="flex shrink-0 items-center gap-1 rounded-full border border-line bg-raised p-1">
-                                    <button type="button" onClick={() => updateCartQuantity(item.cartId, -1)} className="icon-btn size-9" aria-label={`Decrease quantity for ${item.name}`}><Minus size={16} /></button>
+                                    <button type="button" onClick={() => updateCartQuantity(item.cartId, -1)} disabled={readOnly} title={readOnly ? READ_ONLY_HINT : undefined} className="icon-btn size-9" aria-label={`Decrease quantity for ${item.name}`}><Minus size={16} /></button>
                                     <span className="num min-w-6 text-center text-sm font-semibold text-ink">{item.quantity}</span>
-                                    <button type="button" onClick={() => updateCartQuantity(item.cartId, 1)} className="icon-btn size-9" aria-label={`Increase quantity for ${item.name}`}><Plus size={16} /></button>
+                                    <button type="button" onClick={() => updateCartQuantity(item.cartId, 1)} disabled={readOnly} title={readOnly ? READ_ONLY_HINT : undefined} className="icon-btn size-9" aria-label={`Increase quantity for ${item.name}`}><Plus size={16} /></button>
                                 </div>
-                                <button type="button" onClick={() => updateCartQuantity(item.cartId, -999)} className="icon-btn size-10 text-red-400 hover:bg-red-500/10 hover:text-red-300" aria-label={`Remove ${item.name} from cart`}><Trash2 size={17} /></button>
+                                <button type="button" onClick={() => updateCartQuantity(item.cartId, -999)} disabled={readOnly} title={readOnly ? READ_ONLY_HINT : undefined} className="icon-btn size-10 text-red-400 hover:bg-red-500/10 hover:text-red-300" aria-label={`Remove ${item.name} from cart`}><Trash2 size={17} /></button>
                             </div>
                         ))}
                     </div>
@@ -990,72 +999,72 @@ const CartContent = ({ idPrefix, cart, updateCartQuantity, handleCheckout, check
                 <div className="space-y-4">
                     <div className="flex items-center justify-between gap-3">
                         <h3 className="text-sm font-semibold text-ink">Customer Profile</h3>
-                        <button type="button" onClick={() => updateCartQuantity('clear')} className="btn-ghost text-red-400 hover:bg-red-500/10 hover:text-red-300">Clear Order</button>
+                        <button type="button" onClick={() => updateCartQuantity('clear')} disabled={readOnly} title={readOnly ? READ_ONLY_HINT : undefined} className="btn-ghost text-red-400 hover:bg-red-500/10 hover:text-red-300">Clear Order</button>
                     </div>
 
                     <div className="grid grid-cols-1 gap-3 sm:grid-cols-2 lg:grid-cols-1 xl:grid-cols-2">
                         <div className="relative z-30">
                             <label htmlFor={`${idPrefix}-customer-name`} className="field-label">Full Name</label>
-                            <input id={`${idPrefix}-customer-name`} className="field" placeholder="Full Name" value={customerName} onChange={e => { setCustomerName(e.target.value); setShowSuggestions(true); }} onFocus={() => setShowSuggestions(true)} onBlur={() => setTimeout(() => setShowSuggestions(false), 200)} />
+                            <input id={`${idPrefix}-customer-name`} className="field" placeholder="Full Name" value={customerName} disabled={readOnly} onChange={e => { setCustomerName(e.target.value); setShowSuggestions(true); }} onFocus={() => setShowSuggestions(true)} onBlur={() => setTimeout(() => setShowSuggestions(false), 200)} />
                             {showSuggestions && customerSuggestions?.length > 0 && (
                                 <div className="absolute left-0 top-full z-40 mt-1 max-h-60 w-full overflow-y-auto rounded-xl border border-line bg-raised shadow-lift">
-                                    {customerSuggestions.map(c => <button key={c.id} type="button" onClick={() => handleSelectCustomer(c)} className="flex w-full items-center justify-between gap-3 border-b border-line px-4 py-3 text-left text-sm transition-colors last:border-0 hover:bg-white/[0.04]"><span className="font-semibold text-ink">{c.name}</span>{c.total_spent > 0 && <span className="num text-ink-2">{peso(c.total_spent)}</span>}</button>)}
+                                    {customerSuggestions.map(c => <button key={c.id} type="button" onClick={() => handleSelectCustomer(c)} disabled={readOnly} title={readOnly ? READ_ONLY_HINT : undefined} className="flex w-full items-center justify-between gap-3 border-b border-line px-4 py-3 text-left text-sm transition-colors last:border-0 hover:bg-white/[0.04]"><span className="font-semibold text-ink">{c.name}</span>{c.total_spent > 0 && <span className="num text-ink-2">{peso(c.total_spent)}</span>}</button>)}
                                 </div>
                             )}
                         </div>
                         <div>
                             <label htmlFor={`${idPrefix}-customer-contact`} className="field-label">Contact Number</label>
-                            <input id={`${idPrefix}-customer-contact`} className="field" placeholder="Contact Number" value={customerContact} onChange={e => setCustomerContact(e.target.value)} />
+                            <input id={`${idPrefix}-customer-contact`} className="field" placeholder="Contact Number" value={customerContact} disabled={readOnly} onChange={e => setCustomerContact(e.target.value)} />
                         </div>
                     </div>
 
                     <div className="flex gap-2" role="group" aria-label="Shipping region">
-                        <button type="button" onClick={() => setShippingRegion('MM')} className="chip flex-1 justify-center" aria-pressed={shippingRegion === 'MM'}>Metro Manila</button>
-                        <button type="button" onClick={() => setShippingRegion('Provincial')} className="chip flex-1 justify-center" aria-pressed={shippingRegion === 'Provincial'}>Provincial</button>
+                        <button type="button" onClick={() => setShippingRegion('MM')} disabled={readOnly} title={readOnly ? READ_ONLY_HINT : undefined} className="chip flex-1 justify-center" aria-pressed={shippingRegion === 'MM'}>Metro Manila</button>
+                        <button type="button" onClick={() => setShippingRegion('Provincial')} disabled={readOnly} title={readOnly ? READ_ONLY_HINT : undefined} className="chip flex-1 justify-center" aria-pressed={shippingRegion === 'Provincial'}>Provincial</button>
                     </div>
 
                     <div className="grid grid-cols-1 gap-3 sm:grid-cols-2 lg:grid-cols-1 xl:grid-cols-2">
                         {shippingRegion === 'Provincial' && (
                             <div className="sm:col-span-2 lg:col-span-1 xl:col-span-2">
                                 <label htmlFor={`${idPrefix}-province`} className="field-label">Province</label>
-                                <select id={`${idPrefix}-province`} className="field" value={provinceCode} onChange={e => { setProvinceCode(e.target.value); setCustomerProvince(e.target.options[e.target.selectedIndex].text); }}><option value="" disabled>Select Province</option>{provincesList.map(p => <option key={p.code} value={p.code}>{p.name}</option>)}</select>
+                                <select id={`${idPrefix}-province`} className="field" value={provinceCode} disabled={readOnly} onChange={e => { setProvinceCode(e.target.value); setCustomerProvince(e.target.options[e.target.selectedIndex].text); }}><option value="" disabled>Select Province</option>{provincesList.map(p => <option key={p.code} value={p.code}>{p.name}</option>)}</select>
                             </div>
                         )}
                         <div>
                             <label htmlFor={`${idPrefix}-city`} className="field-label">City / Town</label>
-                            <select id={`${idPrefix}-city`} className="field" value={cityCode} onChange={e => { setCityCode(e.target.value); setCustomerCity(e.target.options[e.target.selectedIndex].text); }} disabled={!citiesList.length}><option value="" disabled>City / Town</option>{citiesList.map(c => <option key={c.code} value={c.code}>{c.name}</option>)}</select>
+                            <select id={`${idPrefix}-city`} className="field" value={cityCode} onChange={e => { setCityCode(e.target.value); setCustomerCity(e.target.options[e.target.selectedIndex].text); }} disabled={readOnly || !citiesList.length}><option value="" disabled>City / Town</option>{citiesList.map(c => <option key={c.code} value={c.code}>{c.name}</option>)}</select>
                         </div>
                         <div>
                             <label htmlFor={`${idPrefix}-barangay`} className="field-label">Barangay</label>
-                            <select id={`${idPrefix}-barangay`} className="field" value={customerBarangay} onChange={e => setCustomerBarangay(e.target.value)} disabled={!barangaysList.length}><option value="" disabled>Barangay</option>{barangaysList.map(b => <option key={b.code} value={b.name}>{b.name}</option>)}</select>
+                            <select id={`${idPrefix}-barangay`} className="field" value={customerBarangay} onChange={e => setCustomerBarangay(e.target.value)} disabled={readOnly || !barangaysList.length}><option value="" disabled>Barangay</option>{barangaysList.map(b => <option key={b.code} value={b.name}>{b.name}</option>)}</select>
                         </div>
                     </div>
 
                     <div>
                         <label htmlFor={`${idPrefix}-address`} className="field-label">Street Address / Room / landmarks</label>
-                        <input id={`${idPrefix}-address`} className="field" placeholder="Street Address / Room / landmarks" value={customerAddress} onChange={e => setCustomerAddress(e.target.value)} />
+                        <input id={`${idPrefix}-address`} className="field" placeholder="Street Address / Room / landmarks" value={customerAddress} disabled={readOnly} onChange={e => setCustomerAddress(e.target.value)} />
                     </div>
 
                     <div className="grid grid-cols-1 gap-3 sm:grid-cols-2 lg:grid-cols-1 xl:grid-cols-2">
                         <div>
                             <label htmlFor={`${idPrefix}-payment-mode`} className="field-label">Payment mode</label>
-                            <select id={`${idPrefix}-payment-mode`} className="field" value={paymentMode} onChange={e => setPaymentMode(e.target.value)}>{PAYMENT_MODES.map(m => <option key={m} value={m}>{m}</option>)}</select>
+                            <select id={`${idPrefix}-payment-mode`} className="field" value={paymentMode} disabled={readOnly} onChange={e => setPaymentMode(e.target.value)}>{PAYMENT_MODES.map(m => <option key={m} value={m}>{m}</option>)}</select>
                         </div>
                         <div>
                             <label htmlFor={`${idPrefix}-payment-status`} className="field-label">Payment status</label>
-                            <select id={`${idPrefix}-payment-status`} disabled={isReseller} className="field capitalize" value={paymentStatus} onChange={e => setPaymentStatus(e.target.value)}>{['unpaid', 'paid'].map(s => <option key={s} value={s}>{s}</option>)}</select>
+                            <select id={`${idPrefix}-payment-status`} disabled={readOnly || isReseller} title={readOnly ? READ_ONLY_HINT : undefined} className="field capitalize" value={paymentStatus} onChange={e => setPaymentStatus(e.target.value)}>{['unpaid', 'paid'].map(s => <option key={s} value={s}>{s}</option>)}</select>
                         </div>
                     </div>
 
                     {!isReseller && (
                         <div>
                             <label htmlFor={`${idPrefix}-fulfillment-status`} className="field-label">Fulfillment status</label>
-                            <select id={`${idPrefix}-fulfillment-status`} className="field capitalize" value={fulfillmentStatus} onChange={e => setFulfillmentStatus(e.target.value)}>{['pending', 'in_progress', 'ready', 'shipped'].map(s => <option key={s} value={s}>{s.replace('_', ' ')}</option>)}</select>
+                            <select id={`${idPrefix}-fulfillment-status`} className="field capitalize" value={fulfillmentStatus} disabled={readOnly} title={readOnly ? READ_ONLY_HINT : undefined} onChange={e => setFulfillmentStatus(e.target.value)}>{['pending', 'in_progress', 'ready', 'shipped'].map(s => <option key={s} value={s}>{s.replace('_', ' ')}</option>)}</select>
                         </div>
                     )}
                 </div>
 
-                <button type="button" onClick={handleCheckout} disabled={checkoutLoading || cart.length === 0} className="btn-primary h-12 w-full text-base font-semibold">
+                <button type="button" onClick={handleCheckout} disabled={readOnly || checkoutLoading || cart.length === 0} title={readOnly ? READ_ONLY_HINT : undefined} className="btn-primary h-12 w-full text-base font-semibold">
                     {checkoutLoading ? <Loader2 className="animate-spin" aria-label="Processing" /> : 'Confirm order'}
                 </button>
             </div>

@@ -6,9 +6,11 @@ import ActivityLogViewer from './ActivityLogViewer';
 import ColorSettings from './ColorSettings';
 import BrandSettings from './BrandSettings';
 import ExpenseCategorySettings from './ExpenseCategorySettings';
+import { useReadOnly, READ_ONLY_HINT } from '../ui/ReadOnly';
 
 export default function ProfileSettings({ user, onLogout, onProfileChange, transactions = [], onAddTransaction }) {
     const { showToast } = useToast();
+    const readOnly = useReadOnly();
     const [loading, setLoading] = useState(false);
 
     const userRole = user?.user_metadata?.role;
@@ -135,11 +137,12 @@ export default function ProfileSettings({ user, onLogout, onProfileChange, trans
                                 value={fullName}
                                 onChange={(e) => setFullName(e.target.value)}
                                 placeholder="e.g. Juan Dela Cruz"
+                                disabled={readOnly}
                                 className="field"
                             />
                             <p className="mt-2 text-xs text-ink-2">This name will be displayed in the sidebar.</p>
                         </div>
-                        <button type="submit" disabled={loading} className="btn-primary w-full">
+                        <button type="submit" disabled={readOnly || loading} title={readOnly ? READ_ONLY_HINT : undefined} className="btn-primary w-full">
                             <Save size={18} aria-hidden="true" /> Save Changes
                         </button>
                     </form>
@@ -187,6 +190,7 @@ export default function ProfileSettings({ user, onLogout, onProfileChange, trans
                                         value={textbeeApiKey}
                                         onChange={(e) => setTextbeeApiKey(e.target.value)}
                                         placeholder={smsConfigured ? 'Configured — leave blank to keep' : 'Enter a new API key'}
+                                        disabled={readOnly}
                                         className="field"
                                     />
                                     <p className="mt-2 text-xs text-ink-2">The saved key is never returned to this browser. Save changes before sending a test.</p>
@@ -199,6 +203,7 @@ export default function ProfileSettings({ user, onLogout, onProfileChange, trans
                                         value={textbeeDeviceId}
                                         onChange={(e) => setTextbeeDeviceId(e.target.value)}
                                         placeholder="your-android-device-id"
+                                        disabled={readOnly}
                                         className="field"
                                     />
                                 </div>
@@ -208,6 +213,7 @@ export default function ProfileSettings({ user, onLogout, onProfileChange, trans
                                         id="enableSms"
                                         checked={enableSmsNotifications}
                                         onChange={(e) => setEnableSmsNotifications(e.target.checked)}
+                                        disabled={readOnly}
                                         className="size-5 rounded border-line bg-raised text-primary"
                                     />
                                     <label htmlFor="enableSms" className="cursor-pointer text-sm text-ink-2">
@@ -222,6 +228,7 @@ export default function ProfileSettings({ user, onLogout, onProfileChange, trans
                                             id="enableTrackingSms"
                                             checked={enableTrackingSms}
                                             onChange={(e) => setEnableTrackingSms(e.target.checked)}
+                                            disabled={readOnly}
                                             className="size-5 rounded border-line bg-raised text-primary"
                                         />
                                         <label htmlFor="enableTrackingSms" className="cursor-pointer text-sm text-ink-2">
@@ -238,6 +245,7 @@ export default function ProfileSettings({ user, onLogout, onProfileChange, trans
                                                 onChange={(e) => setTrackingSmsTemplate(e.target.value)}
                                                 rows={3}
                                                 placeholder="Hi {customerName}, your order has been shipped! Tracking: {trackingNumber}"
+                                                disabled={readOnly}
                                                 className="field resize-none text-sm"
                                             />
                                             <div className="flex flex-wrap gap-2">
@@ -246,6 +254,8 @@ export default function ProfileSettings({ user, onLogout, onProfileChange, trans
                                                         key={tag}
                                                         type="button"
                                                         onClick={() => setTrackingSmsTemplate(prev => prev + tag)}
+                                                        disabled={readOnly}
+                                                        title={readOnly ? READ_ONLY_HINT : undefined}
                                                         className="chip h-9 px-3 font-mono text-xs"
                                                     >
                                                         {tag}
@@ -259,7 +269,8 @@ export default function ProfileSettings({ user, onLogout, onProfileChange, trans
                                 <button
                                     type="button"
                                     onClick={handleSaveTextBeeSettings}
-                                    disabled={loading || !smsLoaded}
+                                    disabled={readOnly || loading || !smsLoaded}
+                                    title={readOnly ? READ_ONLY_HINT : undefined}
                                     className="btn-primary w-full"
                                 >
                                     <Save size={18} aria-hidden="true" /> Save Settings
@@ -277,13 +288,15 @@ export default function ProfileSettings({ user, onLogout, onProfileChange, trans
                                         value={testRecipient}
                                         onChange={(e) => setTestRecipient(e.target.value)}
                                         placeholder="+639123456789"
+                                        disabled={readOnly}
                                         className="field"
                                     />
                                 </div>
                                 <button
                                     type="button"
                                     onClick={handleSendTestSms}
-                                    disabled={loading || !smsLoaded || !smsConfigured || !textbeeDeviceId}
+                                    disabled={readOnly || loading || !smsLoaded || !smsConfigured || !textbeeDeviceId}
+                                    title={readOnly ? READ_ONLY_HINT : undefined}
                                     className="btn-secondary w-full"
                                 >
                                     <Send size={18} aria-hidden="true" /> Send Test SMS

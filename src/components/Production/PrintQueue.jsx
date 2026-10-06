@@ -4,14 +4,16 @@ import LoadingState from '../ui/LoadingState.jsx';
 import { productionQuantity } from '../../lib/production.js';
 import { useProductionData, useProductionMutation } from './productionHooks.js';
 import { JobActivity, JobCounts, JobHeading, JobInstructions, MutationNotice, ProductionHeader, ProductionNotice } from './ProductionParts.jsx';
+import { useReadOnly, READ_ONLY_HINT } from '../ui/ReadOnly';
 import './Production.css';
 
 function PrintJob({ job, reload, online, stale }) {
+    const readOnly = useReadOnly();
     const [quantity, setQuantity] = useState('');
     const [note, setNote] = useState('');
     const [validation, setValidation] = useState('');
     const mutation = useProductionMutation(reload);
-    const blocked = !online || stale || mutation.busy || mutation.uncertain;
+    const blocked = readOnly || !online || stale || mutation.busy || mutation.uncertain;
     const submit = (action) => {
         const parsed = productionQuantity(quantity, job.remainingToPrint);
         if (action === 'printed' && parsed === null) {
@@ -35,14 +37,14 @@ function PrintJob({ job, reload, online, stale }) {
             <fieldset className="production-work" disabled={blocked}>
                 <legend className="production-sr-only">Record progress for {job.jobCode}</legend>
                 <div className="production-actions">
-                    <button type="button" className="production-button" disabled={job.status === 'printing' || !job.remainingToPrint}
+                    <button type="button" className="production-button" disabled={readOnly || job.status === 'printing' || !job.remainingToPrint} title={readOnly ? READ_ONLY_HINT : undefined}
                         onClick={() => submit('start')}><Printer size={18} aria-hidden="true" />Start printing</button>
                     <label className="production-field production-quantity">Printed quantity
                         <input type="number" min="1" max={job.remainingToPrint} step="1" inputMode="numeric"
                             value={quantity} onChange={event => setQuantity(event.target.value)}
                             aria-describedby={`print-help-${job.id}`} />
                     </label>
-                    <button type="button" className="production-button production-primary" disabled={!job.remainingToPrint}
+                    <button type="button" className="production-button production-primary" disabled={readOnly || !job.remainingToPrint} title={readOnly ? READ_ONLY_HINT : undefined}
                         onClick={() => submit('printed')}><Check size={18} aria-hidden="true" />Record printed</button>
                 </div>
                 <p id={`print-help-${job.id}`} className="production-help">Record only newly printed shirts. Partial quantities are welcome; the owner accepts them after QA.</p>
@@ -50,7 +52,7 @@ function PrintJob({ job, reload, online, stale }) {
                     <textarea rows="2" maxLength={1000} value={note} onChange={event => setNote(event.target.value)}
                         placeholder="For example: print alignment needs checking" />
                 </label>
-                <button type="button" className="production-button production-warning" onClick={() => submit('problem')}>
+                <button type="button" className="production-button production-warning" disabled={readOnly} title={readOnly ? READ_ONLY_HINT : undefined} onClick={() => submit('problem')}>
                     <AlertCircle size={18} aria-hidden="true" />Report problem
                 </button>
             </fieldset>
@@ -63,6 +65,7 @@ function PrintJob({ job, reload, online, stale }) {
 }
 
 export default function PrintQueue() {
+    const readOnly = useReadOnly();
     const data = useProductionData();
     const [filter, setFilter] = useState('active');
     const jobs = data.jobs.filter(job => filter === 'all' || (filter === 'completed' ? job.status === 'completed' : job.status !== 'completed'));

@@ -3,6 +3,7 @@ import { motion, AnimatePresence } from 'framer-motion';
 import { Package, Clock, CheckCircle, Truck, User, Search, Edit2, Save, X, Trash2, Layers, ChevronDown, ChevronUp, ShoppingBag, Loader2, AlertCircle, Banknote, Filter, Copy, MessageSquare, Send, RotateCcw } from 'lucide-react';
 import { useToast } from '../ui/Toast';
 import Dialog from '../ui/Dialog';
+import { useReadOnly, READ_ONLY_HINT } from '../ui/ReadOnly';
 import { api, apiRequest } from '../../lib/apiClient';
 import { useProducts } from '../../hooks/useInventory';
 import { withLocalDate } from '../../lib/transactionDate';
@@ -19,6 +20,7 @@ export default function OrderManagement({ transactions, onAddTransaction, onDele
     const { showToast } = useToast();
     const products = useProducts(transactions);
     const isReseller = userRole === 'reseller';
+    const readOnly = useReadOnly();
     const deletionRequests = React.useRef(new Map());
     const persistOrder = async changes => {
         const ready = details => ['ready', 'shipped'].includes(details?.fulfillmentStatus ?? details?.status);
@@ -455,6 +457,8 @@ export default function OrderManagement({ transactions, onAddTransaction, onDele
                                 <>
                                     {!isReseller && <button
                                         type="button"
+                                        disabled={readOnly}
+                                        title={readOnly ? READ_ONLY_HINT : undefined}
                                         onClick={() => setShowBulkEditModal(true)}
                                         className="btn-primary whitespace-nowrap"
                                     >
@@ -463,6 +467,8 @@ export default function OrderManagement({ transactions, onAddTransaction, onDele
                                     <button
                                         type="button"
                                         aria-label="Delete selected orders"
+                                        disabled={readOnly}
+                                        title={readOnly ? READ_ONLY_HINT : undefined}
                                         onClick={async () => {
                                             if (confirm(`Delete ${selectedOrderIds.size} orders?`)) {
                                                 setLoading(true);
@@ -499,6 +505,8 @@ export default function OrderManagement({ transactions, onAddTransaction, onDele
                             ) : (
                                 <button
                                     type="button"
+                                    disabled={readOnly}
+                                    title={readOnly ? READ_ONLY_HINT : undefined}
                                     onClick={() => setIsSelectionMode(true)}
                                     className="btn-secondary whitespace-nowrap"
                                 >
@@ -607,6 +615,8 @@ export default function OrderManagement({ transactions, onAddTransaction, onDele
                                                         {isEditing ? (
                                                             <input
                                                                 aria-label="Customer name"
+                                                                disabled={readOnly}
+                                                                title={readOnly ? READ_ONLY_HINT : undefined}
                                                                 className="field max-w-xs py-2 text-lg font-semibold"
                                                                 value={editForm.customerName}
                                                                 onChange={e => setEditForm({ ...editForm, customerName: e.target.value })}
@@ -675,6 +685,8 @@ export default function OrderManagement({ transactions, onAddTransaction, onDele
                                                             <input
                                                                 id={dateInputId}
                                                                 type="date"
+                                                                disabled={readOnly}
+                                                                title={readOnly ? READ_ONLY_HINT : undefined}
                                                                 value={editForm.date || ''}
                                                                 onChange={e => setEditForm({ ...editForm, date: e.target.value })}
                                                                 className="field py-2 text-sm"
@@ -688,7 +700,8 @@ export default function OrderManagement({ transactions, onAddTransaction, onDele
                                                                 <input
                                                                     id={trackingInputId}
                                                                     placeholder="Tracking number"
-                                                                    disabled={isReseller}
+                                                                    disabled={readOnly || isReseller}
+                                                                    title={readOnly ? READ_ONLY_HINT : undefined}
                                                                     value={editForm.trackingNumber || ''}
                                                                     onChange={e => {
                                                                         const val = e.target.value;
@@ -708,6 +721,8 @@ export default function OrderManagement({ transactions, onAddTransaction, onDele
                                                                 <label htmlFor={fulfillmentSelectId} className="field-label">Fulfillment status</label>
                                                                 <select
                                                                     id={fulfillmentSelectId}
+                                                                    disabled={readOnly}
+                                                                    title={readOnly ? READ_ONLY_HINT : undefined}
                                                                     value={editForm.fulfillmentStatus}
                                                                     onChange={e => setEditForm({ ...editForm, fulfillmentStatus: e.target.value })}
                                                                     className="field py-2 text-sm capitalize"
@@ -721,7 +736,8 @@ export default function OrderManagement({ transactions, onAddTransaction, onDele
                                                             <select
                                                                 id={paymentStatusSelectId}
                                                                 value={editForm.paymentStatus}
-                                                                disabled={isReseller}
+                                                                disabled={readOnly || isReseller}
+                                                                title={readOnly ? READ_ONLY_HINT : undefined}
                                                                 onChange={e => setEditForm({ ...editForm, paymentStatus: e.target.value })}
                                                                 className="field py-2 text-sm capitalize"
                                                             >
@@ -732,6 +748,8 @@ export default function OrderManagement({ transactions, onAddTransaction, onDele
                                                             <label htmlFor={paymentModeSelectId} className="field-label">Payment mode</label>
                                                             <select
                                                                 id={paymentModeSelectId}
+                                                                disabled={readOnly}
+                                                                title={readOnly ? READ_ONLY_HINT : undefined}
                                                                 value={editForm.paymentMode}
                                                                 onChange={e => setEditForm({ ...editForm, paymentMode: e.target.value })}
                                                                 className="field py-2 text-sm"
@@ -741,7 +759,7 @@ export default function OrderManagement({ transactions, onAddTransaction, onDele
                                                         </div>
                                                     </div>
                                                     <div className="mt-3 flex gap-2">
-                                                        <button type="button" aria-label="Save order changes" disabled={loading || !!editPricing?.error} onClick={() => handleSave(order.id)} className="btn-success flex-1 px-3">
+                                                        <button type="button" aria-label="Save order changes" disabled={readOnly || loading || !!editPricing?.error} title={readOnly ? READ_ONLY_HINT : undefined} onClick={() => handleSave(order.id)} className="btn-success flex-1 px-3">
                                                             <Save size={16} aria-hidden="true" /> Save
                                                         </button>
                                                         <button type="button" aria-label="Cancel order changes" disabled={loading} onClick={() => setEditingId(null)} className="btn-danger flex-1 px-3">
@@ -757,6 +775,8 @@ export default function OrderManagement({ transactions, onAddTransaction, onDele
                                                             aria-label={`Tracking number for ${order.customerName}`}
                                                             defaultValue={order.items[0]?.details?.trackingNumber || ''}
                                                             readOnly={isReseller}
+                                                            disabled={readOnly}
+                                                            title={readOnly ? READ_ONLY_HINT : undefined}
                                                             placeholder="Add tracking"
                                                             className={`field pl-9 pr-3 py-2 text-sm ${order.items[0]?.details?.trackingNumber
                                                                 ? 'border-primary/40 bg-primary/10 text-primary font-mono font-semibold'
@@ -784,15 +804,16 @@ export default function OrderManagement({ transactions, onAddTransaction, onDele
                                                                     <button
                                                                         type="button"
                                                                         onClick={(e) => { e.stopPropagation(); handleMarkReturned(order.id); }}
+                                                                        disabled={readOnly}
                                                                         className="icon-btn text-amber-300 hover:bg-amber-500/10 hover:text-amber-200"
-                                                                        title="Mark as returned"
+                                                                        title={readOnly ? READ_ONLY_HINT : "Mark as returned"}
                                                                         aria-label="Mark order as returned"
                                                                     >
                                                                         <RotateCcw size={18} aria-hidden="true" />
                                                                     </button>
                                                                 )}
-                                                                <button type="button" aria-label={`Edit order for ${order.customerName}`} onClick={(e) => { e.stopPropagation(); startEditing(order); }} className="icon-btn"><Edit2 size={18} aria-hidden="true" /></button>
-                                                                <button type="button" aria-label={`Delete order for ${order.customerName}`} onClick={(e) => { e.stopPropagation(); handleDeleteOrder(order.id); }} className="icon-btn text-red-400 hover:bg-red-500/10 hover:text-red-300"><Trash2 size={18} aria-hidden="true" /></button>
+                                                                <button type="button" aria-label={`Edit order for ${order.customerName}`} disabled={readOnly} title={readOnly ? READ_ONLY_HINT : undefined} onClick={(e) => { e.stopPropagation(); startEditing(order); }} className="icon-btn"><Edit2 size={18} aria-hidden="true" /></button>
+                                                                <button type="button" aria-label={`Delete order for ${order.customerName}`} disabled={readOnly} title={readOnly ? READ_ONLY_HINT : undefined} onClick={(e) => { e.stopPropagation(); handleDeleteOrder(order.id); }} className="icon-btn text-red-400 hover:bg-red-500/10 hover:text-red-300"><Trash2 size={18} aria-hidden="true" /></button>
                                                             </>
                                                         )}
                                                         <button
@@ -846,6 +867,8 @@ export default function OrderManagement({ transactions, onAddTransaction, onDele
                                                                         <div className="grid grid-cols-1 gap-2 md:grid-cols-3" onClick={e => e.stopPropagation()}>
                                                                             <select
                                                                                 aria-label={`Product for line ${idx + 1}`}
+                                                                                disabled={readOnly}
+                                                                                title={readOnly ? READ_ONLY_HINT : undefined}
                                                                                 className="field py-2 text-sm"
                                                                                 value={editForm.items[idx]?.details?.itemName || ''}
                                                                                 onChange={e => {
@@ -875,6 +898,8 @@ export default function OrderManagement({ transactions, onAddTransaction, onDele
 
                                                                             <select
                                                                                 aria-label={`Size for ${item.details.itemName}`}
+                                                                                disabled={readOnly}
+                                                                                title={readOnly ? READ_ONLY_HINT : undefined}
                                                                                 className="field py-2 text-sm"
                                                                                 value={editForm.items[idx]?.details?.size || ''}
                                                                                 onChange={e => {
@@ -891,6 +916,8 @@ export default function OrderManagement({ transactions, onAddTransaction, onDele
 
                                                                             <input
                                                                                 aria-label={`Color for ${item.details.itemName}`}
+                                                                                disabled={readOnly}
+                                                                                title={readOnly ? READ_ONLY_HINT : undefined}
                                                                                 className="field py-2 text-sm"
                                                                                 value={editForm.items[idx]?.details?.color || ''}
                                                                                 onChange={e => {
@@ -921,6 +948,8 @@ export default function OrderManagement({ transactions, onAddTransaction, onDele
                                                                                 Line total
                                                                                 <input
                                                                                     type="number"
+                                                                                    disabled={readOnly}
+                                                                                    title={readOnly ? READ_ONLY_HINT : undefined}
                                                                                     className="field w-24 py-2 text-right text-sm num"
                                                                                     aria-label={`Line total for ${item.details.itemName}`}
                                                                                     step="0.01"
@@ -940,6 +969,8 @@ export default function OrderManagement({ transactions, onAddTransaction, onDele
                                                                                 Qty
                                                                                 <input
                                                                                     type="number"
+                                                                                    disabled={readOnly}
+                                                                                    title={readOnly ? READ_ONLY_HINT : undefined}
                                                                                     min="1"
                                                                                     step="1"
                                                                                     aria-label={`Quantity for ${item.details.itemName}`}
@@ -1004,6 +1035,8 @@ export default function OrderManagement({ transactions, onAddTransaction, onDele
                                                                     <input
                                                                         id={addressInputId}
                                                                         type="text"
+                                                                        disabled={readOnly}
+                                                                        title={readOnly ? READ_ONLY_HINT : undefined}
                                                                         className="field py-2 text-sm"
                                                                         value={editForm.address || ''}
                                                                         onChange={e => setEditForm({ ...editForm, address: e.target.value })}
@@ -1015,6 +1048,8 @@ export default function OrderManagement({ transactions, onAddTransaction, onDele
                                                                     <input
                                                                         id={contactInputId}
                                                                         type="text"
+                                                                        disabled={readOnly}
+                                                                        title={readOnly ? READ_ONLY_HINT : undefined}
                                                                         className="field py-2 text-sm"
                                                                         value={editForm.contactNumber || ''}
                                                                         onChange={e => setEditForm({ ...editForm, contactNumber: e.target.value })}
@@ -1026,6 +1061,8 @@ export default function OrderManagement({ transactions, onAddTransaction, onDele
                                                                     <input
                                                                         id={barangayInputId}
                                                                         type="text"
+                                                                        disabled={readOnly}
+                                                                        title={readOnly ? READ_ONLY_HINT : undefined}
                                                                         className="field py-2 text-sm"
                                                                         value={editForm.barangay || ''}
                                                                         onChange={e => setEditForm({ ...editForm, barangay: e.target.value })}
@@ -1036,6 +1073,8 @@ export default function OrderManagement({ transactions, onAddTransaction, onDele
                                                                     <input
                                                                         id={cityInputId}
                                                                         type="text"
+                                                                        disabled={readOnly}
+                                                                        title={readOnly ? READ_ONLY_HINT : undefined}
                                                                         className="field py-2 text-sm"
                                                                         value={editForm.city || ''}
                                                                         onChange={e => setEditForm({ ...editForm, city: e.target.value })}
@@ -1046,6 +1085,8 @@ export default function OrderManagement({ transactions, onAddTransaction, onDele
                                                                     <input
                                                                         id={provinceInputId}
                                                                         type="text"
+                                                                        disabled={readOnly}
+                                                                        title={readOnly ? READ_ONLY_HINT : undefined}
                                                                         className="field py-2 text-sm"
                                                                         value={editForm.province || ''}
                                                                         onChange={e => setEditForm({ ...editForm, province: e.target.value })}
@@ -1148,7 +1189,8 @@ export default function OrderManagement({ transactions, onAddTransaction, onDele
                                                             aria-label="Write a note..."
                                                             placeholder="Write a note..."
                                                             className="field flex-1 py-2 text-sm"
-                                                            disabled={loading}
+                                                            disabled={readOnly || loading}
+                                                            title={readOnly ? READ_ONLY_HINT : undefined}
                                                             onKeyDown={async (e) => {
                                                                 if (e.key === 'Enter' && e.target.value.trim() && !loading) {
                                                                     const input = e.currentTarget;
@@ -1159,7 +1201,8 @@ export default function OrderManagement({ transactions, onAddTransaction, onDele
                                                         <button
                                                             type="button"
                                                             aria-label="Add note"
-                                                            disabled={loading}
+                                                            disabled={readOnly || loading}
+                                                            title={readOnly ? READ_ONLY_HINT : undefined}
                                                             onClick={async (e) => {
                                                                 const input = e.currentTarget.previousSibling;
                                                                 if (input.value.trim()) {
@@ -1203,7 +1246,7 @@ export default function OrderManagement({ transactions, onAddTransaction, onDele
                                 <p className="field-label">Fulfillment status</p>
                                 <div className="mt-2 flex flex-wrap gap-2">
                                     {FULFILLMENT_STATUSES.map(s => (
-                                        <button key={s} type="button" onClick={() => handleBulkUpdate({ fulfillmentStatus: s })} className="chip capitalize">
+                                        <button key={s} type="button" disabled={readOnly} title={readOnly ? READ_ONLY_HINT : undefined} onClick={() => handleBulkUpdate({ fulfillmentStatus: s })} className="chip capitalize">
                                             {s.replace('_', ' ')}
                                         </button>
                                     ))}
@@ -1214,7 +1257,7 @@ export default function OrderManagement({ transactions, onAddTransaction, onDele
                             <p className="field-label">Payment status</p>
                             <div className="mt-2 flex flex-wrap gap-2">
                                 {PAYMENT_STATUSES.map(s => (
-                                    <button key={s} type="button" onClick={() => handleBulkUpdate({ paymentStatus: s })} className="chip capitalize">
+                                    <button key={s} type="button" disabled={readOnly} title={readOnly ? READ_ONLY_HINT : undefined} onClick={() => handleBulkUpdate({ paymentStatus: s })} className="chip capitalize">
                                         {s}
                                     </button>
                                 ))}

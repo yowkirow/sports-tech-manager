@@ -4,16 +4,18 @@ import LoadingState from '../ui/LoadingState.jsx';
 import { productionCandidates, productionLineKey, productionQuantity } from '../../lib/production.js';
 import { useProductionData, useProductionMutation } from './productionHooks.js';
 import { JobActivity, JobCounts, JobHeading, JobInstructions, MutationNotice, ProductionHeader, ProductionNotice } from './ProductionParts.jsx';
+import { useReadOnly, READ_ONLY_HINT } from '../ui/ReadOnly';
 import './Production.css';
 
 const isActive = member => member.active === true || member.active === 1;
 const employeeName = member => member.name || member.displayName || member.email;
 
 function EmployeeAccounts({ members, reload, online, stale }) {
+    const readOnly = useReadOnly();
     const [email, setEmail] = useState('');
     const [name, setName] = useState('');
     const mutation = useProductionMutation(reload);
-    const blocked = !online || stale || mutation.busy || mutation.uncertain;
+    const blocked = readOnly || !online || stale || mutation.busy || mutation.uncertain;
     const employees = members.filter(member => member.role === 'print_operator');
     const invite = event => {
         event.preventDefault();
@@ -33,14 +35,14 @@ function EmployeeAccounts({ members, reload, online, stale }) {
                 <label className="production-field">Individual email address
                     <input type="email" value={email} required maxLength={254} autoComplete="off" onChange={event => setEmail(event.target.value)} />
                 </label>
-                <button type="submit" className="production-button"><UserPlus size={18} aria-hidden="true" />Prepare account</button>
+                <button type="submit" className="production-button" disabled={readOnly} title={readOnly ? READ_ONLY_HINT : undefined}><UserPlus size={18} aria-hidden="true" />Prepare account</button>
             </fieldset>
         </form>
         <ul className="production-employees">
             {employees.map(member => <li key={member.id}>
                 <div><strong>{employeeName(member)}</strong>{member.name && <p>{member.email}</p>}
                     <span>{isActive(member) ? 'Active print operator' : 'Access revoked'}</span></div>
-                <button type="button" className="production-button" disabled={blocked}
+                <button type="button" className="production-button" disabled={blocked} title={readOnly ? READ_ONLY_HINT : undefined}
                     onClick={() => mutation.run(`/api/members/${member.id}`, { active: !isActive(member) },
                         isActive(member) ? 'Employee access revoked; unfinished jobs are on hold.' : 'Employee account reactivated. Jobs stay on hold until re-released.',
                         undefined, 'PATCH')}>
@@ -54,13 +56,14 @@ function EmployeeAccounts({ members, reload, online, stale }) {
 }
 
 function PrepareJob({ candidates, employees, reload, online, stale }) {
+    const readOnly = useReadOnly();
     const [selected, setSelected] = useState('');
     const [assignee, setAssignee] = useState('');
     const [instructions, setInstructions] = useState('');
     const [validation, setValidation] = useState('');
     const mutation = useProductionMutation(reload);
     const source = candidates.find(candidate => productionLineKey(candidate) === selected);
-    const blocked = !online || stale || mutation.busy || mutation.uncertain;
+    const blocked = readOnly || !online || stale || mutation.busy || mutation.uncertain;
     const submit = event => {
         event.preventDefault();
         if (!source || !employees.some(employee => employee.id === assignee)) {
@@ -102,7 +105,7 @@ function PrepareJob({ candidates, employees, reload, online, stale }) {
                 </label>
                 <p id="production-instructions-help" className="production-help">Visible to the assigned employee. Include only print instructions — no customer names, contacts, addresses, payment details or private comments. Provide artwork separately.</p>
                 {source && <p>Prepare <strong>{source.required} shirts</strong>. This does not release the job or change payment or inventory.</p>}
-                <button type="submit" className="production-button production-primary" disabled={!source || !assignee}>
+                <button type="submit" className="production-button production-primary" disabled={readOnly || !source || !assignee} title={readOnly ? READ_ONLY_HINT : undefined}>
                     Prepare job
                 </button>
             </fieldset>
@@ -114,6 +117,7 @@ function PrepareJob({ candidates, employees, reload, online, stale }) {
 }
 
 function OwnerJob({ job, sources, employees, reload, online, stale }) {
+    const readOnly = useReadOnly();
     const [artwork, setArtwork] = useState(false);
     const [blanks, setBlanks] = useState(false);
     const [assignee, setAssignee] = useState('');
@@ -123,7 +127,7 @@ function OwnerJob({ job, sources, employees, reload, online, stale }) {
     const [validation, setValidation] = useState('');
     const [revisedLine, setRevisedLine] = useState('');
     const mutation = useProductionMutation(reload);
-    const blocked = !online || stale || mutation.busy || mutation.uncertain;
+    const blocked = readOnly || !online || stale || mutation.busy || mutation.uncertain;
     const canRelease = ['draft', 'held'].includes(job.status);
     const replacements = sources.filter(source => source.sourceId === job.sourceId);
     const revise = retireOnly => {
@@ -186,7 +190,8 @@ function OwnerJob({ job, sources, employees, reload, online, stale }) {
                     I have checked the blanks, color, size and quantity.</label>
                 <p className="production-help">Manual release starts fulfillment for every active row in this order and stops customer self-edits. Payment does not release print jobs.</p>
                 <button type="button" className="production-button production-primary"
-                    disabled={job.sourceChanged || !artwork || !blanks || !employees.some(employee => employee.id === (assignee || job.assignee.id))}
+                    disabled={readOnly || job.sourceChanged || !artwork || !blanks || !employees.some(employee => employee.id === (assignee || job.assignee.id))}
+                    title={readOnly ? READ_ONLY_HINT : undefined}
                     onClick={() => submit('release')}><Send size={18} aria-hidden="true" />{job.status === 'held' ? 'Re-release job' : 'Release job'}</button>
             </div>}
             {job.awaitingQA > 0 && !job.sourceChanged && <div className="production-qa">
@@ -200,7 +205,7 @@ function OwnerJob({ job, sources, employees, reload, online, stale }) {
                         <input type="number" min="0" max={job.awaitingQA} step="1" inputMode="numeric"
                             value={rejected} onChange={event => setRejected(event.target.value)} />
                     </label>
-                    <button type="button" className="production-button production-primary" onClick={() => submit('qa')}>
+                    <button type="button" className="production-button production-primary" disabled={readOnly} title={readOnly ? READ_ONLY_HINT : undefined} onClick={() => submit('qa')}>
                         <CheckCircle2 size={18} aria-hidden="true" />Save quality check
                     </button>
                 </div>
@@ -222,11 +227,11 @@ function OwnerJob({ job, sources, employees, reload, online, stale }) {
                 </label>
                 <p className="production-help">Replacement starts a fresh draft with zero accepted shirts. Do not transfer completed work to a different design or variant.</p>
                 <div className="production-actions">
-                    <button type="button" className="production-button" disabled={!revisedLine || !note.trim()} onClick={() => revise(false)}>Prepare revised job</button>
-                    <button type="button" className="production-button production-warning" disabled={!note.trim()} onClick={() => revise(true)}>Retire held job</button>
+                    <button type="button" className="production-button" disabled={readOnly || !revisedLine || !note.trim()} title={readOnly ? READ_ONLY_HINT : undefined} onClick={() => revise(false)}>Prepare revised job</button>
+                    <button type="button" className="production-button production-warning" disabled={readOnly || !note.trim()} title={readOnly ? READ_ONLY_HINT : undefined} onClick={() => revise(true)}>Retire held job</button>
                 </div>
             </div>}
-            {job.status !== 'held' && <button type="button" className="production-button production-warning" onClick={() => submit('hold')}>
+            {job.status !== 'held' && <button type="button" className="production-button production-warning" disabled={readOnly} title={readOnly ? READ_ONLY_HINT : undefined} onClick={() => submit('hold')}>
                 <Pause size={18} aria-hidden="true" />Hold and withdraw
             </button>}
         </fieldset>}
@@ -239,6 +244,7 @@ function OwnerJob({ job, sources, employees, reload, online, stale }) {
 }
 
 export default function ProductionManager({ transactions = [], refetch }) {
+    const readOnly = useReadOnly();
     const data = useProductionData(true);
     const [filter, setFilter] = useState('active');
     const [search, setSearch] = useState('');

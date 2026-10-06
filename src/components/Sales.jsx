@@ -4,12 +4,14 @@ import { createPortal } from 'react-dom';
 import { isReturnedSale } from '../lib/transactionStatus';
 import { withLocalDate } from '../lib/transactionDate';
 import { useToast } from './ui/Toast';
+import { useReadOnly, READ_ONLY_HINT } from './ui/ReadOnly';
 // For Sales, better to just edit simple fields or redirect to Orders.
 // User asked to "make it editable (Goal: summary of orders and amounts)"
 // I'll implement a simple Edit Modal for Sales that allows changing: Date, Description (Customer), Amount (Override).
 
 const EditSaleModal = ({ transaction, onUpdate, onClose }) => {
     const { showToast } = useToast();
+    const readOnly = useReadOnly();
     const [date, setDate] = useState(transaction.date.split('T')[0]);
     const [amount, setAmount] = useState(transaction.amount);
     const [description, setDescription] = useState(transaction.description);
@@ -45,7 +47,8 @@ const EditSaleModal = ({ transaction, onUpdate, onClose }) => {
                 </button>
             </div>
             <form onSubmit={handleSubmit} className="flex min-h-0 flex-1 flex-col">
-                <div className="min-h-0 flex-1 space-y-4 overflow-y-auto p-5">
+                <fieldset disabled={readOnly} className="min-w-0 border-0 p-0 m-0 min-h-0 flex-1 overflow-y-auto">
+                    <div className="space-y-4 p-5">
                     <div>
                         <label htmlFor="sale-edit-date" className="field-label">Date</label>
                         <input id="sale-edit-date" type="date" value={date} onChange={e => setDate(e.target.value)} className="field w-full" />
@@ -59,10 +62,11 @@ const EditSaleModal = ({ transaction, onUpdate, onClose }) => {
                         <input id="sale-edit-amount" type="number" step="0.01" value={amount} onChange={e => setAmount(e.target.value)} className="field w-full num" />
                         <p className="mt-1.5 text-xs text-ink-2">Amount changes are retained as price adjustments when the order is edited.</p>
                     </div>
-                </div>
+                    </div>
+                </fieldset>
                 <div className="flex shrink-0 flex-col gap-2 border-t border-line bg-surface px-5 pt-4 pb-[max(1rem,env(safe-area-inset-bottom))] sm:flex-row sm:justify-end">
                     <button type="button" onClick={onClose} className="btn-secondary">Cancel</button>
-                    <button type="submit" disabled={loading} className="btn-primary">{loading ? 'Saving...' : 'Save'}</button>
+                    <button type="submit" disabled={readOnly || loading} title={readOnly ? READ_ONLY_HINT : undefined} className="btn-primary">{loading ? 'Saving...' : 'Save'}</button>
                 </div>
             </form>
         </div>
@@ -72,6 +76,7 @@ const EditSaleModal = ({ transaction, onUpdate, onClose }) => {
 const Sales = ({ transactions, onDeleteTransaction, onUpdateTransaction }) => {
     const [searchTerm, setSearchTerm] = useState('');
     const [editingTransaction, setEditingTransaction] = useState(null);
+    const readOnly = useReadOnly();
 
     // Filter only sale transactions
     const sales = useMemo(() => {
@@ -162,8 +167,9 @@ const Sales = ({ transactions, onDeleteTransaction, onUpdateTransaction }) => {
                                         <button
                                             type="button"
                                             onClick={() => setEditingTransaction(t)}
+                                            disabled={readOnly}
                                             className="icon-btn"
-                                            title="Edit Record"
+                                            title={readOnly ? READ_ONLY_HINT : 'Edit Record'}
                                             aria-label="Edit Record"
                                         >
                                             <Edit2 size={16} aria-hidden="true" />
@@ -171,8 +177,9 @@ const Sales = ({ transactions, onDeleteTransaction, onUpdateTransaction }) => {
                                         <button
                                             type="button"
                                             onClick={() => onDeleteTransaction(t.id)}
+                                            disabled={readOnly}
                                             className="icon-btn hover:text-red-300"
-                                            title="Delete Record"
+                                            title={readOnly ? READ_ONLY_HINT : 'Delete Record'}
                                             aria-label="Delete Record"
                                         >
                                             <Trash2 size={16} aria-hidden="true" />
@@ -228,8 +235,9 @@ const Sales = ({ transactions, onDeleteTransaction, onUpdateTransaction }) => {
                                                 <button
                                                     type="button"
                                                     onClick={() => setEditingTransaction(t)}
+                                                    disabled={readOnly}
                                                     className="icon-btn"
-                                                    title="Edit Record"
+                                                    title={readOnly ? READ_ONLY_HINT : 'Edit Record'}
                                                     aria-label="Edit Record"
                                                 >
                                                     <Edit2 size={16} aria-hidden="true" />
@@ -237,8 +245,9 @@ const Sales = ({ transactions, onDeleteTransaction, onUpdateTransaction }) => {
                                                 <button
                                                     type="button"
                                                     onClick={() => onDeleteTransaction(t.id)}
+                                                    disabled={readOnly}
                                                     className="icon-btn hover:text-red-300"
-                                                    title="Delete Record"
+                                                    title={readOnly ? READ_ONLY_HINT : 'Delete Record'}
                                                     aria-label="Delete Record"
                                                 >
                                                     <Trash2 size={16} aria-hidden="true" />

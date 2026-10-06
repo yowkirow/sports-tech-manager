@@ -3,6 +3,7 @@ import { Package, Copy, CheckCircle2, Circle, Truck, AlertCircle } from 'lucide-
 import { useToast } from '../ui/Toast';
 import clsx from 'clsx';
 import { groupOrders } from '../../lib/orderItems.js';
+import { useReadOnly } from '../ui/ReadOnly';
 
 const numberOr = (value, fallback = 0) => {
     if (value === undefined || value === null || value === '') return fallback;
@@ -15,6 +16,7 @@ export default function SupplierManager({ transactions }) {
     const [filterType, setFilterType] = useState('unfulfilled'); // 'unfulfilled' | 'week'
     const [selectedOrderIds, setSelectedOrderIds] = useState(new Set());
     const [copying, setCopying] = useState(false);
+    const readOnly = useReadOnly();
 
     // 1. Group transactions into logical orders (Sale types)
     const orders = useMemo(() => {
@@ -146,7 +148,7 @@ export default function SupplierManager({ transactions }) {
     };
 
     return (
-        <div className="flex h-full flex-col gap-5">
+        <div className="flex h-full flex-col gap-5" data-read-only={readOnly ? 'true' : undefined}>
             {/* Header / Toolbar */}
             <div className="flex flex-col gap-3 md:flex-row md:items-center md:justify-between">
                 <div className="flex gap-2 overflow-x-auto pb-1 scrollbar-hide" aria-label="Supplier filters">

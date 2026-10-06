@@ -117,14 +117,19 @@ function Facts() {
 }
 
 function ProductImage({ src, alt = '', className }) {
-    if (!src) {
-        return (
-            <div className={clsx('grid size-full place-items-center text-ink-3', className)}>
-                <ImageOff size={32} aria-hidden="true" />
+    const [failedSrc, setFailedSrc] = useState(null);
+    const failed = failedSrc === src;
+    return (
+        <div className="relative size-full">
+            <div className="absolute inset-0 grid place-items-center text-ink-3" aria-hidden="true">
+                <ImageOff size={32} />
             </div>
-        );
-    }
-    return <img src={src} alt={alt} loading="lazy" decoding="async" className={clsx('size-full object-cover', className)} />;
+            {src && !failed && (
+                <img src={src} alt={alt} loading="lazy" decoding="async" onError={() => setFailedSrc(src)}
+                    className={clsx('relative size-full object-cover', className)} />
+            )}
+        </div>
+    );
 }
 
 function ProductTile({ product, onOpen }) {

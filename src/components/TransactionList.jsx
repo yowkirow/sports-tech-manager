@@ -2,8 +2,9 @@ import React from 'react';
 import { ArrowUpRight, ArrowDownLeft, Trash2, ReceiptText } from 'lucide-react';
 import clsx from 'clsx';
 import { isReturnedSale } from '../lib/transactionStatus';
+import { READ_ONLY_HINT } from './ui/ReadOnly';
 
-const TransactionList = ({ transactions, onDelete }) => {
+const TransactionList = ({ transactions, onDelete, readOnly = false }) => {
     // Sort by date desc
     const sorted = transactions
         .filter(t => !isReturnedSale(t) && !t.details?.removedFromOrder)
@@ -65,10 +66,12 @@ const TransactionList = ({ transactions, onDelete }) => {
                                     <span className="sr-only">{t.type === 'sale' ? 'Income' : 'Expense'} </span>
                                     {t.type === 'sale' ? '+' : '−'}₱{Number(t.amount).toLocaleString()}
                                 </p>
-                                <button type="button" onClick={() => onDelete(t.id)} aria-label={`Delete ${t.description || 'transaction'}`} title="Delete"
-                                    className="icon-btn size-10 hover:text-red-400 lg:opacity-0 lg:group-hover:opacity-100 lg:focus-visible:opacity-100">
-                                    <Trash2 size={17} />
-                                </button>
+                                {!readOnly && (
+                                    <button type="button" onClick={() => onDelete(t.id)} aria-label={`Delete ${t.description || 'transaction'}`} title="Delete"
+                                        className="icon-btn size-10 hover:text-red-400 lg:opacity-0 lg:group-hover:opacity-100 lg:focus-visible:opacity-100">
+                                        <Trash2 size={17} />
+                                    </button>
+                                )}
                             </div>
                         </li>
                     ))}

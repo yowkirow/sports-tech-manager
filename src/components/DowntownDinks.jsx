@@ -4,6 +4,7 @@ import { Banknote, Calendar, Edit2, Filter, Loader2, Plus, Save, Search, Trash2,
 import { api } from '../lib/apiClient';
 import { useToast } from './ui/Toast';
 import Dialog from './ui/Dialog';
+import { useReadOnly, READ_ONLY_HINT } from './ui/ReadOnly';
 import { isReturnedSale } from '../lib/transactionStatus';
 import { withLocalDate } from '../lib/transactionDate';
 
@@ -48,6 +49,7 @@ const StatCard = ({ title, amount, icon: Icon, tone }) => (
 
 const EarningModal = ({ initialData, onAddTransaction, onUpdateTransaction, onClose }) => {
     const { showToast } = useToast();
+    const readOnly = useReadOnly();
     const [incomeType, setIncomeType] = useState(initialData?.details?.incomeType || 'open_plays');
     const [amount, setAmount] = useState(initialData?.amount || '');
     const [description, setDescription] = useState(initialData?.description || '');
@@ -166,7 +168,7 @@ const EarningModal = ({ initialData, onAddTransaction, onUpdateTransaction, onCl
                     />
                 </div>
 
-                <button type="submit" disabled={loading} className="btn-primary w-full">
+                <button type="submit" disabled={readOnly || loading} title={readOnly ? READ_ONLY_HINT : undefined} className="btn-primary w-full">
                     {loading ? <Loader2 size={18} className="animate-spin" aria-hidden="true" /> : (initialData ? <Save size={18} aria-hidden="true" /> : <Plus size={18} aria-hidden="true" />)}
                     {loading ? 'Saving...' : (initialData ? 'Update Earning' : 'Add Earning')}
                 </button>
@@ -177,6 +179,7 @@ const EarningModal = ({ initialData, onAddTransaction, onUpdateTransaction, onCl
 
 export default function DowntownDinks({ transactions, onAddTransaction, onUpdateTransaction, onDeleteTransaction }) {
     const { showToast } = useToast();
+    const readOnly = useReadOnly();
     const [searchTerm, setSearchTerm] = useState('');
     const [filterType, setFilterType] = useState('all');
     const [showModal, setShowModal] = useState(false);
@@ -250,6 +253,8 @@ export default function DowntownDinks({ transactions, onAddTransaction, onUpdate
             <button
                 type="button"
                 onClick={() => openEditModal(transaction)}
+                disabled={readOnly}
+                title={readOnly ? READ_ONLY_HINT : undefined}
                 className="icon-btn size-10"
                 aria-label="Edit"
             >
@@ -258,6 +263,8 @@ export default function DowntownDinks({ transactions, onAddTransaction, onUpdate
             <button
                 type="button"
                 onClick={() => handleDelete(transaction.id)}
+                disabled={readOnly}
+                title={readOnly ? READ_ONLY_HINT : undefined}
                 className="icon-btn size-10 text-red-400 hover:bg-red-500/10 hover:text-red-300"
                 aria-label="Delete"
             >
@@ -273,7 +280,7 @@ export default function DowntownDinks({ transactions, onAddTransaction, onUpdate
                     <h2 className="section-title flex items-center gap-2"><Trophy size={20} aria-hidden="true" className="text-ink-3" />Downtown Dinks</h2>
                     <p className="mt-1 text-sm text-ink-2">Club earnings from Open Plays and Tournaments</p>
                 </div>
-                <button type="button" onClick={openCreateModal} className="btn-primary whitespace-nowrap">
+                <button type="button" onClick={openCreateModal} disabled={readOnly} title={readOnly ? READ_ONLY_HINT : undefined} className="btn-primary whitespace-nowrap">
                     <Plus size={18} aria-hidden="true" /> Add Earning
                 </button>
             </div>

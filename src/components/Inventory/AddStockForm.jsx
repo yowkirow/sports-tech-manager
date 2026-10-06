@@ -5,6 +5,7 @@ import { Plus, Loader2, X } from 'lucide-react';
 import { useActivityLog } from '../../hooks/useActivityLog';
 import { api } from '../../lib/apiClient';
 import { useColors, useBrands } from '../../hooks/useInventory';
+import { useReadOnly, READ_ONLY_HINT } from '../ui/ReadOnly';
 
 const SIZES = ['XS', 'S', 'M', 'L', 'XL', '2XL'];
 
@@ -13,6 +14,7 @@ export default function AddStockForm({ onAddTransaction, onClose, transactions }
     const { logActivity } = useActivityLog();
     const colors = useColors(transactions || []);
     const brands = useBrands(transactions || []);
+    const readOnly = useReadOnly();
 
     const [loading, setLoading] = useState(false);
 
@@ -112,7 +114,8 @@ export default function AddStockForm({ onAddTransaction, onClose, transactions }
             </div>
 
             <form onSubmit={handleSubmit} className="flex min-h-0 flex-1 flex-col">
-                <div className="min-h-0 flex-1 space-y-5 overflow-y-auto p-5">
+                <fieldset disabled={readOnly} className="min-w-0 border-0 p-0 m-0 min-h-0 flex-1 overflow-y-auto">
+                    <div className="space-y-5 p-5">
                     {/* Category Selection */}
                     <div>
                         <p className="field-label">Item type</p>
@@ -239,12 +242,14 @@ export default function AddStockForm({ onAddTransaction, onClose, transactions }
                             className="field"
                         />
                     </div>
-                </div>
+                    </div>
+                </fieldset>
 
                 <div className="shrink-0 border-t border-line bg-surface px-5 pt-4 pb-[max(1rem,env(safe-area-inset-bottom))]">
                     <button
                         type="submit"
-                        disabled={loading}
+                        disabled={readOnly || loading}
+                        title={readOnly ? READ_ONLY_HINT : undefined}
                         className="btn-primary w-full"
                     >
                         {loading ? <Loader2 className="animate-spin" aria-hidden="true" /> : <Plus size={20} aria-hidden="true" />}

@@ -3,6 +3,7 @@ import { Target } from 'lucide-react';
 import clsx from 'clsx';
 import { isReturnedSale } from '../../lib/transactionStatus';
 import { getSaleItems } from '../../lib/orderItems.js';
+import { useReadOnly } from '../ui/ReadOnly';
 
 const FilterButton = ({ active, onClick, children }) => (
     <button
@@ -16,6 +17,7 @@ const FilterButton = ({ active, onClick, children }) => (
 );
 
 const AdsReporting = ({ transactions }) => {
+    const readOnly = useReadOnly();
     const [filter, setFilter] = useState('monthly');
 
     const reportData = useMemo(() => {

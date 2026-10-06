@@ -3,10 +3,12 @@ import { Tag, Plus, Trash2, Check, X, Loader2 } from 'lucide-react';
 import { useBrands } from '../../hooks/useInventory';
 import { useToast } from '../ui/Toast';
 import { useActivityLog } from '../../hooks/useActivityLog';
+import { useReadOnly, READ_ONLY_HINT } from '../ui/ReadOnly';
 
 export default function BrandSettings({ transactions, onAddTransaction }) {
     const { showToast } = useToast();
     const { logActivity } = useActivityLog();
+    const readOnly = useReadOnly();
     const brands = useBrands(transactions);
 
     const [isAdding, setIsAdding] = useState(false);
@@ -82,7 +84,7 @@ export default function BrandSettings({ transactions, onAddTransaction }) {
                     <p className="mt-1 text-xs text-ink-2">Manage brands available for your products</p>
                 </div>
                 {!isAdding && (
-                    <button type="button" onClick={() => setIsAdding(true)} className="btn-secondary">
+                    <button type="button" onClick={() => setIsAdding(true)} disabled={readOnly} title={readOnly ? READ_ONLY_HINT : undefined} className="btn-secondary">
                         <Plus size={16} aria-hidden="true" /> Add Brand
                     </button>
                 )}
@@ -98,6 +100,7 @@ export default function BrandSettings({ transactions, onAddTransaction }) {
                             value={newName}
                             onChange={(e) => setNewName(e.target.value)}
                             placeholder="e.g., Gildan"
+                            disabled={readOnly}
                             className="field"
                         />
                     </div>
@@ -105,7 +108,8 @@ export default function BrandSettings({ transactions, onAddTransaction }) {
                         <button
                             type="button"
                             onClick={handleAddBrand}
-                            disabled={loading || !newName}
+                            disabled={readOnly || loading || !newName}
+                            title={readOnly ? READ_ONLY_HINT : undefined}
                             className="btn-primary min-h-11 px-4"
                             aria-label="Save brand"
                         >
@@ -134,6 +138,8 @@ export default function BrandSettings({ transactions, onAddTransaction }) {
                         <button
                             type="button"
                             onClick={() => handleDeleteBrand(brand)}
+                            disabled={readOnly}
+                            title={readOnly ? READ_ONLY_HINT : undefined}
                             className="btn-danger min-h-10 px-3 opacity-100 sm:opacity-0 sm:transition-opacity sm:group-hover:opacity-100 sm:focus:opacity-100"
                             aria-label={`Delete ${brand.name}`}
                         >

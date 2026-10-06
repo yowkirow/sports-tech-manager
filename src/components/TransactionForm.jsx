@@ -1,6 +1,7 @@
 import React, { useState, useEffect } from 'react';
 import { PlusCircle, MinusCircle, Calculator } from 'lucide-react';
 import { useColors } from '../hooks/useInventory';
+import { useReadOnly, READ_ONLY_HINT } from './ui/ReadOnly';
 
 const TransactionForm = ({ onAddTransaction, transactions = [] }) => {
     const [type, setType] = useState('expense'); // 'expense' or 'sale'
@@ -17,6 +18,7 @@ const TransactionForm = ({ onAddTransaction, transactions = [] }) => {
     const [size, setSize] = useState('M');
     const [color, setColor] = useState('White');
     const [subCategory, setSubCategory] = useState('');
+    const readOnly = useReadOnly();
 
     const colors = useColors(transactions);
 
@@ -110,6 +112,8 @@ const TransactionForm = ({ onAddTransaction, transactions = [] }) => {
                         type="button"
                         aria-pressed={type === 'sale'}
                         onClick={() => setType('sale')}
+                        disabled={readOnly}
+                        title={readOnly ? READ_ONLY_HINT : undefined}
                         className="chip"
                     >
                         Sale
@@ -118,6 +122,8 @@ const TransactionForm = ({ onAddTransaction, transactions = [] }) => {
                         type="button"
                         aria-pressed={type === 'expense'}
                         onClick={() => setType('expense')}
+                        disabled={readOnly}
+                        title={readOnly ? READ_ONLY_HINT : undefined}
                         className="chip"
                     >
                         Expense
@@ -126,7 +132,8 @@ const TransactionForm = ({ onAddTransaction, transactions = [] }) => {
             </div>
 
             <form onSubmit={handleSubmit} className="space-y-5 p-4 sm:p-5">
-                {type === 'expense' && (
+                <fieldset disabled={readOnly} className="min-w-0 border-0 p-0 m-0 space-y-5">
+                    {type === 'expense' && (
                     <div>
                         <label htmlFor="transaction-item-type" className="field-label">Item Type</label>
                         <select
@@ -140,9 +147,9 @@ const TransactionForm = ({ onAddTransaction, transactions = [] }) => {
                             <option value="accessories">Accessories</option>
                         </select>
                     </div>
-                )}
+                    )}
 
-                <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
+                    <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
                     <div>
                         <label htmlFor="transaction-quantity" className="field-label">Quantity</label>
                         <input
@@ -181,9 +188,9 @@ const TransactionForm = ({ onAddTransaction, transactions = [] }) => {
                             />
                         </div>
                     )}
-                </div>
+                    </div>
 
-                {showShirtDetails && (
+                    {showShirtDetails && (
                     <div className="grid grid-cols-1 gap-4 rounded-xl border border-line bg-raised p-4 sm:grid-cols-2">
                         <div>
                             <label htmlFor="transaction-size" className="field-label">Size</label>
@@ -209,9 +216,9 @@ const TransactionForm = ({ onAddTransaction, transactions = [] }) => {
                             </select>
                         </div>
                     </div>
-                )}
+                    )}
 
-                {type === 'sale' && (
+                    {type === 'sale' && (
                     <div className="relative rounded-xl border border-line bg-raised p-4">
                         <label htmlFor="transaction-customer-name" className="field-label">Customer Name *</label>
                         <input
@@ -246,9 +253,9 @@ const TransactionForm = ({ onAddTransaction, transactions = [] }) => {
                             </div>
                         )}
                     </div>
-                )}
+                    )}
 
-                {category === 'accessories' && type === 'expense' && (
+                    {category === 'accessories' && type === 'expense' && (
                     <div className="rounded-xl border border-line bg-raised p-4">
                         <label htmlFor="transaction-item-name" className="field-label">Item Name</label>
                         <input
@@ -260,9 +267,9 @@ const TransactionForm = ({ onAddTransaction, transactions = [] }) => {
                             className="field"
                         />
                     </div>
-                )}
+                    )}
 
-                {!isFixedPrice && (
+                    {!isFixedPrice && (
                     <div>
                         <label htmlFor="transaction-description" className="field-label">Description / Note</label>
                         <input
@@ -275,10 +282,11 @@ const TransactionForm = ({ onAddTransaction, transactions = [] }) => {
                             className="field"
                         />
                     </div>
-                )}
+                    )}
+                </fieldset>
 
                 <div className="border-t border-line pt-4">
-                    <button type="submit" className="btn-primary w-full">
+                    <button type="submit" disabled={readOnly} title={readOnly ? READ_ONLY_HINT : undefined} className="btn-primary w-full">
                         {type === 'sale' ? <PlusCircle size={18} aria-hidden="true" /> : <MinusCircle size={18} aria-hidden="true" />}
                         {type === 'sale' ? 'Add Sale Record' : (category === 'blanks' ? 'Add to Inventory' : 'Record Expense')}
                     </button>

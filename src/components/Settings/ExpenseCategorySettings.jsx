@@ -2,6 +2,7 @@ import React, { useState, useEffect } from 'react';
 import { api } from '../../lib/apiClient';
 import { useToast } from '../ui/Toast';
 import { Tag, Plus, X, Save, Loader2 } from 'lucide-react';
+import { useReadOnly, READ_ONLY_HINT } from '../ui/ReadOnly';
 
 const DEFAULT_CATEGORIES = [
     'Rent',
@@ -15,6 +16,7 @@ const DEFAULT_CATEGORIES = [
 
 export default function ExpenseCategorySettings() {
     const { showToast } = useToast();
+    const readOnly = useReadOnly();
     const [loading, setLoading] = useState(false);
     const [categories, setCategories] = useState([]);
     const [newCategory, setNewCategory] = useState('');
@@ -99,11 +101,14 @@ export default function ExpenseCategorySettings() {
                             onChange={(e) => setNewCategory(e.target.value)}
                             onKeyDown={(e) => e.key === 'Enter' && handleAddCategory()}
                             placeholder="Add new category..."
+                            disabled={readOnly}
                             className="field flex-1"
                         />
                         <button
                             type="button"
                             onClick={handleAddCategory}
+                            disabled={readOnly}
+                            title={readOnly ? READ_ONLY_HINT : undefined}
                             className="btn-secondary min-h-11 px-4"
                             aria-label="Add category"
                         >
@@ -119,6 +124,8 @@ export default function ExpenseCategorySettings() {
                             <button
                                 type="button"
                                 onClick={() => handleRemoveCategory(cat)}
+                                disabled={readOnly}
+                                title={readOnly ? READ_ONLY_HINT : undefined}
                                 className="ml-1 rounded-full p-1 text-ink-2 hover:bg-red-500/10 hover:text-red-300"
                                 aria-label={`Remove ${cat}`}
                             >
@@ -135,7 +142,8 @@ export default function ExpenseCategorySettings() {
                     <button
                         type="button"
                         onClick={handleSave}
-                        disabled={loading || !loaded}
+                        disabled={readOnly || loading || !loaded}
+                        title={readOnly ? READ_ONLY_HINT : undefined}
                         className="btn-primary flex-1"
                     >
                         {loading ? <Loader2 size={18} className="animate-spin" aria-hidden="true" /> : <Save size={18} aria-hidden="true" />}
@@ -144,7 +152,8 @@ export default function ExpenseCategorySettings() {
                     <button
                         type="button"
                         onClick={handleReset}
-                        disabled={loading || !loaded}
+                        disabled={readOnly || loading || !loaded}
+                        title={readOnly ? READ_ONLY_HINT : undefined}
                         className="btn-danger"
                     >
                         Reset Defaults

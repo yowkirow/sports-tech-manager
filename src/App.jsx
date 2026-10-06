@@ -8,6 +8,7 @@ import { api, apiRequest } from './lib/apiClient';
 import LoadingState from './components/ui/LoadingState';
 import Dialog from './components/ui/Dialog';
 import Logo from './components/ui/Logo';
+import { ReadOnlyContext } from './components/ui/ReadOnly';
 
 const DashboardStats = lazy(() => import('./components/DashboardStats'));
 const TransactionList = lazy(() => import('./components/TransactionList'));
@@ -179,7 +180,7 @@ function ProtectedWorkspace({ printPath }) {
                             ? 'Read-only staging snapshot. You can review data here; saves, checkout and SMS delivery are disabled. The live store is unchanged.'
                             : 'Maintenance: data is temporarily read-only. Saves and checkout are disabled until maintenance is complete.'}
                     </div>}
-                    <PrintQueue user={session.user} userRole={role} />
+                    <ReadOnlyContext.Provider value={session.readOnly === true}><PrintQueue user={session.user} userRole={role} /></ReadOnlyContext.Provider>
                 </main>
             </div>
         );
@@ -293,6 +294,7 @@ function ManagementApp({ session, onProfileChange }) {
     );
 
     return (
+        <ReadOnlyContext.Provider value={session.readOnly === true}>
         <div className="flex h-dvh overflow-hidden bg-ground font-sans text-ink">
             <aside className="hidden w-[248px] shrink-0 flex-col border-r border-line bg-surface lg:flex">
                 <div className="flex h-16 shrink-0 items-center px-5">
@@ -391,8 +393,8 @@ function ManagementApp({ session, onProfileChange }) {
 
                             {activeTab === 'dashboard' && (
                                 <div className="space-y-8 animate-fade-in">
-                                    <DashboardStats transactions={effectiveTransactions} onDeleteAll={isOwner ? handleDeleteAll : undefined} />
-                                    <TransactionList transactions={effectiveTransactions} onDelete={deleteTransaction} />
+                                    <DashboardStats transactions={effectiveTransactions} onDeleteAll={isOwner ? handleDeleteAll : undefined} readOnly={session.readOnly === true} />
+                                    <TransactionList transactions={effectiveTransactions} onDelete={deleteTransaction} readOnly={session.readOnly === true} />
                                 </div>
                             )}
 
@@ -520,6 +522,7 @@ function ManagementApp({ session, onProfileChange }) {
                 document.body
             )}
         </div>
+        </ReadOnlyContext.Provider>
     );
 }
 
