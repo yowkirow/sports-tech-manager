@@ -1,0 +1,232 @@
+{
+  "schemaVersion": 2,
+  "generatedAt": "2026-10-06T11:03:25.999+08:00",
+  "title": "Design System: SportsTech",
+  "extensions": {
+    "colorMeta": {
+      "ground": {
+        "role": "neutral",
+        "displayName": "Near-Black Ground",
+        "canonical": "#0b0b0c",
+        "tonalRamp": ["#050506", "#0b0b0c", "#141416", "#1c1c1f", "#2a2a2f", "#4a4a50", "#8b8b93", "#f4f4f5"]
+      },
+      "surface": {
+        "role": "neutral",
+        "displayName": "Flat Charcoal Surface",
+        "canonical": "#141416",
+        "tonalRamp": ["#050506", "#0b0b0c", "#141416", "#1c1c1f", "#2a2a2f", "#4a4a50", "#8b8b93", "#f4f4f5"]
+      },
+      "raised": {
+        "role": "neutral",
+        "displayName": "Raised Charcoal",
+        "canonical": "#1c1c1f",
+        "tonalRamp": ["#050506", "#0b0b0c", "#141416", "#1c1c1f", "#2a2a2f", "#4a4a50", "#8b8b93", "#f4f4f5"]
+      },
+      "well": {
+        "role": "neutral",
+        "displayName": "Product Well Charcoal",
+        "canonical": "#1f1f22",
+        "tonalRamp": ["#050506", "#0b0b0c", "#141416", "#1c1c1f", "#2a2a2f", "#4a4a50", "#8b8b93", "#f4f4f5"]
+      },
+      "line": {
+        "role": "neutral",
+        "displayName": "Hairline Divider",
+        "canonical": "#2a2a2f",
+        "tonalRamp": ["#050506", "#0b0b0c", "#141416", "#1c1c1f", "#2a2a2f", "#4a4a50", "#8b8b93", "#f4f4f5"]
+      },
+      "field": {
+        "role": "neutral",
+        "displayName": "Field Black",
+        "canonical": "#101012",
+        "tonalRamp": ["#050506", "#0b0b0c", "#141416", "#1c1c1f", "#2a2a2f", "#4a4a50", "#8b8b93", "#f4f4f5"]
+      },
+      "ink": {
+        "role": "neutral",
+        "displayName": "Main Ink",
+        "canonical": "#f4f4f5",
+        "tonalRamp": ["#18181b", "#2c2c31", "#4a4a50", "#8b8b93", "#a8a8b0", "#c9c9cf", "#e2e2e6", "#ffffff"]
+      },
+      "ink-2": {
+        "role": "neutral",
+        "displayName": "Muted Ink",
+        "canonical": "#a8a8b0",
+        "tonalRamp": ["#050506", "#0b0b0c", "#141416", "#1c1c1f", "#2a2a2f", "#4a4a50", "#8b8b93", "#f4f4f5"]
+      },
+      "ink-3": {
+        "role": "neutral",
+        "displayName": "Quiet Ink",
+        "canonical": "#8b8b93",
+        "tonalRamp": ["#050506", "#0b0b0c", "#141416", "#1c1c1f", "#2a2a2f", "#4a4a50", "#8b8b93", "#f4f4f5"]
+      },
+      "white": {
+        "role": "neutral",
+        "displayName": "White",
+        "canonical": "#ffffff",
+        "tonalRamp": ["#18181b", "#2c2c31", "#4a4a50", "#8b8b93", "#a8a8b0", "#c9c9cf", "#e2e2e6", "#ffffff"]
+      },
+      "primary": {
+        "role": "primary",
+        "displayName": "SportsTech Action Red",
+        "canonical": "#ef4444",
+        "tonalRamp": ["oklch(18% 0.08 25)", "oklch(28% 0.13 25)", "oklch(38% 0.17 25)", "oklch(48% 0.20 25)", "oklch(58% 0.22 25)", "oklch(68% 0.20 25)", "oklch(82% 0.13 25)", "oklch(94% 0.04 25)"]
+      },
+      "primary-strong": {
+        "role": "primary",
+        "displayName": "Filled Action Red",
+        "canonical": "#dc2626",
+        "tonalRamp": ["oklch(18% 0.08 25)", "oklch(28% 0.13 25)", "oklch(38% 0.17 25)", "oklch(48% 0.20 25)", "oklch(58% 0.22 25)", "oklch(68% 0.20 25)", "oklch(82% 0.13 25)", "oklch(94% 0.04 25)"]
+      },
+      "primary-deep": {
+        "role": "primary",
+        "displayName": "Deep Action Red",
+        "canonical": "#b91c1c",
+        "tonalRamp": ["oklch(18% 0.08 25)", "oklch(28% 0.13 25)", "oklch(38% 0.17 25)", "oklch(48% 0.20 25)", "oklch(58% 0.22 25)", "oklch(68% 0.20 25)", "oklch(82% 0.13 25)", "oklch(94% 0.04 25)"]
+      },
+      "secondary": {
+        "role": "secondary",
+        "displayName": "White Pill",
+        "canonical": "#f4f4f5",
+        "tonalRamp": ["#18181b", "#2c2c31", "#4a4a50", "#8b8b93", "#a8a8b0", "#c9c9cf", "#e2e2e6", "#ffffff"]
+      },
+      "success": {
+        "role": "status",
+        "displayName": "Success Green",
+        "canonical": "#22c55e",
+        "tonalRamp": ["oklch(18% 0.07 145)", "oklch(28% 0.10 145)", "oklch(38% 0.13 145)", "oklch(48% 0.15 145)", "oklch(60% 0.16 145)", "oklch(72% 0.14 145)", "oklch(84% 0.10 145)", "oklch(94% 0.04 145)"]
+      },
+      "warning": {
+        "role": "status",
+        "displayName": "Warning Amber",
+        "canonical": "#f59e0b",
+        "tonalRamp": ["oklch(20% 0.07 75)", "oklch(30% 0.10 75)", "oklch(42% 0.13 75)", "oklch(54% 0.16 75)", "oklch(66% 0.17 75)", "oklch(76% 0.14 75)", "oklch(86% 0.09 75)", "oklch(95% 0.04 75)"]
+      }
+    },
+    "typographyMeta": {
+      "display": { "displayName": "Display", "purpose": "Hero headlines, completion states and major page titles." },
+      "headline": { "displayName": "Headline", "purpose": "Product sheets, print queue references and high-emphasis states." },
+      "title": { "displayName": "Section Title", "purpose": "Uppercase section labels, checkout steps and production subsections." },
+      "body": { "displayName": "Body", "purpose": "Reading text, notes, forms and operational descriptions." },
+      "label": { "displayName": "Label", "purpose": "Controls, chips, badges and compact metadata." },
+      "figure": { "displayName": "Figure", "purpose": "Peso totals, counts, order references and quantities using tabular numerals." }
+    },
+    "shadows": [
+      { "name": "lift", "value": "0 12px 32px -12px rgb(0 0 0 / 0.7), 0 2px 6px -2px rgb(0 0 0 / 0.5)", "purpose": "Toasts and floating menus that must sit above the work surface." },
+      { "name": "sheet", "value": "0 -16px 48px -16px rgb(0 0 0 / 0.8)", "purpose": "Mobile bottom sheets and drawers." }
+    ],
+    "motion": [
+      { "name": "ease-out-expo", "value": "cubic-bezier(0.16, 1, 0.3, 1)", "purpose": "Default authored easing for fade, slide and bump moments." },
+      { "name": "fade-in", "value": "180ms var(--ease-out-expo) both", "purpose": "Page and overlay entrance." },
+      { "name": "slide-up", "value": "260ms var(--ease-out-expo) both", "purpose": "Toasts and sheet/dialog entrance." },
+      { "name": "bump", "value": "320ms var(--ease-out-expo)", "purpose": "One-shot bag count feedback." },
+      { "name": "reduced-motion", "value": "MotionConfig reducedMotion=\"user\" plus prefers-reduced-motion CSS", "purpose": "Respect user reduced-motion settings globally." }
+    ],
+    "breakpoints": [
+      { "name": "sm", "value": "640px" },
+      { "name": "md", "value": "768px" },
+      { "name": "lg", "value": "1024px" },
+      { "name": "xl", "value": "1280px" }
+    ]
+  },
+  "components": [
+    {
+      "name": "Primary Button",
+      "kind": "button",
+      "refersTo": "button-primary",
+      "description": "The single forward action in a commerce or operations flow.",
+      "html": "<button class='ds-btn-primary'>Shop now</button>",
+      "css": ".ds-btn-primary{min-height:44px;display:inline-flex;align-items:center;justify-content:center;gap:8px;border:0;border-radius:999px;padding:10px 20px;background:var(--color-primary-strong,#dc2626);color:#fff;font:600 15px/1.2 var(--font-sans,ui-sans-serif,system-ui,sans-serif);transition:background-color 150ms ease,transform 150ms ease}.ds-btn-primary:hover{background:var(--color-primary-deep,#b91c1c)}.ds-btn-primary:focus-visible{outline:2px solid var(--color-ink,#f4f4f5);outline-offset:2px}.ds-btn-primary:active{transform:translateY(1px)}.ds-btn-primary:disabled{cursor:not-allowed;opacity:.45}"
+    },
+    {
+      "name": "Secondary Button",
+      "kind": "button",
+      "refersTo": "button-secondary",
+      "description": "A bordered alternative action that keeps red reserved for commitment.",
+      "html": "<button class='ds-btn-secondary'>Track an order</button>",
+      "css": ".ds-btn-secondary{min-height:44px;display:inline-flex;align-items:center;justify-content:center;gap:8px;border:1px solid #4a4a50;border-radius:999px;padding:10px 20px;background:transparent;color:var(--color-ink,#f4f4f5);font:600 15px/1.2 var(--font-sans,ui-sans-serif,system-ui,sans-serif);transition:background-color 150ms ease,border-color 150ms ease,transform 150ms ease}.ds-btn-secondary:hover{background:rgb(255 255 255/.05);border-color:#a8a8b0}.ds-btn-secondary:focus-visible{outline:2px solid var(--color-ink,#f4f4f5);outline-offset:2px}.ds-btn-secondary:active{transform:translateY(1px)}"
+    },
+    {
+      "name": "Text Field",
+      "kind": "input",
+      "refersTo": "input-field",
+      "description": "Dark form control for checkout, tracking and operations data entry.",
+      "html": "<label class='ds-field-label' for='ds-phone'>Mobile number</label><input id='ds-phone' class='ds-field' placeholder='09123456789' />",
+      "css": ".ds-field-label{display:block;margin:0 0 6px;color:var(--color-ink-2,#a8a8b0);font:600 14px/1.2 var(--font-sans,ui-sans-serif,system-ui,sans-serif)}.ds-field{box-sizing:border-box;width:100%;min-height:44px;border:1px solid var(--color-line,#2a2a2f);border-radius:8px;background:var(--color-field,#101012);color:var(--color-ink,#f4f4f5);padding:10px 14px;font:400 15px/1.5 var(--font-sans,ui-sans-serif,system-ui,sans-serif);transition:border-color 150ms ease}.ds-field::placeholder{color:var(--color-ink-3,#8b8b93);opacity:1}.ds-field:hover{border-color:#4a4a50}.ds-field:focus{border-color:#c9c9cf;outline:none}.ds-field:focus-visible{outline:2px solid var(--color-ink,#f4f4f5);outline-offset:2px}.ds-field:disabled{cursor:not-allowed;opacity:.5}"
+    },
+    {
+      "name": "Filter Chip",
+      "kind": "chip",
+      "refersTo": "chip",
+      "description": "Pressed-state filter for brand, time period and status selections.",
+      "html": "<button class='ds-chip' aria-pressed='false'>All products</button><button class='ds-chip' aria-pressed='true'>Sypik</button>",
+      "css": ".ds-chip{height:40px;display:inline-flex;align-items:center;justify-content:center;gap:8px;border:1px solid #4a4a50;border-radius:999px;background:transparent;color:var(--color-ink-2,#a8a8b0);padding:0 16px;font:600 14px/1.2 var(--font-sans,ui-sans-serif,system-ui,sans-serif);transition:background-color 150ms ease,border-color 150ms ease,color 150ms ease}.ds-chip:hover{border-color:#a8a8b0;color:var(--color-ink,#f4f4f5)}.ds-chip[aria-pressed='true']{border-color:var(--color-ink,#f4f4f5);background:var(--color-ink,#f4f4f5);color:var(--color-ground,#0b0b0c)}.ds-chip:focus-visible{outline:2px solid var(--color-ink,#f4f4f5);outline-offset:2px}"
+    },
+    {
+      "name": "Surface Panel",
+      "kind": "card",
+      "refersTo": "surface-panel",
+      "description": "The default flat container for stats, lists, forms and admin sections.",
+      "html": "<section class='ds-surface'><h3>Recent activity</h3><p>1,248 records</p></section>",
+      "css": ".ds-surface{border:1px solid var(--color-line,#2a2a2f);border-radius:16px;background:var(--color-surface,#141416);color:var(--color-ink,#f4f4f5);padding:24px}.ds-surface h3{margin:0;font:700 18px/1 var(--font-display,'Barlow Condensed','Arial Narrow',ui-sans-serif,system-ui,sans-serif);letter-spacing:.02em;text-transform:uppercase}.ds-surface p{margin:8px 0 0;color:var(--color-ink-2,#a8a8b0);font:400 14px/1.5 var(--font-sans,ui-sans-serif,system-ui,sans-serif);font-variant-numeric:tabular-nums}.ds-surface:focus-within{border-color:#4a4a50}"
+    },
+    {
+      "name": "Product Tile",
+      "kind": "card",
+      "refersTo": "product-tile",
+      "description": "Storefront product listing tile with charcoal image well and tabular price.",
+      "html": "<button class='ds-product'><span class='ds-product-media'></span><span class='ds-product-name'>Club shirt</span><span class='ds-product-brand'>Sypik</span><span class='ds-product-price'>₱400</span></button>",
+      "css": ".ds-product{display:block;width:100%;border:0;border-radius:12px;background:transparent;color:var(--color-ink,#f4f4f5);text-align:left;padding:0}.ds-product-media{display:block;aspect-ratio:4/5;overflow:hidden;border-radius:12px;background:var(--color-well,#1f1f22);transition:transform 500ms ease-out}.ds-product:hover .ds-product-media{transform:scale(1.03)}.ds-product-name{display:block;margin-top:12px;font:600 15px/1.25 var(--font-sans,ui-sans-serif,system-ui,sans-serif)}.ds-product:hover .ds-product-name{text-decoration:underline;text-underline-offset:3px}.ds-product-brand{display:block;margin-top:2px;color:var(--color-ink-2,#a8a8b0);font:400 14px/1.3 var(--font-sans,ui-sans-serif,system-ui,sans-serif)}.ds-product-price{display:block;margin-top:6px;font:600 15px/1.2 var(--font-sans,ui-sans-serif,system-ui,sans-serif);font-variant-numeric:tabular-nums}.ds-product:focus-visible{outline:2px solid var(--color-ink,#f4f4f5);outline-offset:4px}"
+    },
+    {
+      "name": "Mobile Tab Bar",
+      "kind": "nav",
+      "refersTo": "mobile-tabs",
+      "description": "Phone operations navigation with POS, Orders, Dashboard and Menu targets.",
+      "html": "<nav class='ds-tabbar' aria-label='Quick'><button aria-current='page'><svg viewBox='0 0 24 24' aria-hidden='true'><path d='M4 7h16M4 12h16M4 17h10'/></svg>POS</button><button><svg viewBox='0 0 24 24' aria-hidden='true'><path d='M6 4h12v16H6zM9 8h6M9 12h6M9 16h4'/></svg>Orders</button><button><svg viewBox='0 0 24 24' aria-hidden='true'><path d='M5 13h5v6H5zM14 5h5v14h-5z'/></svg>Dashboard</button><button><svg viewBox='0 0 24 24' aria-hidden='true'><path d='M4 6h16M4 12h16M4 18h16'/></svg>Menu</button></nav>",
+      "css": ".ds-tabbar{display:grid;grid-template-columns:repeat(4,minmax(0,1fr));border-top:1px solid var(--color-line,#2a2a2f);background:var(--color-surface,#141416);color:var(--color-ink-3,#8b8b93)}.ds-tabbar button{height:64px;display:flex;flex-direction:column;align-items:center;justify-content:center;gap:4px;border:0;background:transparent;color:inherit;font:600 12px/1.2 var(--font-sans,ui-sans-serif,system-ui,sans-serif)}.ds-tabbar svg{width:22px;height:22px;fill:none;stroke:currentColor;stroke-width:2;stroke-linecap:round;stroke-linejoin:round}.ds-tabbar button[aria-current='page']{color:var(--color-ink,#f4f4f5)}.ds-tabbar button[aria-current='page'] svg{color:var(--color-primary,#ef4444)}.ds-tabbar button:hover{color:var(--color-ink,#f4f4f5)}.ds-tabbar button:focus-visible{outline:2px solid var(--color-ink,#f4f4f5);outline-offset:-2px}"
+    },
+    {
+      "name": "Production Job Card",
+      "kind": "custom",
+      "refersTo": "production-job",
+      "description": "Print queue card led by a large tabular Barlow reference and text-labeled status.",
+      "html": "<article class='ds-production-job'><p class='ds-reference'>ST-1024</p><p class='ds-owner'>Owner view reference</p><span class='ds-status'>Printing</span><dl><div><dt>Total</dt><dd>24</dd></div><div><dt>Done</dt><dd>8</dd></div></dl><button>Save progress</button></article>",
+      "css": ".ds-production-job{border:1px solid var(--color-line,#2a2a2f);border-radius:16px;background:var(--color-surface,#141416);color:var(--color-ink,#f4f4f5);padding:20px}.ds-reference{margin:0;font:800 clamp(40px,14vw,76px)/.88 var(--font-display,'Barlow Condensed','Arial Narrow',ui-sans-serif,system-ui,sans-serif);letter-spacing:.005em;text-transform:uppercase;font-variant-numeric:tabular-nums}.ds-owner{margin:4px 0 0;color:var(--color-ink-2,#a8a8b0);font:400 14px/1.4 var(--font-sans,ui-sans-serif,system-ui,sans-serif)}.ds-status{display:inline-flex;align-items:center;margin-top:12px;border:1px solid rgb(56 189 248/.45);border-radius:999px;background:rgb(56 189 248/.10);color:#7dd3fc;padding:6px 10px;font:700 13px/1 var(--font-sans,ui-sans-serif,system-ui,sans-serif)}.ds-production-job dl{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));overflow:hidden;border:1px solid var(--color-line,#2a2a2f);border-radius:14px;margin:18px 0 16px}.ds-production-job div{padding:12px}.ds-production-job dt{color:var(--color-ink-2,#a8a8b0);font-size:13px}.ds-production-job dd{margin:4px 0 0;font:800 32px/.95 var(--font-display,'Barlow Condensed','Arial Narrow',ui-sans-serif,system-ui,sans-serif);font-variant-numeric:tabular-nums}.ds-production-job button{min-height:48px;border:1px solid var(--color-primary-strong,#dc2626);border-radius:999px;background:var(--color-primary-strong,#dc2626);color:#fff;padding:11px 18px;font:700 16px/1.2 var(--font-sans,ui-sans-serif,system-ui,sans-serif)}.ds-production-job button:hover{background:var(--color-primary-deep,#b91c1c);border-color:var(--color-primary-deep,#b91c1c)}.ds-production-job button:focus-visible{outline:2px solid var(--color-ink,#f4f4f5);outline-offset:2px}"
+    }
+  ],
+  "narrative": {
+    "northStar": "Category Standard",
+    "overview": "SportsTech is dark athletic commerce played straight: a near-black shop and a calm, dense operations console at the craft level of Nike, adidas and JOOLA. The system is conventional on purpose. Product images, peso totals, order state and the SportsTech logo do the work; the interface supplies confidence through flat charcoal surfaces, precise red actions and condensed uppercase display type.\n\nProvenance matters: the owner chose Category Standard over the rolled direction, and the incumbent dark slate glass world was replaced. This document records the built world, not the old one: no slate glass, blur, glow, gradient chrome or neon belongs in the canon. The permanent brand commitments are the SportsTech logo, the red theme accent, Philippine peso pricing and factual copy for fees, schedules and payment instructions.",
+    "keyCharacteristics": [
+      "Near-black ground with flat charcoal panels and hairline borders.",
+      "One red family for primary action, active selection and PWA chrome.",
+      "Barlow Condensed uppercase display for athletic authority; platform sans for reading, forms and money.",
+      "Tabular peso figures, explicit status labels and visible read-only state.",
+      "Mobile-first commerce with a dense owner console and a 48px print-queue action floor."
+    ],
+    "rules": [
+      { "name": "One Red", "body": "Primary red is action, selection and brand confirmation; it does not wash panels or decorate backgrounds.", "section": "colors" },
+      { "name": "No Glass", "body": "The legacy `glass-*` names are implementation aliases only; their visual meaning is flat surface, hairline border and no backdrop blur.", "section": "colors" },
+      { "name": "Condensed Authority", "body": "Barlow Condensed is for titles, hero phrases, section titles and KPI figures; it is not body copy.", "section": "typography" },
+      { "name": "Money Is Data", "body": "Peso prices, counts and order references use tabular numerals and must keep their label or context visible.", "section": "typography" },
+      { "name": "Flat-By-Default", "body": "Resting surfaces are flat charcoal panels with hairline borders; shadows appear only when a layer floats above the current task.", "section": "elevation" },
+      { "name": "Blunt Athletic Shape", "body": "Large surfaces stay rectangular with 12–16px corners; full pills are reserved for compact actions, chips and icon buttons.", "section": "shapes" }
+    ],
+    "dos": [
+      "**Do** keep SportsTech on Near-Black Ground with Flat Charcoal Surface panels and Hairline Divider rules.",
+      "**Do** reserve Filled Action Red for the primary action, selected icons/counts and theme chrome.",
+      "**Do** use Barlow Condensed uppercase for page titles, KPI figures and hero headlines, with platform sans for everything else.",
+      "**Do** show peso pricing and order totals as tabular figures with clear labels.",
+      "**Do** keep the amber read-only banner visible and disable every mutation control through the read-only context.",
+      "**Do** respect reduced motion globally and keep focus rings, text selection, caret color and scrollbars themed.",
+      "**Do** maintain minimum 12px text, 44px touch targets and 48px print-queue targets."
+    ],
+    "donts": [
+      "**Don't** revive the discarded slate-glass look: no decorative glass, backdrop blur, glow, neon or gradient chrome.",
+      "**Don't** use color as the only status indicator; every state needs visible text.",
+      "**Don't** invent testimonials, ratings, sales claims or brand photography standards not supplied by the product truth.",
+      "**Don't** use system display faces as the display voice; Barlow Condensed is the self-hosted display face.",
+      "**Don't** add kickers, eyebrow labels, generic icon-card page scaffolds or gradient text to future surfaces.",
+      "**Don't** turn the synthetic fixture imagery from review screenshots into a photography rule."
+    ]
+  }
+}
