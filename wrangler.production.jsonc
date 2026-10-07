@@ -6,7 +6,10 @@
   "compatibility_date": "2026-09-17",
   "workers_dev": false,
   "preview_urls": false,
-  "routes": [],
+  "routes": [
+    { "pattern": "www.sportstechph.store/*", "zone_name": "sportstechph.store" },
+    { "pattern": "sportstechph.store/*", "zone_name": "sportstechph.store" }
+  ],
   "limits": {
     "cpu_ms": 1000
   },
@@ -15,7 +18,7 @@
     "ACCESS_TEAM_DOMAIN": "jolly-fog-e8df.cloudflareaccess.com",
     "ACCESS_AUDIENCE": "b34b322f990824061e2e12e0b09863d3634f19cf816fbe04506ae0bcde1d39eb",
     "PRINT_QUEUE_ENABLED": "false",
-    "MUTATIONS_ENABLED": "false",
+    "MUTATIONS_ENABLED": "true",
     "CANONICAL_HOST": "www.sportstechph.store",
     "REDIRECT_HOSTS": "sportstechph.store"
   },
@@ -23,7 +26,7 @@
     "directory": "./dist",
     "binding": "ASSETS",
     "not_found_handling": "single-page-application",
-    "run_worker_first": ["/api/*", "/health", "/admin*", "/print*"]
+    "run_worker_first": true
   },
   "version_metadata": {
     "binding": "VERSION"
