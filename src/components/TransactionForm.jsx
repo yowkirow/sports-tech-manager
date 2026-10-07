@@ -1,10 +1,7 @@
 import React, { useState, useEffect } from 'react';
-import Card from './ui/Card';
-import Button from './ui/Button';
-import Input from './ui/Input';
-import Select from './ui/Select';
 import { PlusCircle, MinusCircle, Calculator } from 'lucide-react';
 import { useColors } from '../hooks/useInventory';
+import { useReadOnly, READ_ONLY_HINT } from './ui/ReadOnly';
 
 const TransactionForm = ({ onAddTransaction, transactions = [] }) => {
     const [type, setType] = useState('expense'); // 'expense' or 'sale'
@@ -21,6 +18,7 @@ const TransactionForm = ({ onAddTransaction, transactions = [] }) => {
     const [size, setSize] = useState('M');
     const [color, setColor] = useState('White');
     const [subCategory, setSubCategory] = useState('');
+    const readOnly = useReadOnly();
 
     const colors = useColors(transactions);
 
@@ -106,111 +104,127 @@ const TransactionForm = ({ onAddTransaction, transactions = [] }) => {
     const showShirtDetails = type === 'sale' || category === 'blanks';
 
     return (
-        <Card>
-            <div className="form-header">
-                <h2 style={{ margin: 0 }}>{type === 'sale' ? 'Record Sale' : 'Add Item'}</h2>
-                <div style={{ display: 'flex', gap: '0.5rem', background: 'rgba(255,255,255,0.05)', padding: '0.25rem', borderRadius: '8px' }}>
-                    <Button
-                        variant={type === 'sale' ? 'primary' : 'secondary'}
+        <section className="surface overflow-hidden">
+            <div className="flex flex-col gap-4 border-b border-line p-4 sm:flex-row sm:items-center sm:justify-between sm:p-5">
+                <h2 className="section-title">{type === 'sale' ? 'Record Sale' : 'Add Item'}</h2>
+                <div className="flex gap-2" aria-label="Transaction type">
+                    <button
+                        type="button"
+                        aria-pressed={type === 'sale'}
                         onClick={() => setType('sale')}
-                        style={{ padding: '0.5rem 1rem', fontSize: '0.9rem' }}
+                        disabled={readOnly}
+                        title={readOnly ? READ_ONLY_HINT : undefined}
+                        className="chip"
                     >
                         Sale
-                    </Button>
-                    <Button
-                        variant={type === 'expense' ? 'primary' : 'secondary'}
+                    </button>
+                    <button
+                        type="button"
+                        aria-pressed={type === 'expense'}
                         onClick={() => setType('expense')}
-                        style={{ padding: '0.5rem 1rem', fontSize: '0.9rem', background: type === 'expense' ? 'var(--danger)' : '' }}
+                        disabled={readOnly}
+                        title={readOnly ? READ_ONLY_HINT : undefined}
+                        className="chip"
                     >
                         Expense
-                    </Button>
+                    </button>
                 </div>
             </div>
 
-            <form onSubmit={handleSubmit}>
-                {type === 'expense' && (
-                    <Select
-                        label="Item Type"
-                        value={category}
-                        onChange={(e) => setCategory(e.target.value)}
-                        options={[
-                            { value: 'blanks', label: 'Blank Shirts (₱70/ea)' },
-                            { value: 'dtf', label: 'DTF Prints' },
-                            { value: 'accessories', label: 'Accessories' }
-                        ]}
-                    />
-                )}
+            <form onSubmit={handleSubmit} className="space-y-5 p-4 sm:p-5">
+                <fieldset disabled={readOnly} className="min-w-0 border-0 p-0 m-0 space-y-5">
+                    {type === 'expense' && (
+                    <div>
+                        <label htmlFor="transaction-item-type" className="field-label">Item Type</label>
+                        <select
+                            id="transaction-item-type"
+                            value={category}
+                            onChange={(e) => setCategory(e.target.value)}
+                            className="field"
+                        >
+                            <option value="blanks">Blank Shirts (₱70/ea)</option>
+                            <option value="dtf">DTF Prints</option>
+                            <option value="accessories">Accessories</option>
+                        </select>
+                    </div>
+                    )}
 
-                <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '1rem', marginBottom: '1rem' }}>
-                    <Input
-                        label="Quantity"
-                        type="number"
-                        value={quantity}
-                        onChange={(e) => setQuantity(e.target.value)}
-                        required
-                        min="1"
-                        step="1"
-                    />
+                    <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
+                    <div>
+                        <label htmlFor="transaction-quantity" className="field-label">Quantity</label>
+                        <input
+                            id="transaction-quantity"
+                            type="number"
+                            value={quantity}
+                            onChange={(e) => setQuantity(e.target.value)}
+                            required
+                            min="1"
+                            step="1"
+                            className="field num"
+                        />
+                    </div>
 
                     {isFixedPrice ? (
-                        <div style={{ marginBottom: '1rem' }}>
-                            <label style={{ display: 'block', marginBottom: '0.5rem', color: 'var(--text-muted)', fontSize: '0.9rem' }}>
-                                Total (₱70 x {quantity})
-                            </label>
-                            <div style={{
-                                padding: '0.75rem 1rem',
-                                background: 'rgba(255,255,255,0.1)',
-                                borderRadius: '8px',
-                                fontWeight: 'bold',
-                                color: 'var(--success)',
-                                display: 'flex',
-                                alignItems: 'center',
-                                gap: '0.5rem'
-                            }}>
-                                <Calculator size={16} />
+                        <div>
+                            <p className="field-label">Total (₱70 x {quantity})</p>
+                            <div className="flex min-h-11 items-center gap-2 rounded-lg border border-line bg-raised px-3.5 py-2.5 font-semibold text-emerald-300 num">
+                                <Calculator size={16} aria-hidden="true" />
                                 ₱ {(parseInt(quantity) || 0) * FIXED_SHIRT_PRICE}
                             </div>
                         </div>
                     ) : (
-                        <Input
-                            label={type === 'sale' ? "Sale Price" : "Cost (₱)"}
-                            type="number"
-                            placeholder="0.00"
-                            value={amount}
-                            onChange={(e) => setAmount(e.target.value)}
-                            required
-                            min="0"
-                            step="0.01"
-                        />
+                        <div>
+                            <label htmlFor="transaction-amount" className="field-label">{type === 'sale' ? "Sale Price" : "Cost (₱)"}</label>
+                            <input
+                                id="transaction-amount"
+                                type="number"
+                                placeholder="0.00"
+                                value={amount}
+                                onChange={(e) => setAmount(e.target.value)}
+                                required
+                                min="0"
+                                step="0.01"
+                                className="field num"
+                            />
+                        </div>
                     )}
-                </div>
-
-                {showShirtDetails && (
-                    <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '1rem', background: 'rgba(255,255,255,0.03)', padding: '1rem', borderRadius: '8px', marginBottom: '1rem' }}>
-                        <Select
-                            label="Size"
-                            value={size}
-                            onChange={(e) => setSize(e.target.value)}
-                            options={['XS', 'S', 'M', 'L', 'XL', '2XL'].map(s => ({ value: s, label: s }))}
-                        />
-
-                        <Select
-                            label="Color"
-                            value={color}
-                            onChange={(e) => setColor(e.target.value)}
-                            options={colors.map(c => ({ value: c.name, label: c.name }))}
-                        />
                     </div>
-                )}
 
-                {type === 'sale' && (
-                    <div style={{ background: 'rgba(255,255,255,0.03)', padding: '1rem', borderRadius: '8px', marginBottom: '1rem', position: 'relative' }}>
-                        <label style={{ display: 'block', marginBottom: '0.5rem', color: 'var(--text-muted)', fontSize: '0.9rem' }}>
-                            Customer Name *
-                        </label>
+                    {showShirtDetails && (
+                    <div className="grid grid-cols-1 gap-4 rounded-xl border border-line bg-raised p-4 sm:grid-cols-2">
+                        <div>
+                            <label htmlFor="transaction-size" className="field-label">Size</label>
+                            <select
+                                id="transaction-size"
+                                value={size}
+                                onChange={(e) => setSize(e.target.value)}
+                                className="field"
+                            >
+                                {['XS', 'S', 'M', 'L', 'XL', '2XL'].map(s => <option key={s} value={s}>{s}</option>)}
+                            </select>
+                        </div>
+
+                        <div>
+                            <label htmlFor="transaction-color" className="field-label">Color</label>
+                            <select
+                                id="transaction-color"
+                                value={color}
+                                onChange={(e) => setColor(e.target.value)}
+                                className="field"
+                            >
+                                {colors.map(c => <option key={c.name} value={c.name}>{c.name}</option>)}
+                            </select>
+                        </div>
+                    </div>
+                    )}
+
+                    {type === 'sale' && (
+                    <div className="relative rounded-xl border border-line bg-raised p-4">
+                        <label htmlFor="transaction-customer-name" className="field-label">Customer Name *</label>
                         <input
+                            id="transaction-customer-name"
                             type="text"
-                            className="glass-input"
+                            className="field"
                             placeholder="Enter customer name"
                             value={customerName}
                             onChange={(e) => {
@@ -220,32 +234,10 @@ const TransactionForm = ({ onAddTransaction, transactions = [] }) => {
                             onFocus={() => setShowSuggestions(true)}
                             onBlur={() => setTimeout(() => setShowSuggestions(false), 200)}
                             required
-                            style={{
-                                width: '100%',
-                                padding: '0.75rem 1rem',
-                                background: 'rgba(255,255,255,0.05)',
-                                border: '1px solid rgba(255,255,255,0.1)',
-                                borderRadius: '8px',
-                                color: 'var(--text-main)',
-                                fontSize: '1rem'
-                            }}
                         />
 
                         {showSuggestions && customerSuggestions.length > 0 && (
-                            <div style={{
-                                position: 'absolute',
-                                top: '100%',
-                                left: '1rem',
-                                right: '1rem',
-                                background: 'rgba(23, 23, 23, 0.98)',
-                                border: '1px solid rgba(255,255,255,0.1)',
-                                borderRadius: '8px',
-                                marginTop: '0.25rem',
-                                maxHeight: '150px',
-                                overflowY: 'auto',
-                                zIndex: 1000,
-                                boxShadow: '0 4px 12px rgba(0,0,0,0.5)'
-                            }}>
+                            <div className="absolute left-4 right-4 top-full z-20 mt-1 max-h-40 overflow-y-auto rounded-lg border border-line bg-raised shadow-lift">
                                 {customerSuggestions.map((name, index) => (
                                     <div
                                         key={index}
@@ -253,14 +245,7 @@ const TransactionForm = ({ onAddTransaction, transactions = [] }) => {
                                             setCustomerName(name);
                                             setShowSuggestions(false);
                                         }}
-                                        style={{
-                                            padding: '0.75rem 1rem',
-                                            cursor: 'pointer',
-                                            borderBottom: index < customerSuggestions.length - 1 ? '1px solid rgba(255,255,255,0.05)' : 'none',
-                                            transition: 'background 0.2s'
-                                        }}
-                                        onMouseEnter={(e) => e.target.style.background = 'rgba(255,255,255,0.1)'}
-                                        onMouseLeave={(e) => e.target.style.background = 'transparent'}
+                                        className="cursor-pointer border-b border-line px-3 py-2.5 text-sm text-ink last:border-0 hover:bg-white/[0.04]"
                                     >
                                         {name}
                                     </div>
@@ -268,37 +253,46 @@ const TransactionForm = ({ onAddTransaction, transactions = [] }) => {
                             </div>
                         )}
                     </div>
-                )}
+                    )}
 
-                {category === 'accessories' && type === 'expense' && (
-                    <div style={{ background: 'rgba(255,255,255,0.03)', padding: '1rem', borderRadius: '8px', marginBottom: '1rem' }}>
-                        <Input
-                            label="Item Name"
+                    {category === 'accessories' && type === 'expense' && (
+                    <div className="rounded-xl border border-line bg-raised p-4">
+                        <label htmlFor="transaction-item-name" className="field-label">Item Name</label>
+                        <input
+                            id="transaction-item-name"
                             placeholder="e.g. Stickers"
                             value={subCategory}
                             onChange={(e) => setSubCategory(e.target.value)}
                             required
+                            className="field"
                         />
                     </div>
-                )}
+                    )}
 
-                {!isFixedPrice && (
-                    <Input
-                        label="Description / Note"
-                        type="text"
-                        placeholder={type === 'sale' ? "e.g. Sold to Customer A" : "e.g. Supplier XYZ"}
-                        value={description}
-                        onChange={(e) => setDescription(e.target.value)}
-                        required
-                    />
-                )}
+                    {!isFixedPrice && (
+                    <div>
+                        <label htmlFor="transaction-description" className="field-label">Description / Note</label>
+                        <input
+                            id="transaction-description"
+                            type="text"
+                            placeholder={type === 'sale' ? "e.g. Sold to Customer A" : "e.g. Supplier XYZ"}
+                            value={description}
+                            onChange={(e) => setDescription(e.target.value)}
+                            required
+                            className="field"
+                        />
+                    </div>
+                    )}
+                </fieldset>
 
-                <Button type="submit" style={{ width: '100%', marginTop: '0.5rem', background: type === 'expense' ? 'var(--danger)' : 'var(--success)' }}>
-                    {type === 'sale' ? <PlusCircle size={18} /> : <MinusCircle size={18} />}
-                    {type === 'sale' ? 'Add Sale Record' : (category === 'blanks' ? 'Add to Inventory' : 'Record Expense')}
-                </Button>
+                <div className="border-t border-line pt-4">
+                    <button type="submit" disabled={readOnly} title={readOnly ? READ_ONLY_HINT : undefined} className="btn-primary w-full">
+                        {type === 'sale' ? <PlusCircle size={18} aria-hidden="true" /> : <MinusCircle size={18} aria-hidden="true" />}
+                        {type === 'sale' ? 'Add Sale Record' : (category === 'blanks' ? 'Add to Inventory' : 'Record Expense')}
+                    </button>
+                </div>
             </form>
-        </Card>
+        </section>
     );
 };
 

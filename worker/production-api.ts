@@ -101,7 +101,8 @@ function errorText(error: unknown): string {
 }
 async function mutation(
     db: D1Database, member: Member, requestId: string, hash: string,
-    writes: D1PreparedStatement[], responseSQL: string, responseValues: unknown[]
+    writes: D1PreparedStatement[], responseSQL: string, responseValues: unknown[],
+    conflictMessage = 'The job or source changed. Reload before trying again; your input has not been discarded.'
 ): Promise<Response> {
     const batch = [
         actorGuard(db, member),
@@ -130,7 +131,7 @@ async function mutation(
             if (saved) return json(saved);
         }
         if (/production_(conflict|write|counts|completed)|UNIQUE|CHECK constraint/.test(message)) {
-            fail('The job or source changed. Reload before trying again; your input has not been discarded.', 'production_conflict', 409);
+            fail(conflictMessage, 'production_conflict', 409);
         }
         throw error;
     }
@@ -143,12 +144,21 @@ function jobResponse(owner: boolean): string {
             FROM production_job_public p JOIN production_jobs j ON j.id=p.id WHERE j.id=?`
         : "SELECT json_object('job',json(payload)) FROM production_job_public WHERE id=?";
 }
+// The member who certainly printed every shirt now awaiting QA: each `printed` event since the
+// job's pending count was last zero has that same actor. Otherwise NULL, and nobody is credited.
+// Must stay identical to the rule in the print_wallet_credits view (migration 0007).
+const pendingPrinter = `(SELECT CASE WHEN count(*)>0 AND count(p.actor_id)=count(*) AND count(DISTINCT p.actor_id)=1
+        THEN max(p.actor_id) END
+    FROM production_events p WHERE p.job_id=production_jobs.id AND p.action='printed'
+        AND p.id>coalesce((SELECT max(z.id) FROM production_events z WHERE z.job_id=production_jobs.id
+            AND (SELECT sum(CASE y.action WHEN 'printed' THEN y.quantity WHEN 'qa' THEN -y.quantity ELSE 0 END)
+                FROM production_events y WHERE y.job_id=z.job_id AND y.id<=z.id)=0),0))`;
 function event(db: D1Database, member: Member, id: string, action: string, quantity = 0, accepted = 0, rejected = 0, note = ''): D1PreparedStatement {
-    return statement(db, `INSERT INTO production_events(job_id,actor_id,actor_name,action,quantity,accepted,rejected,note,version)
+    return statement(db, `INSERT INTO production_events(job_id,actor_id,actor_name,action,quantity,accepted,rejected,note,version,operator_id)
         SELECT id,?,CASE WHEN ?='owner' THEN 'Owner' ELSE coalesce(
             (SELECT nullif(trim(CASE WHEN json_type(profile,'$.full_name')='text'
                 THEN json_extract(profile,'$.full_name') END),'') FROM member_profiles WHERE member_id=?),
-            'Print operator') END,?,?,?,?,?,version
+            'Print operator') END,?,?,?,?,?,version,${action === 'qa' ? pendingPrinter : 'NULL'}
         FROM production_jobs WHERE id=?`, [member.id, member.role, member.id, action, quantity, accepted, rejected, note, id]);
 }
 async function getJobs(db: D1Database, member: Member, url: URL): Promise<Response> {
@@ -387,6 +397,115 @@ async function changeMember(db: D1Database, member: Member, id: string | undefin
         FROM members m LEFT JOIN member_profiles p ON p.member_id=m.id WHERE m.id=?`, [id]);
 }
 
+// Print wallet pay rule (owner decision, 2026-10-06): PHP 1,000 for every COMPLETE 30 shirts the
+// owner accepts in QA. Partial batches are a progress count, never fractional pay. Money is
+// integer centavos. Credits come only from print_wallet_credits (migration 0007), which credits
+// the certain printer and leaves mixed or unknown printers unattributed.
+export const PRINT_RATE_SHIRTS = 30;
+export const PRINT_RATE_CENTAVOS = 100_000;
+const PRINT_PAYOUT_MAX_CENTAVOS = 100_000_000;
+const MANILA_OFFSET_MS = 8 * 60 * 60 * 1000;
+const peso = (centavos: number) => `₱${(centavos / 100).toLocaleString('en-PH')}`;
+const creditedShirts = '(SELECT coalesce(sum(shirts),0) FROM print_wallet_credits WHERE operator_id=?)';
+const paidCentavos = '(SELECT coalesce(sum(amount_centavos),0) FROM print_payouts WHERE operator_id=?)';
+const unattributed = `FROM print_wallet_credits c WHERE c.operator_id IS NULL
+    OR NOT EXISTS(SELECT 1 FROM members m WHERE m.id=c.operator_id AND m.role='print_operator')`;
+type Operator = { id: string; name: string };
+type WalletEntry = { type: 'credit'; shirts: number; jobCode: string; at: string }
+    | { type: 'payout'; amountCentavos: number; note: string; at: string };
+
+/** Monday 00:00 in Asia/Manila (UTC+8, no daylight saving) as an ISO instant comparable with created_at. */
+export function manilaWeekStart(now = new Date()): string {
+    const local = new Date(now.getTime() + MANILA_OFFSET_MS);
+    const daysSinceMonday = (local.getUTCDay() + 6) % 7;
+    return new Date(Date.UTC(local.getUTCFullYear(), local.getUTCMonth(), local.getUTCDate() - daysSinceMonday)
+        - MANILA_OFFSET_MS).toISOString();
+}
+function operators(db: D1Database, id?: string): Promise<Operator[]> {
+    return rows<Operator>(db, `SELECT m.id,coalesce(nullif(trim(CASE WHEN json_type(p.profile,'$.full_name')='text'
+            THEN json_extract(p.profile,'$.full_name') END),''),'Print operator') AS name
+        FROM members m LEFT JOIN member_profiles p ON p.member_id=m.id
+        WHERE m.role='print_operator' ${id === undefined ? '' : 'AND m.id=?'}
+        ORDER BY m.active DESC,name COLLATE NOCASE,m.id`, id === undefined ? [] : [id]);
+}
+// Allowlisted: counts, the employee's own pay and job codes they already see. No customer,
+// order, price or other-employee data is selected.
+async function walletOf(db: D1Database, operator: Operator, weekStart: string) {
+    const [totals] = await rows<{ accepted: number; week: number; awaiting: number; paid: number }>(db, `SELECT
+        ${creditedShirts} AS accepted,
+        (SELECT coalesce(sum(shirts),0) FROM print_wallet_credits WHERE operator_id=? AND created_at>=?) AS week,
+        (SELECT coalesce(sum(j.pending),0) FROM production_jobs j WHERE ${visible}) AS awaiting,
+        ${paidCentavos} AS paid`, [operator.id, operator.id, weekStart, operator.id, operator.id]);
+    const credits = await rows<{ shirts: number; job_code: string; created_at: string }>(db,
+        'SELECT shirts,job_code,created_at FROM print_wallet_credits WHERE operator_id=? ORDER BY event_id DESC LIMIT 20', [operator.id]);
+    const payouts = await rows<{ amount_centavos: number; note: string; created_at: string }>(db,
+        'SELECT amount_centavos,note,created_at FROM print_payouts WHERE operator_id=? ORDER BY created_at DESC,rowid DESC LIMIT 20', [operator.id]);
+    const accepted = Number(totals?.accepted ?? 0);
+    const progress = accepted % PRINT_RATE_SHIRTS;
+    const earned = Math.floor(accepted / PRINT_RATE_SHIRTS) * PRINT_RATE_CENTAVOS;
+    const paid = Number(totals?.paid ?? 0);
+    const recent: WalletEntry[] = [
+        ...credits.map(row => ({ type: 'credit' as const, shirts: row.shirts, jobCode: row.job_code, at: row.created_at })),
+        ...payouts.map(row => ({ type: 'payout' as const, amountCentavos: row.amount_centavos, note: row.note, at: row.created_at }))
+    ].sort((a, b) => b.at.localeCompare(a.at)).slice(0, 20);
+    return {
+        memberId: operator.id, name: operator.name,
+        rateShirts: PRINT_RATE_SHIRTS, rateCentavos: PRINT_RATE_CENTAVOS,
+        acceptedShirts: accepted, shirtsThisWeek: Number(totals?.week ?? 0), awaitingQA: Number(totals?.awaiting ?? 0),
+        progress, nextPayoutIn: PRINT_RATE_SHIRTS - progress,
+        earnedCentavos: earned, paidCentavos: paid, balanceCentavos: earned - paid, recent
+    };
+}
+async function getWallet(db: D1Database, member: Member, url: URL): Promise<Response> {
+    const requested = url.searchParams.get('memberId');
+    const weekStart = manilaWeekStart();
+    if (member.role !== 'owner') {
+        if (requested !== null && requested !== member.id) fail('You can only see your own shirt count.', 'production_forbidden', 403);
+        const [self] = await operators(db, member.id);
+        if (!self) fail('This action is not available for your account.', 'production_forbidden', 403);
+        return json({ wallet: await walletOf(db, self, weekStart) });
+    }
+    if (requested !== null) {
+        const [operator] = await operators(db, requested);
+        if (!operator) fail('No print-operator account matches this ID.', 'not_found', 404);
+        return json({ wallet: await walletOf(db, operator, weekStart) });
+    }
+    const wallets = [];
+    for (const operator of await operators(db)) wallets.push(await walletOf(db, operator, weekStart));
+    const [total] = await rows<{ shirts: number }>(db, `SELECT coalesce(sum(c.shirts),0) AS shirts ${unattributed}`);
+    const recent = await rows<{ shirts: number; job_code: string; created_at: string }>(db,
+        `SELECT c.shirts,c.job_code,c.created_at ${unattributed} ORDER BY c.event_id DESC LIMIT 20`);
+    return json({ wallets, unattributed: { shirts: Number(total?.shirts ?? 0),
+        recent: recent.map(row => ({ shirts: row.shirts, jobCode: row.job_code, at: row.created_at })) } });
+}
+async function recordPayout(db: D1Database, member: Member, body: Row, requestId: string, hash: string): Promise<Response> {
+    fields(body, ['operatorId', 'amountCentavos', 'requestId'], ['note']);
+    const operatorId = text(body.operatorId, 'Employee', 256, false);
+    const amount = integer(body.amountCentavos, 'Payout amount', PRINT_PAYOUT_MAX_CENTAVOS);
+    if (!amount || amount % PRINT_RATE_CENTAVOS) fail(`Record payouts in whole ${peso(PRINT_RATE_CENTAVOS)} steps.`);
+    const note = text(body.note ?? '', 'Payout note', 200);
+    const [operator] = await operators(db, operatorId);
+    if (!operator) fail('Payouts can only be recorded for a print-operator account.');
+    let saved = await receipt(db, member, requestId, hash);
+    if (!saved) {
+        const id = crypto.randomUUID();
+        // The balance check lives inside the atomic batch, so concurrent payouts cannot overdraw.
+        const writes = [
+            guard(db, 'forbidden', "EXISTS(SELECT 1 FROM members WHERE id=? AND role='print_operator')", [operator.id]),
+            guard(db, 'conflict', `${creditedShirts}/${PRINT_RATE_SHIRTS}*${PRINT_RATE_CENTAVOS}-${paidCentavos}>=?`,
+                [operator.id, operator.id, amount]),
+            statement(db, 'INSERT INTO print_payouts(id,operator_id,amount_centavos,note,created_by) VALUES (?,?,?,?,?)',
+                [id, operator.id, amount, note, member.id]),
+            guard(db, 'write', 'changes()=1')
+        ];
+        saved = await (await mutation(db, member, requestId, hash, writes,
+            `SELECT json_object('payout',json_object('id',id,'operatorId',operator_id,'amountCentavos',amount_centavos,
+                'note',note,'createdAt',created_at)) FROM print_payouts WHERE id=?`, [id],
+            'This payout is more than the balance due, or the balance just changed. Nothing was recorded; reload the wallet.')).json();
+    }
+    return json({ ...(saved as Row), wallet: await walletOf(db, operator, manilaWeekStart()) });
+}
+
 export async function handleProductionRequest(request: Request, env: AppEnv, member: Member): Promise<Response | null> {
     const url = new URL(request.url);
     const memberPath = /^\/api\/members(?:\/([^/]+))?$/.exec(url.pathname);
@@ -398,12 +517,15 @@ export async function handleProductionRequest(request: Request, env: AppEnv, mem
     if (request.method === 'GET') {
         if (url.pathname === '/api/production/jobs') return getJobs(env.DB, member, url);
         if (url.pathname === '/api/production/sources') return getSources(env.DB, url);
+        if (url.pathname === '/api/production/wallet') return getWallet(env.DB, member, url);
     }
     if (request.method !== 'POST' && !memberMutation) fail('This print route does not exist.', 'not_found', 404);
     const input = await readJson(request, 16384);
     if (!isObject(input)) fail('Send an object.');
     const requestId = text(input.requestId, 'Request ID', 128, false);
     const hash = await digest(`${request.method}\n${url.pathname}\n${canonical(input)}`);
+    // Owner-only (ownerOnly above). Replays attach a fresh wallet summary to the saved receipt.
+    if (url.pathname === '/api/production/payouts') return recordPayout(env.DB, member, input, requestId, hash);
     // Replaying a receipt still requires current assignment and visibility.
     const match = /^\/api\/production\/jobs\/([^/]+)\/(release|progress|qa|hold|revise)$/.exec(url.pathname);
     if (match && member.role !== 'owner') {

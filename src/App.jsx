@@ -1,12 +1,14 @@
 import React, { lazy, Suspense, useState } from 'react';
 import useTransactions from './hooks/useTransactions';
 import { createPortal } from 'react-dom';
-import { LayoutDashboard, Store, ShoppingBag, Package, LogOut, X, Wallet, Banknote, Menu, Globe, Ticket, Settings as SettingsIcon, Lock, ClipboardList, TrendingUp, Trophy } from 'lucide-react';
+import { LayoutDashboard, Store, ShoppingBag, Package, LogOut, Wallet, Banknote, Menu, Link2, Ticket, Settings as SettingsIcon, ClipboardList, TrendingUp, Trophy, Printer, RefreshCw } from 'lucide-react';
 import clsx from 'clsx';
-import { motion, AnimatePresence } from 'framer-motion';
 import { useToast } from './components/ui/Toast';
 import { api, apiRequest } from './lib/apiClient';
 import LoadingState from './components/ui/LoadingState';
+import Dialog from './components/ui/Dialog';
+import Logo from './components/ui/Logo';
+import { ReadOnlyContext } from './components/ui/ReadOnly';
 
 const DashboardStats = lazy(() => import('./components/DashboardStats'));
 const TransactionList = lazy(() => import('./components/TransactionList'));
@@ -28,21 +30,70 @@ const PrintQueue = lazy(() => import('./components/Production/PrintQueue'));
 const ProductionManager = lazy(() => import('./components/Production/ProductionManager'));
 const printQueueEnabled = import.meta.env.VITE_PRINT_QUEUE_ENABLED === 'true';
 
+const TAB_TITLES = {
+    pos: 'Point of Sale', orders: 'Orders', sales: 'Sales', expenses: 'Expenses', 'downtown-dinks': 'Downtown Dinks',
+    dashboard: 'Dashboard', inventory: 'Inventory', supplier: 'Supplier Order', vouchers: 'Vouchers', reports: 'Reports',
+    production: 'Production', settings: 'Settings', 'add-stock': 'Receive Stock'
+};
+
+const navGroups = (isOwner) => [
+    { label: 'Sell', items: [
+        { id: 'pos', label: 'Point of Sale', icon: Store },
+        { id: 'orders', label: 'Orders', icon: Package },
+    ] },
+    isOwner && { label: 'Money', items: [
+        { id: 'sales', label: 'Sales', icon: Banknote },
+        { id: 'expenses', label: 'Expenses', icon: Wallet },
+        { id: 'vouchers', label: 'Vouchers', icon: Ticket },
+        { id: 'reports', label: 'Reports', icon: TrendingUp },
+    ] },
+    isOwner && { label: 'Stock', items: [
+        { id: 'inventory', label: 'Inventory', icon: ShoppingBag },
+        { id: 'supplier', label: 'Supplier Order', icon: ClipboardList },
+        ...(printQueueEnabled ? [{ id: 'production', label: 'Production', icon: Printer }] : []),
+    ] },
+    isOwner && { label: 'Club', items: [
+        { id: 'downtown-dinks', label: 'Downtown Dinks', icon: Trophy },
+    ] },
+    { label: 'Overview', items: [
+        { id: 'dashboard', label: 'Dashboard', icon: LayoutDashboard },
+        { id: 'settings', label: 'Settings', icon: SettingsIcon },
+    ] },
+].filter(Boolean);
+
+const QUICK_TABS = [
+    { id: 'pos', label: 'POS', icon: Store },
+    { id: 'orders', label: 'Orders', icon: Package },
+    { id: 'dashboard', label: 'Dashboard', icon: LayoutDashboard },
+];
+
 const NavItem = ({ id, label, icon: Icon, activeTab, onNavigate }) => (
     <button
+        type="button"
         onClick={() => onNavigate(id)}
         aria-current={activeTab === id ? 'page' : undefined}
         className={clsx(
-            "w-full flex items-center gap-3 px-4 py-3 rounded-xl transition-all duration-200",
+            "group flex min-h-11 w-full items-center gap-3 rounded-lg px-3 text-left text-[15px] font-medium transition-colors duration-150 lg:min-h-10",
             activeTab === id
-                ? "bg-primary text-white shadow-lg shadow-primary/25"
-                : "text-slate-400 hover:bg-white/5 hover:text-slate-200"
+                ? "bg-white/[0.08] text-ink"
+                : "text-ink-2 hover:bg-white/[0.04] hover:text-ink"
         )}
     >
-        <Icon size={20} />
-        <span className="font-medium">{label}</span>
+        <Icon size={19} aria-hidden="true" className={activeTab === id ? 'text-primary' : 'text-ink-3 group-hover:text-ink-2'} />
+        <span className="truncate">{label}</span>
     </button>
 );
+
+function NavGroups({ isOwner, ...navProps }) {
+    return navGroups(isOwner).map(group => (
+        <div key={group.label} className="mb-4 last:mb-0">
+            <p className="mb-1 px-3 text-xs font-semibold text-ink-3">{group.label}</p>
+            <div className="space-y-0.5">
+                {group.items.map(item => <NavItem key={item.id} {...navProps} {...item} />)}
+            </div>
+        </div>
+    ));
+}
 
 function PublicStore() {
     const [catalog, setCatalog] = useState(null);
@@ -112,7 +163,27 @@ function ProtectedWorkspace({ printPath }) {
     if (printPath) {
         if (!['owner', 'print_operator'].includes(role)) return <Login denied />;
         if (!printQueueEnabled) return <LoadingState error="The print queue is not enabled yet." />;
-        return <PrintQueue user={session.user} userRole={role} />;
+        return (
+            <div className="print-shell min-h-dvh bg-ground text-ink">
+                <header className="sticky top-0 z-30 border-b border-line bg-ground">
+                    <div className="mx-auto flex h-14 max-w-3xl items-center justify-between gap-3 px-4">
+                        <Logo className="h-8" />
+                        <div className="flex min-w-0 items-center gap-1">
+                            <span className="truncate text-sm text-ink-2">{session.user.user_metadata?.full_name || session.user.email}</span>
+                            <button type="button" onClick={api.logout} className="icon-btn" aria-label="Sign out" title="Sign out"><LogOut size={18} /></button>
+                        </div>
+                    </div>
+                </header>
+                <main className="mx-auto max-w-3xl px-4 pt-6 pb-16">
+                    {session.readOnly && <div role="status" className="mb-5 rounded-xl border border-amber-500/40 bg-amber-500/10 p-4 text-sm text-amber-100">
+                        {session.environment === 'staging'
+                            ? 'Read-only staging snapshot. You can review data here; saves, checkout and SMS delivery are disabled. The live store is unchanged.'
+                            : 'Maintenance: data is temporarily read-only. Saves and checkout are disabled until maintenance is complete.'}
+                    </div>}
+                    <ReadOnlyContext.Provider value={session.readOnly === true}><PrintQueue user={session.user} userRole={role} /></ReadOnlyContext.Provider>
+                </main>
+            </div>
+        );
     }
     return <ManagementApp key={`${session.user.id}:${role}`} session={session} onProfileChange={profile => {
         setSession(current => ({ ...current, user: { ...current.user, user_metadata: { ...current.user.user_metadata, ...profile, role } } }));
@@ -193,133 +264,77 @@ function ManagementApp({ session, onProfileChange }) {
         }
     };
 
-    const navProps = {
-        activeTab,
-        onNavigate: (id) => { setActiveTab(id); setIsSidebarOpen(false); }
+    const navigate = (id) => { setActiveTab(id); setIsSidebarOpen(false); };
+    const navProps = { activeTab, onNavigate: navigate };
+    const displayName = session?.user?.user_metadata?.full_name || session?.user?.email?.split('@')[0] || 'Manager';
+    const roleLabel = isOwner ? 'Owner' : userRole === 'reseller' ? 'Reseller' : userRole;
+    const copyStoreLink = () => {
+        navigator.clipboard.writeText(window.location.origin);
+        showToast('Store link copied!', 'success');
     };
+    const quickTabs = QUICK_TABS;
+    const menuActive = !quickTabs.some(tab => tab.id === activeTab);
+
+    const accountPanel = (
+        <div className="border-t border-line p-3">
+            <div className="flex items-center gap-2 rounded-lg py-1 pl-2">
+                <span className="grid size-9 shrink-0 place-items-center rounded-full bg-raised text-sm font-bold uppercase text-ink" aria-hidden="true">{displayName.slice(0, 1)}</span>
+                <div className="min-w-0 flex-1">
+                    <p className="truncate text-sm font-semibold">{displayName}</p>
+                    <p className="truncate text-xs capitalize text-ink-2">{roleLabel}</p>
+                </div>
+                <button type="button" onClick={copyStoreLink} className="icon-btn size-10" aria-label="Copy store link" title="Copy store link">
+                    <Link2 size={18} />
+                </button>
+                <button type="button" onClick={api.logout} className="icon-btn size-10" aria-label="Sign out" title="Sign out">
+                    <LogOut size={18} />
+                </button>
+            </div>
+        </div>
+    );
 
     return (
-        <div className="flex h-screen bg-slate-900 text-slate-100 overflow-hidden font-sans selection:bg-primary/30 relative">
-            {/* Mobile Overlay */}
-            <AnimatePresence>
-                {isSidebarOpen && (
-                    <motion.div
-                        initial={{ opacity: 0 }}
-                        animate={{ opacity: 1 }}
-                        exit={{ opacity: 0 }}
-                        onClick={() => setIsSidebarOpen(false)}
-                        className="fixed inset-0 bg-black/80 z-40 lg:hidden backdrop-blur-sm"
-                    />
-                )}
-            </AnimatePresence>
-
-            {/* Sidebar */}
-            <aside className={clsx(
-                "fixed lg:static inset-y-0 left-0 z-50 w-64 bg-slate-900/95 lg:bg-slate-900/50 backdrop-blur-xl border-r border-white/5 flex flex-col shrink-0 transition-transform duration-300 ease-in-out lg:translate-x-0",
-                isSidebarOpen ? "translate-x-0" : "-translate-x-full"
-            )}>
-                <div className="p-6 flex justify-between items-center">
-                    <div className="flex items-center gap-3">
-                        <img src="/logo.png" alt="SportsTech" className="h-16 w-auto object-contain" />
-                    </div>
-                    <button aria-label="Close navigation" onClick={() => setIsSidebarOpen(false)} className="lg:hidden text-slate-400 hover:text-white">
-                        <X size={24} />
-                    </button>
+        <ReadOnlyContext.Provider value={session.readOnly === true}>
+        <div className="flex h-dvh overflow-hidden bg-ground font-sans text-ink">
+            <aside className="hidden w-[248px] shrink-0 flex-col border-r border-line bg-surface lg:flex">
+                <div className="flex h-16 shrink-0 items-center px-5">
+                    <Logo className="h-9" />
                 </div>
-
-                <nav className="flex-1 px-4 space-y-2 mt-4 overflow-y-auto">
-                    <NavItem {...navProps} id="pos" label="Point of Sale" icon={Store} />
-                    <NavItem {...navProps} id="orders" label="Orders" icon={Package} />
-                    {isOwner && (
-                        <>
-                            <NavItem {...navProps} id="sales" label="Sales" icon={Banknote} />
-                            <NavItem {...navProps} id="expenses" label="Expenses" icon={Wallet} />
-                            <NavItem {...navProps} id="downtown-dinks" label="Downtown Dinks" icon={Trophy} />
-                            <NavItem {...navProps} id="inventory" label="Inventory" icon={ShoppingBag} />
-                            <NavItem {...navProps} id="supplier" label="Supplier Order" icon={ClipboardList} />
-                            <NavItem {...navProps} id="vouchers" label="Vouchers" icon={Ticket} />
-                            <NavItem {...navProps} id="reports" label="Reports" icon={TrendingUp} />
-                            {printQueueEnabled && <NavItem {...navProps} id="production" label="Production" icon={ClipboardList} />}
-                        </>
-                    )}
-                    <NavItem {...navProps} id="dashboard" label="Dashboard" icon={LayoutDashboard} />
-                    <div className="border-t border-white/5 my-2 mx-4"></div>
-                    <NavItem {...navProps} id="settings" label="Settings" icon={SettingsIcon} />
+                <nav aria-label="Workspace" className="flex-1 overflow-y-auto px-3 py-4">
+                    <NavGroups isOwner={isOwner} {...navProps} />
                 </nav>
-
-                <div className="p-4 border-t border-white/5 space-y-2">
-                    <button
-                        onClick={() => {
-                            const url = window.location.origin;
-                            navigator.clipboard.writeText(url);
-                            showToast('Store link copied!', 'success');
-                        }}
-                        className="w-full px-4 py-3 rounded-xl bg-primary/10 border border-primary/20 text-primary hover:bg-primary/20 flex items-center gap-3 transition-colors"
-                    >
-                        <Globe size={18} />
-                        <span className="font-medium text-sm">Copy Store Link</span>
-                    </button>
-                    <div className="px-4 py-3 rounded-xl bg-white/5 border border-white/5 flex items-center justify-between group">
-                        <div>
-                            <h1 className="font-bold text-lg leading-tight">SportsTech</h1>
-                            <p className="text-xs text-slate-500 truncate max-w-[150px]">
-                                {session?.user?.user_metadata?.full_name || session?.user?.email?.split('@')[0] || 'Manager'}
-                            </p>
-                        </div>
-                        <button onClick={api.logout} className="text-slate-500 hover:text-white p-1" title="Lock and sign out">
-                            <Lock size={16} />
-                        </button>
-                        <button onClick={api.logout} className="text-slate-500 hover:text-red-400 p-1" title="Sign Out">
-                            <LogOut size={16} />
-                        </button>
-                    </div>
-                </div>
+                {accountPanel}
             </aside>
 
-            {/* Main Content */}
-            <main className="flex-1 overflow-hidden relative flex flex-col">
-                <header className="h-16 border-b border-white/5 flex items-center justify-between px-4 lg:px-8 bg-slate-900/50 backdrop-blur-sm shrink-0">
-                    <div className="flex items-center gap-4">
-                        <button aria-label="Open navigation" onClick={() => setIsSidebarOpen(true)} className="lg:hidden text-slate-400 hover:text-white">
-                            <Menu size={24} />
-                        </button>
-                        <h2 className="text-lg lg:text-xl font-bold text-white truncate max-w-[200px] sm:max-w-none">
-                            {activeTab === 'pos' && 'Point of Sale'}
-                            {activeTab === 'orders' && 'Orders'}
-                            {activeTab === 'sales' && 'Sales'}
-                            {activeTab === 'expenses' && 'Expenses'}
-                            {activeTab === 'downtown-dinks' && 'Downtown Dinks'}
-                            {activeTab === 'dashboard' && 'Dashboard'}
-                            {activeTab === 'inventory' && 'Inventory'}
-                            {activeTab === 'supplier' && 'Supplier Order'}
-                            {activeTab === 'vouchers' && 'Vouchers'}
-                            {activeTab === 'reports' && 'Reports'}
-                            {activeTab === 'production' && 'Production'}
-                            {activeTab === 'settings' && 'Settings'}
-                            {activeTab === 'add-stock' && 'Receive Stock'}
-                        </h2>
+            <main className="relative flex min-w-0 flex-1 flex-col overflow-hidden">
+                <header className="flex h-14 shrink-0 items-center justify-between gap-3 border-b border-line px-4 lg:h-16 lg:px-8">
+                    <div className="flex min-w-0 items-center gap-3">
+                        <span className="lg:hidden"><Logo className="h-7" /></span>
+                        <h1 className="display truncate text-2xl lg:text-3xl">{TAB_TITLES[activeTab]}</h1>
                     </div>
-                    <div className="flex items-center gap-4">
+                    <div className="flex items-center gap-2">
                         {loading && (
-                            <span className="text-sm text-slate-400 flex items-center gap-2">
-                                <span className="w-4 h-4 border-2 border-slate-600 border-t-primary rounded-full animate-spin"></span>
-                                <span className="hidden sm:inline">Syncing...</span>
+                            <span role="status" className="flex items-center gap-2 text-sm text-ink-2">
+                                <RefreshCw size={15} className="animate-spin" aria-hidden="true" />
+                                <span className="hidden sm:inline">Syncing…</span>
+                                <span className="sr-only sm:hidden">Syncing</span>
                             </span>
                         )}
-                        <div className="w-8 h-8 rounded-full bg-gradient-to-tr from-slate-700 to-slate-600 border border-white/10"></div>
+                        <span className="hidden text-sm text-ink-2 lg:inline">{displayName}</span>
                     </div>
                 </header>
 
-                <div className="flex-1 overflow-y-auto p-4 lg:p-8 relative">
-                    {session.readOnly && <div role="status" className="mb-4 rounded-xl border border-amber-500/30 bg-amber-500/10 p-4 text-sm text-amber-100">
-                        {session.environment === 'staging'
+                <div className="relative flex-1 overflow-y-auto px-4 pt-5 pb-28 lg:px-8 lg:pt-8 lg:pb-10">
+                    {session.readOnly && <div role="status" className="mx-auto mb-5 flex max-w-7xl items-start gap-3 rounded-xl border border-amber-500/40 bg-amber-500/10 p-4 text-sm text-amber-100">
+                        <span className="mt-1 size-2 shrink-0 rounded-full bg-amber-400" aria-hidden="true" />
+                        <span>{session.environment === 'staging'
                             ? 'Read-only staging snapshot. You can review data here; saves, checkout and SMS delivery are disabled. The live store is unchanged.'
-                            : 'Maintenance: data is temporarily read-only. Saves and checkout are disabled until maintenance is complete.'}
+                            : 'Maintenance: data is temporarily read-only. Saves and checkout are disabled until maintenance is complete.'}</span>
                     </div>}
                     {legacyCache && (
-                        <div role="status" className="mb-4 rounded-xl border border-amber-500/20 bg-amber-500/10 p-4 text-amber-200">
-                            Legacy data is saved in this browser. It has not been imported. Export it for owner review before making any import.
-                            <button className="btn-secondary ml-3" onClick={() => {
+                        <div role="status" className="mx-auto mb-5 flex max-w-7xl flex-wrap items-center justify-between gap-3 rounded-xl border border-amber-500/40 bg-amber-500/10 p-4 text-sm text-amber-100">
+                            <span>Legacy data is saved in this browser. It has not been imported. Export it for owner review before making any import.</span>
+                            <button className="btn-secondary" onClick={() => {
                                 const content = window.localStorage.getItem('sports-tech-transactions');
                                 if (!content) return;
                                 const url = URL.createObjectURL(new Blob([content], { type: 'application/json' }));
@@ -332,17 +347,14 @@ function ManagementApp({ session, onProfileChange }) {
                         </div>
                     )}
                     {error && (
-                        <div role="alert" className="mb-4 flex flex-wrap items-center justify-between gap-3 rounded-xl border border-red-500/20 bg-red-500/10 p-4 text-red-200">
+                        <div role="alert" className="mx-auto mb-5 flex max-w-7xl flex-wrap items-center justify-between gap-3 rounded-xl border border-red-500/40 bg-red-500/10 p-4 text-sm text-red-200">
                             <span>Unable to sync data: {error}</span>
                             <button onClick={refetch} disabled={loading} className="btn-secondary">Retry</button>
                         </div>
                     )}
                     {error && transactions.length === 0 ? null : loading && transactions.length === 0 ? (
                         <div className="absolute inset-0 flex items-center justify-center">
-                            <div className="flex flex-col items-center gap-4">
-                                <div className="w-12 h-12 border-4 border-primary/30 border-t-primary rounded-full animate-spin"></div>
-                                <p className="text-slate-400 animate-pulse">Loading System Data...</p>
-                            </div>
+                            <LoadingState label="Loading system data…" />
                         </div>
                     ) : (
                         <div className="max-w-7xl mx-auto h-full">
@@ -381,8 +393,8 @@ function ManagementApp({ session, onProfileChange }) {
 
                             {activeTab === 'dashboard' && (
                                 <div className="space-y-8 animate-fade-in">
-                                    <DashboardStats transactions={effectiveTransactions} onDeleteAll={isOwner ? handleDeleteAll : undefined} />
-                                    <TransactionList transactions={effectiveTransactions} onDelete={deleteTransaction} />
+                                    <DashboardStats transactions={effectiveTransactions} onDeleteAll={isOwner ? handleDeleteAll : undefined} readOnly={session.readOnly === true} />
+                                    <TransactionList transactions={effectiveTransactions} onDelete={deleteTransaction} readOnly={session.readOnly === true} />
                                 </div>
                             )}
 
@@ -462,13 +474,40 @@ function ManagementApp({ session, onProfileChange }) {
                         </div>
                     )}
                 </div>
+
+                <nav aria-label="Quick" className="fixed inset-x-0 bottom-0 z-40 border-t border-line bg-surface pb-[env(safe-area-inset-bottom)] lg:hidden">
+                    <div className="grid grid-cols-4">
+                        {quickTabs.map(({ id, label, icon: Icon }) => (
+                            <button key={id} type="button" onClick={() => navigate(id)} aria-current={activeTab === id ? 'page' : undefined}
+                                className={clsx('flex h-16 flex-col items-center justify-center gap-1 text-xs font-semibold', activeTab === id ? 'text-ink' : 'text-ink-3')}>
+                                <Icon size={22} aria-hidden="true" className={activeTab === id ? 'text-primary' : ''} />
+                                {label}
+                            </button>
+                        ))}
+                        <button type="button" onClick={() => setIsSidebarOpen(true)} aria-haspopup="dialog" aria-expanded={isSidebarOpen}
+                            className={clsx('flex h-16 flex-col items-center justify-center gap-1 text-xs font-semibold', menuActive ? 'text-ink' : 'text-ink-3')}>
+                            <Menu size={22} aria-hidden="true" className={menuActive ? 'text-primary' : ''} />
+                            Menu
+                        </button>
+                    </div>
+                </nav>
             </main>
 
-            {/* Global Add Stock Modal */}
+            {isSidebarOpen && (
+                <Dialog variant="drawer" onClose={() => setIsSidebarOpen(false)} title="Menu" closeLabel="Close menu" bodyClassName="p-0">
+                    <div className="flex h-full flex-col">
+                        <nav aria-label="Main" className="flex-1 px-3 py-4">
+                            <NavGroups isOwner={isOwner} {...navProps} />
+                        </nav>
+                        {accountPanel}
+                    </div>
+                </Dialog>
+            )}
+
             {showAddStockModal && createPortal(
-                <div className="fixed inset-0 z-[9999] flex items-center justify-center bg-black/80 backdrop-blur-sm p-4">
-                    <div className="w-full max-w-2xl relative">
-                        <Suspense fallback={<LoadingState label="Loading stock form..." />}>
+                <div className="fixed inset-0 z-[90] flex items-end justify-center bg-black/75 sm:items-center sm:p-6">
+                    <div className="max-h-[92dvh] w-full max-w-2xl overflow-y-auto rounded-t-2xl sm:rounded-2xl">
+                        <Suspense fallback={<LoadingState label="Loading stock form…" />}>
                             <AddStockForm
                                 onAddTransaction={async (t) => {
                                     await addTransaction(t);
@@ -483,6 +522,7 @@ function ManagementApp({ session, onProfileChange }) {
                 document.body
             )}
         </div>
+        </ReadOnlyContext.Provider>
     );
 }
 

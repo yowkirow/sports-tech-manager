@@ -2,6 +2,8 @@ import React, { useState, useMemo } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
 import { Package, Clock, CheckCircle, Truck, User, Search, Edit2, Save, X, Trash2, Layers, ChevronDown, ChevronUp, ShoppingBag, Loader2, AlertCircle, Banknote, Filter, Copy, MessageSquare, Send, RotateCcw } from 'lucide-react';
 import { useToast } from '../ui/Toast';
+import Dialog from '../ui/Dialog';
+import { useReadOnly, READ_ONLY_HINT } from '../ui/ReadOnly';
 import { api, apiRequest } from '../../lib/apiClient';
 import { useProducts } from '../../hooks/useInventory';
 import { withLocalDate } from '../../lib/transactionDate';
@@ -18,6 +20,7 @@ export default function OrderManagement({ transactions, onAddTransaction, onDele
     const { showToast } = useToast();
     const products = useProducts(transactions);
     const isReseller = userRole === 'reseller';
+    const readOnly = useReadOnly();
     const deletionRequests = React.useRef(new Map());
     const persistOrder = async changes => {
         const ready = details => ['ready', 'shipped'].includes(details?.fulfillmentStatus ?? details?.status);
@@ -428,747 +431,841 @@ export default function OrderManagement({ transactions, onAddTransaction, onDele
     };
 
 
+
     return (
-        <div className="h-full flex flex-col gap-6">
-            <div className="flex flex-col xl:flex-row justify-between items-start xl:items-center gap-4">
-                <div className="flex items-center gap-4 w-full xl:w-auto">
-                    <h2 className="text-2xl font-bold text-white flex items-center gap-2 whitespace-nowrap">
-                        <Package className="text-primary" /> Order Management
-                    </h2>
-                </div>
+        <div className="flex h-full flex-col gap-4 lg:gap-5">
+            <h2 className="sr-only">Order Management</h2>
 
-                <div className="flex flex-wrap gap-2 w-full xl:w-auto">
-                    {/* Fulfillment Filter */}
-                    <div className="flex bg-white/5 p-1 rounded-xl overflow-x-auto">
-                        {['all', ...FULFILLMENT_STATUSES].map(status => (
-                            <button
-                                key={status}
-                                onClick={() => setFilterFulfillment(status)}
-                                className={`px-3 py-1.5 rounded-lg text-xs font-semibold capitalize whitespace-nowrap transition-all ${filterFulfillment === status
-                                    ? 'bg-primary text-white shadow-lg'
-                                    : 'text-slate-400 hover:text-white hover:bg-white/5'
-                                    }`}
-                            >
-                                {status.replace('_', ' ')}
-                            </button>
-                        ))}
+            <section className="surface p-4 sm:p-5" aria-label="Order filters">
+                <div className="flex flex-col gap-4 xl:flex-row xl:items-start xl:justify-between">
+                    <div className="relative min-w-0 flex-1 xl:max-w-md">
+                        <label htmlFor="order-search" className="sr-only">Search customer or ID...</label>
+                        <Search className="pointer-events-none absolute left-4 top-1/2 -translate-y-1/2 text-ink-3" size={20} aria-hidden="true" />
+                        <input
+                            id="order-search"
+                            type="text"
+                            placeholder="Search customer or ID..."
+                            className="field pl-12"
+                            value={searchTerm}
+                            onChange={(e) => setSearchTerm(e.target.value)}
+                        />
                     </div>
 
-                    {/* Payment Filter */}
-                    <div className="flex bg-white/5 p-1 rounded-xl">
-                        {['all', 'paid', 'unpaid'].map(status => (
-                            <button
-                                key={status}
-                                onClick={() => setFilterPayment(status)}
-                                className={`px-3 py-1.5 rounded-lg text-xs font-semibold capitalize whitespace-nowrap transition-all ${filterPayment === status
-                                    ? 'bg-emerald-600 text-white shadow-lg'
-                                    : 'text-slate-400 hover:text-white hover:bg-white/5'
-                                    }`}
-                            >
-                                {status}
-                            </button>
-                        ))}
-                    </div>
-                </div>
-            </div>
-
-            <div className="relative flex gap-4">
-                <div className="relative flex-1">
-                    <Search className="absolute left-4 top-1/2 -translate-y-1/2 text-slate-400" size={20} />
-                    <input
-                        type="text"
-                        placeholder="Search customer or ID..."
-                        className="glass-input pl-12"
-                        value={searchTerm}
-                        onChange={(e) => setSearchTerm(e.target.value)}
-                    />
-                </div>
-                {isSelectionMode ? (
-                    <div className="flex gap-2 animate-fade-in">
-                        {!isReseller && <button
-                            onClick={() => setShowBulkEditModal(true)}
-                            className="bg-primary text-white hover:bg-primary-hover px-4 py-2 rounded-xl transition-colors text-sm font-bold whitespace-nowrap flex items-center gap-2"
-                        >
-                            <Edit2 size={16} /> Bulk Edit
-                        </button>}
-                        <button
-                            onClick={async () => {
-                                if (confirm(`Delete ${selectedOrderIds.size} orders?`)) {
-                                    setLoading(true);
-                                    try {
-                                        for (const orderId of selectedOrderIds) {
-                                            const order = groupedOrders.find(o => o.id === orderId);
-                                            if (order) {
-                                                for (const item of order.transactions) await onDeleteTransaction(item.id);
-                                            }
-                                        }
-                                        setIsSelectionMode(false);
-                                        setSelectedOrderIds(new Set());
-                                        if (refetch) await refetch();
-                                        showToast('Deleted', 'success');
-                                    } catch (error) {
-                                        console.error('Order deletion failed:', error);
-                                        showToast('Some orders could not be deleted. Refresh before retrying.', 'error');
-                                    } finally { setLoading(false); }
-                                }
-                            }}
-                            className="bg-red-500/20 text-red-400 hover:bg-red-500 hover:text-white px-4 py-2 rounded-xl transition-colors"
-                        >
-                            <Trash2 size={20} />
-                        </button>
-                        <button
-                            onClick={() => { setIsSelectionMode(false); setSelectedOrderIds(new Set()); }}
-                            className="bg-white/10 text-slate-300 hover:bg-white/20 px-4 py-2 rounded-xl transition-colors"
-                        >
-                            <X size={20} />
-                        </button>
-                    </div>
-                ) : (
-                    <button
-                        onClick={() => setIsSelectionMode(true)}
-                        className="btn-secondary whitespace-nowrap"
-                    >
-                        <Layers size={20} /> Multi-Select
-                    </button>
-                )}
-            </div>
-
-            <div className="flex-1 overflow-y-auto space-y-4 pr-2">
-                <AnimatePresence>
-                    {filteredOrders.map(order => (
-                        <motion.div
-                            key={order.id}
-                            initial={{ opacity: 0, y: 10 }}
-                            animate={{ opacity: 1, y: 0 }}
-                            className={`glass-card overflow-hidden transition-all duration-200 ${isSelectionMode && selectedOrderIds.has(order.id) ? 'ring-2 ring-primary bg-primary/5' : ''}`}
-                        >
-                            {/* Order Header */}
-                            <div
-                                className="p-4 lg:p-6 flex flex-col md:flex-row gap-4 md:items-center cursor-pointer group"
-                                onClick={() => {
-                                    if (isSelectionMode) toggleSelection(order.id);
-                                    else toggleExpansion(order.id);
-                                }}
-                            >
-                                {isSelectionMode && (
-                                    <div className={`w-6 h-6 rounded-md border-2 flex items-center justify-center shrink-0 transition-colors ${selectedOrderIds.has(order.id)
-                                        ? 'bg-primary border-primary'
-                                        : 'border-white/20 bg-black/20'
-                                        }`}>
-                                        {selectedOrderIds.has(order.id) && <CheckCircle size={14} className="text-white" />}
-                                    </div>
-                                )}
-
-                                {/* Status Icon (Fulfillment) */}
-                                <div className={`w-12 h-12 rounded-full flex items-center justify-center shrink-0 ${order.fulfillmentStatus === 'shipped' ? 'bg-blue-500/10 text-blue-400' :
-                                    order.fulfillmentStatus === 'ready' ? 'bg-purple-500/10 text-purple-400' :
-                                        order.fulfillmentStatus === 'in_progress' ? 'bg-orange-500/10 text-orange-400' :
-                                            order.fulfillmentStatus === 'returned' ? 'bg-amber-500/10 text-amber-400' :
-                                            order.fulfillmentStatus === 'cancelled' ? 'bg-red-500/10 text-red-400' :
-                                                'bg-slate-500/10 text-slate-400'
-                                    }`}>
-                                    {order.fulfillmentStatus === 'shipped' ? <Truck size={20} /> :
-                                        order.fulfillmentStatus === 'ready' ? <Package size={20} /> :
-                                            order.fulfillmentStatus === 'in_progress' ? <Loader2 size={20} className="animate-spin" /> :
-                                                order.fulfillmentStatus === 'returned' ? <RotateCcw size={20} /> :
-                                                order.fulfillmentStatus === 'cancelled' ? <X size={20} /> :
-                                                    <Clock size={20} />
-                                    }
-                                </div>
-
-                                <div className="flex-1 min-w-0">
-                                    <div className="flex flex-wrap items-center gap-x-3 gap-y-1 mb-1">
-                                        {editingId === order.id ? (
-                                            <input
-                                                className="glass-input py-1 px-2 text-lg font-bold w-full max-w-[200px]"
-                                                value={editForm.customerName}
-                                                onChange={e => setEditForm({ ...editForm, customerName: e.target.value })}
-                                                onClick={e => e.stopPropagation()}
-                                            />
-                                        ) : (
-                                            <h3 className="font-bold text-white text-lg truncate">{order.customerName}</h3>
-                                        )}
-
-                                        {/* Badges */}
-                                        <div className="flex items-center gap-2">
-                                            {order.isOnlineOrder && order.fulfillmentStatus === 'pending' && (
-                                                <span className="px-2 py-0.5 rounded-full text-[10px] font-bold uppercase tracking-wide bg-blue-500/20 text-blue-400 border border-blue-500/20 animate-pulse">
-                                                    *New
-                                                </span>
-                                            )}
-                                            {order.isRushOrder && (
-                                                <span className="px-2 py-0.5 rounded-full text-[10px] font-bold uppercase tracking-wide bg-amber-500/20 text-amber-500 border border-amber-500/20 animate-pulse">
-                                                    RUSH
-                                                </span>
-                                            )}
-                                            <span className={`px-2 py-0.5 rounded-full text-[10px] font-bold uppercase tracking-wide border ${order.paymentStatus === 'paid'
-                                                ? 'bg-emerald-500/10 border-emerald-500/20 text-emerald-400'
-                                                : 'bg-red-500/10 border-red-500/20 text-red-400'
-                                                }`}>
-                                                {order.paymentStatus}
-                                            </span>
-                                            {/* ID showing for admins only? or everyone? Let's keep it */}
-                                            <span className="text-xs text-slate-500 font-mono hidden sm:inline">{order.id.slice(-6)}</span>
-                                        </div>
-                                    </div>
-
-                                    <div className="flex items-center gap-3 text-slate-400 text-xs">
-                                        <span>{new Date(order.date).toLocaleString('en-US', { month: 'short', day: 'numeric', year: 'numeric', hour: '2-digit', minute: '2-digit' })}</span>
-                                        <span>•</span>
-                                        <span>{order.items.reduce((sum, item) => sum + (Number(item.details?.quantity) || 1), 0)} Items</span>
-                                        <span>•</span>
-                                        <span className="text-primary flex items-center gap-1">
-                                            <Banknote size={12} /> {order.paymentMode}
-                                        </span>
-                                        {order.items[0]?.details?.createdBy && (
-                                            <>
-                                                <span>•</span>
-                                                <span className="flex items-center gap-1 text-slate-500">
-                                                    <User size={12} /> {order.items[0].details.createdBy.split('@')[0]}
-                                                </span>
-                                            </>
-                                        )}
-                                    </div>
-                                </div>
-
-                                <div className="flex flex-col items-end gap-2 shrink-0">
-                                    <span className="text-xl font-bold text-white">₱{order.totalAmount.toLocaleString()}</span>
-
-                                    {editingId === order.id ? (
-                                        <div className="flex flex-col gap-2 items-end bg-black/40 p-3 rounded-xl border border-white/10 shadow-xl z-10" onClick={e => e.stopPropagation()}>
-                                            <div className="grid grid-cols-2 gap-2 w-full max-w-[300px]">
-                                                {/* Date Input */}
-                                                <div className="col-span-2">
-                                                    <label className="text-[10px] text-slate-500 font-bold uppercase ml-1">Order Date</label>
-                                                    <input
-                                                        type="date"
-                                                        value={editForm.date || ''}
-                                                        onChange={e => setEditForm({ ...editForm, date: e.target.value })}
-                                                        className="glass-input py-1.5 text-xs w-full"
-                                                    />
-                                                </div>
-
-                                                {/* Tracking Number Input */}
-                                                <div className="col-span-2 relative">
-                                                    <Truck className="absolute left-2 top-[60%] -translate-y-1/2 text-slate-500" size={14} />
-                                                    <input
-                                                        placeholder="Tracking Number"
-                                                        disabled={isReseller}
-                                                        value={editForm.trackingNumber || ''}
-                                                        onChange={e => {
-                                                            const val = e.target.value;
-                                                            setEditForm(prev => ({
-                                                                ...prev,
-                                                                trackingNumber: val,
-                                                                fulfillmentStatus: val ? 'shipped' : prev.fulfillmentStatus
-                                                            }));
-                                                        }}
-                                                        className="glass-input pl-8 py-1.5 text-xs w-full"
-                                                    />
-                                                </div>
-
-                                                {!isReseller && (
-                                                    <select
-                                                        value={editForm.fulfillmentStatus}
-                                                        onChange={e => setEditForm({ ...editForm, fulfillmentStatus: e.target.value })}
-                                                        className="glass-input py-1 px-2 text-xs capitalize"
-                                                    >
-                                                        {FULFILLMENT_STATUSES.map(s => <option key={s} value={s} className="bg-slate-900">{s.replace('_', ' ')}</option>)}
-                                                    </select>
-                                                )}
-                                                <select
-                                                    value={editForm.paymentStatus}
-                                                    disabled={isReseller}
-                                                    onChange={e => setEditForm({ ...editForm, paymentStatus: e.target.value })}
-                                                    className="glass-input py-1 px-2 text-xs capitalize"
-                                                >
-                                                    {PAYMENT_STATUSES.map(s => <option key={s} value={s} className="bg-slate-900">{s}</option>)}
-                                                </select>
-                                                <select
-                                                    value={editForm.paymentMode}
-                                                    onChange={e => setEditForm({ ...editForm, paymentMode: e.target.value })}
-                                                    className="glass-input py-1 px-2 text-xs col-span-2"
-                                                >
-                                                    {PAYMENT_MODES.map(s => <option key={s} value={s} className="bg-slate-900">{s}</option>)}
-                                                </select>
-                                            </div>
-                                            <div className="flex gap-2 w-full">
-                                                <button aria-label="Save order changes" disabled={loading || !!editPricing?.error} onClick={() => handleSave(order.id)} className="flex-1 bg-green-600/20 text-green-400 py-1.5 rounded hover:bg-green-600/40 font-bold text-xs"><Save size={14} className="mx-auto" /></button>
-                                                <button aria-label="Cancel order changes" disabled={loading} onClick={() => setEditingId(null)} className="flex-1 bg-red-600/20 text-red-400 py-1.5 rounded hover:bg-red-600/40 text-xs"><X size={14} className="mx-auto" /></button>
-                                            </div>
-                                        </div>
-                                    ) : (
-                                        <div className="flex flex-col items-end gap-2">
-                                            <div className="flex items-center gap-2">
-                                                {/* Quick Tracking Input */}
-                                                <div className="relative group/tracking z-20" onClick={e => e.stopPropagation()}>
-                                                    <Truck size={14} className={`absolute left-2 top-1/2 -translate-y-1/2 ${order.items[0]?.details?.trackingNumber ? 'text-primary' : 'text-slate-500'}`} />
-                                                    <input
-                                                        defaultValue={order.items[0]?.details?.trackingNumber || ''}
-                                                        readOnly={isReseller}
-                                                        placeholder="Add Tracking"
-                                                        className={`py-1.5 pl-8 pr-2 text-xs w-32 focus:w-48 transition-all rounded-lg border outline-none ${order.items[0]?.details?.trackingNumber
-                                                            ? 'bg-primary/10 border-primary/30 text-primary font-mono font-bold'
-                                                            : 'bg-white/5 border-white/10 text-slate-300 hover:bg-white/10 focus:bg-white/10 focus:border-white/20'
-                                                            }`}
-                                                        onKeyDown={(e) => {
-                                                            if (e.key === 'Enter') {
-                                                                e.target.blur();
-                                                            }
-                                                        }}
-                                                        onBlur={(e) => {
-                                                            const val = e.target.value.trim();
-                                                            const current = order.items[0]?.details?.trackingNumber || '';
-                                                            if (val !== current) {
-                                                                handleQuickTracking(order.id, val);
-                                                            }
-                                                        }}
-                                                    />
-                                                </div>
-
-                                                <span className={`px-3 py-1 rounded-full text-xs font-bold capitalize border ${order.fulfillmentStatus === 'shipped' ? 'bg-blue-500/10 border-blue-500/20 text-blue-400' :
-                                                    order.fulfillmentStatus === 'ready' ? 'bg-purple-500/10 border-purple-500/20 text-purple-400' :
-                                                        order.fulfillmentStatus === 'in_progress' ? 'bg-orange-500/10 border-orange-500/20 text-orange-400' :
-                                                            order.fulfillmentStatus === 'returned' ? 'bg-amber-500/10 border-amber-500/20 text-amber-400' :
-                                                            order.fulfillmentStatus === 'cancelled' ? 'bg-red-500/10 border-red-500/20 text-red-400' :
-                                                                'bg-slate-500/10 border-slate-500/20 text-slate-400'
-                                                    }`}>
-                                                    {order.fulfillmentStatus.replace('_', ' ')}
-                                                </span>
-                                                {!isSelectionMode && (
-                                                    <div className="flex gap-1 lg:opacity-0 lg:group-hover:opacity-100 transition-opacity">
-                                                        {!isReseller && order.fulfillmentStatus !== 'returned' && (
-                                                            <button
-                                                                onClick={(e) => { e.stopPropagation(); handleMarkReturned(order.id); }}
-                                                                className="p-2 hover:bg-amber-500/20 rounded-lg text-slate-400 hover:text-amber-400"
-                                                                title="Mark as returned"
-                                                                aria-label="Mark order as returned"
-                                                            >
-                                                                <RotateCcw size={16} />
-                                                            </button>
-                                                        )}
-                                                        <button aria-label={`Edit order for ${order.customerName}`} onClick={(e) => { e.stopPropagation(); startEditing(order); }} className="p-2 hover:bg-white/10 rounded-lg text-slate-400 hover:text-white"><Edit2 size={16} /></button>
-                                                        <button aria-label={`Delete order for ${order.customerName}`} onClick={(e) => { e.stopPropagation(); handleDeleteOrder(order.id); }} className="p-2 hover:bg-red-500/20 rounded-lg text-slate-400 hover:text-red-400"><Trash2 size={16} /></button>
-                                                    </div>
-                                                )}
-                                                <div className="p-2 text-slate-500">
-                                                    {expandedOrderIds.has(order.id) ? <ChevronUp size={20} /> : <ChevronDown size={20} />}
-                                                </div>
-                                            </div>
-
-
-                                        </div>
-                                    )}
-                                </div>
-                            </div>
-
-                            {/* Expanded Items */}
-                            <AnimatePresence>
-                                {expandedOrderIds.has(order.id) && (
-                                    <motion.div
-                                        initial={{ height: 0 }}
-                                        animate={{ height: 'auto' }}
-                                        exit={{ height: 0 }}
-                                        className="bg-white/5 border-t border-white/5"
+                    <div className="flex w-full flex-col gap-3 xl:w-auto xl:items-end">
+                        <div className="flex flex-wrap items-center gap-2">
+                            {isSelectionMode ? (
+                                <>
+                                    {!isReseller && <button
+                                        type="button"
+                                        disabled={readOnly}
+                                        title={readOnly ? READ_ONLY_HINT : undefined}
+                                        onClick={() => setShowBulkEditModal(true)}
+                                        className="btn-primary whitespace-nowrap"
                                     >
-                                        <div className="p-4 space-y-2">
-                                            {editingId === order.id && editPricing && (
-                                                <div role={editPricing.error ? 'alert' : 'status'} className="p-3 text-sm text-slate-200">
-                                                    {editPricing.error || `Updated total: PHP ${editPricing.total.toLocaleString(undefined, { maximumFractionDigits: 2 })}`}
-                                                    {editPricing.options?.legacyDiscount && <p className="mt-1 text-slate-400">This older order keeps its original peso discount when quantities change.</p>}
-                                                </div>
-                                            )}
-                                            {order.items.map((item, idx) => (
-                                                <div key={item.id} className="flex flex-col md:flex-row justify-between md:items-center p-3 rounded-xl hover:bg-white/5 bg-black/20 gap-4 border border-white/5 text-sm">
-                                                    <div className="flex items-center gap-3 flex-1">
-                                                        <div className="w-10 h-10 rounded-lg bg-slate-800 flex items-center justify-center text-slate-500 shrink-0 overflow-hidden">
-                                                            {item.details.imageUrl ? (
-                                                                <img
-                                                                    src={item.details.imageUrl}
-                                                                    className="w-full h-full object-cover"
-                                                                    alt={item.details.itemName}
-                                                                />
-                                                            ) : (
-                                                                <ShoppingBag size={20} />
-                                                            )}
+                                        <Edit2 size={18} aria-hidden="true" /> Bulk edit
+                                    </button>}
+                                    <button
+                                        type="button"
+                                        aria-label="Delete selected orders"
+                                        disabled={readOnly}
+                                        title={readOnly ? READ_ONLY_HINT : undefined}
+                                        onClick={async () => {
+                                            if (confirm(`Delete ${selectedOrderIds.size} orders?`)) {
+                                                setLoading(true);
+                                                try {
+                                                    for (const orderId of selectedOrderIds) {
+                                                        const order = groupedOrders.find(o => o.id === orderId);
+                                                        if (order) {
+                                                            for (const item of order.transactions) await onDeleteTransaction(item.id);
+                                                        }
+                                                    }
+                                                    setIsSelectionMode(false);
+                                                    setSelectedOrderIds(new Set());
+                                                    if (refetch) await refetch();
+                                                    showToast('Deleted', 'success');
+                                                } catch (error) {
+                                                    console.error('Order deletion failed:', error);
+                                                    showToast('Some orders could not be deleted. Refresh before retrying.', 'error');
+                                                } finally { setLoading(false); }
+                                            }
+                                        }}
+                                        className="icon-btn text-red-400 hover:bg-red-500/10 hover:text-red-300"
+                                    >
+                                        <Trash2 size={20} aria-hidden="true" />
+                                    </button>
+                                    <button
+                                        type="button"
+                                        aria-label="Cancel selection"
+                                        onClick={() => { setIsSelectionMode(false); setSelectedOrderIds(new Set()); }}
+                                        className="icon-btn"
+                                    >
+                                        <X size={20} aria-hidden="true" />
+                                    </button>
+                                </>
+                            ) : (
+                                <button
+                                    type="button"
+                                    disabled={readOnly}
+                                    title={readOnly ? READ_ONLY_HINT : undefined}
+                                    onClick={() => setIsSelectionMode(true)}
+                                    className="btn-secondary whitespace-nowrap"
+                                >
+                                    <Layers size={18} aria-hidden="true" /> Multi-select
+                                </button>
+                            )}
+                        </div>
+                    </div>
+                </div>
+
+                <div className="mt-4 grid gap-3 lg:grid-cols-[minmax(0,1fr)_auto] lg:items-start">
+                    <div>
+                        <p className="mb-2 text-sm font-medium text-ink-2">Fulfillment</p>
+                        <div className="flex gap-2 overflow-x-auto pb-1 scrollbar-hide" aria-label="Fulfillment filter">
+                            {['all', ...FULFILLMENT_STATUSES].map(status => (
+                                <button
+                                    key={status}
+                                    type="button"
+                                    onClick={() => setFilterFulfillment(status)}
+                                    aria-pressed={filterFulfillment === status}
+                                    className="chip capitalize"
+                                >
+                                    {status.replace('_', ' ')}
+                                </button>
+                            ))}
+                        </div>
+                    </div>
+
+                    <div>
+                        <p className="mb-2 text-sm font-medium text-ink-2">Payment</p>
+                        <div className="flex gap-2 overflow-x-auto pb-1 scrollbar-hide" aria-label="Payment filter">
+                            {['all', 'paid', 'unpaid'].map(status => (
+                                <button
+                                    key={status}
+                                    type="button"
+                                    onClick={() => setFilterPayment(status)}
+                                    aria-pressed={filterPayment === status}
+                                    className="chip capitalize"
+                                >
+                                    {status}
+                                </button>
+                            ))}
+                        </div>
+                    </div>
+                </div>
+            </section>
+
+            <div className="min-h-0 flex-1 overflow-y-auto pr-1">
+                <div className="space-y-3 pb-2">
+                    {filteredOrders.map(order => {
+                        const isExpanded = expandedOrderIds.has(order.id);
+                        const isEditing = editingId === order.id;
+                        const totalQuantity = order.items.reduce((sum, item) => sum + (Number(item.details?.quantity) || 1), 0);
+                        const itemSummary = order.items.map(item => item.details?.itemName).filter(Boolean).join(', ') || `${totalQuantity} Items`;
+                        const fulfillmentBadgeClass = order.fulfillmentStatus === 'shipped' || order.fulfillmentStatus === 'ready'
+                            ? 'border-emerald-500/40 text-emerald-300'
+                            : order.fulfillmentStatus === 'in_progress'
+                                ? 'border-sky-500/40 text-sky-300'
+                                : order.fulfillmentStatus === 'returned'
+                                    ? 'border-amber-500/40 text-amber-300'
+                                    : order.fulfillmentStatus === 'cancelled'
+                                        ? 'border-red-500/40 text-red-300'
+                                        : 'border-amber-500/40 text-amber-300';
+                        const FulfillmentIcon = order.fulfillmentStatus === 'shipped' ? Truck
+                            : order.fulfillmentStatus === 'ready' ? Package
+                                : order.fulfillmentStatus === 'in_progress' ? Loader2
+                                    : order.fulfillmentStatus === 'returned' ? RotateCcw
+                                        : order.fulfillmentStatus === 'cancelled' ? X
+                                            : Clock;
+                        const dateInputId = `order-date-${order.id}`;
+                        const trackingInputId = `tracking-${order.id}`;
+                        const fulfillmentSelectId = `fulfillment-${order.id}`;
+                        const paymentStatusSelectId = `payment-status-${order.id}`;
+                        const paymentModeSelectId = `payment-mode-${order.id}`;
+                        const addressInputId = `address-${order.id}`;
+                        const contactInputId = `contact-${order.id}`;
+                        const barangayInputId = `barangay-${order.id}`;
+                        const cityInputId = `city-${order.id}`;
+                        const provinceInputId = `province-${order.id}`;
+
+                        return (
+                            <div
+                                key={order.id}
+                                className={`surface overflow-hidden transition-colors ${isSelectionMode && selectedOrderIds.has(order.id) ? 'ring-2 ring-primary' : ''}`}
+                            >
+                                <div
+                                    className="cursor-pointer p-4 transition-colors hover:bg-white/[0.04] sm:p-5"
+                                    onClick={() => {
+                                        if (isSelectionMode) toggleSelection(order.id);
+                                        else toggleExpansion(order.id);
+                                    }}
+                                >
+                                    <div className="grid gap-4 lg:grid-cols-[minmax(0,1fr)_minmax(260px,auto)] lg:items-start">
+                                        <div className="min-w-0">
+                                            <div className="flex items-start justify-between gap-3">
+                                                <div className="flex min-w-0 items-start gap-3">
+                                                    {isSelectionMode && (
+                                                        <div className={`mt-1 flex size-6 shrink-0 items-center justify-center rounded-md border transition-colors ${selectedOrderIds.has(order.id)
+                                                            ? 'border-primary bg-primary-strong text-white'
+                                                            : 'border-line bg-raised text-transparent'
+                                                            }`} aria-hidden="true">
+                                                            {selectedOrderIds.has(order.id) && <CheckCircle size={14} />}
                                                         </div>
-                                                        <div className="flex-1 space-y-1">
-                                                            {editingId === order.id ? (
-                                                                <div className="grid grid-cols-1 md:grid-cols-3 gap-2" onClick={e => e.stopPropagation()}>
-                                                                    <select
-                                                                        className="glass-input py-1 px-2 text-xs"
-                                                                        value={editForm.items[idx]?.details?.itemName || ''}
-                                                                        onChange={e => {
-                                                                            const selectedProductName = e.target.value;
-                                                                            const product = products.find(p => p.name === selectedProductName);
-                                                                            const newItems = [...editForm.items];
-
-                                                                            newItems[idx].details.itemName = selectedProductName;
-                                                                            if (product) {
-                                                                                newItems[idx].productChanged = true;
-                                                                                newItems[idx].priceAdjustment = 0;
-                                                                                newItems[idx].details.unitPrice = product.price;
-                                                                                newItems[idx].details.category = product.category || 'shirts';
-                                                                                newItems[idx].details.imageUrl = product.imageUrl;
-                                                                                newItems[idx].details.color = product.linkedColor || 'Varied';
-                                                                                newItems[idx].details.brand = product.brand || 'Sypik';
-                                                                            }
-
-                                                                            setEditForm({ ...editForm, items: newItems });
-                                                                        }}
-                                                                    >
-                                                                        <option value="" disabled>Select Product</option>
-                                                                        {products.map(p => (
-                                                                            <option key={p.id} value={p.name} className="bg-slate-900">{p.name} - ₱{p.price}</option>
-                                                                        ))}
-                                                                    </select>
-
-                                                                    <select
-                                                                        className="glass-input py-1 px-2 text-xs"
-                                                                        value={editForm.items[idx]?.details?.size || ''}
-                                                                        onChange={e => {
-                                                                            const newItems = [...editForm.items];
-                                                                            newItems[idx].details.size = e.target.value;
-                                                                            setEditForm({ ...editForm, items: newItems });
-                                                                        }}
-                                                                    >
-                                                                        <option value="" disabled>Size</option>
-                                                                        {SIZES.map(s => (
-                                                                            <option key={s} value={s} className="bg-slate-900">{s}</option>
-                                                                        ))}
-                                                                    </select>
-
-                                                                    <input
-                                                                        className="glass-input py-1 px-2 text-xs"
-                                                                        value={editForm.items[idx]?.details?.color || ''}
-                                                                        onChange={e => {
-                                                                            const newItems = [...editForm.items];
-                                                                            newItems[idx].details.color = e.target.value;
-                                                                            setEditForm({ ...editForm, items: newItems });
-                                                                        }}
-                                                                        placeholder="Color"
-                                                                    />
-                                                                </div>
-                                                            ) : (
-                                                                <>
-                                                                    <p className="font-bold text-slate-200 leading-tight">{item.details?.itemName}</p>
-                                                                    <p className="text-[10px] text-slate-500 uppercase font-bold tracking-wider mt-0.5">
-                                                                        {item.details?.brand && `${item.details.brand} • `}
-                                                                        {item.details?.size !== 'N/A' && `${item.details?.size} • `}
-                                                                        {item.details?.color}
-                                                                    </p>
-                                                                </>
-                                                            )}
+                                                    )}
+                                                    <div className="min-w-0">
+                                                        {isEditing ? (
+                                                            <input
+                                                                aria-label="Customer name"
+                                                                disabled={readOnly}
+                                                                title={readOnly ? READ_ONLY_HINT : undefined}
+                                                                className="field max-w-xs py-2 text-lg font-semibold"
+                                                                value={editForm.customerName}
+                                                                onChange={e => setEditForm({ ...editForm, customerName: e.target.value })}
+                                                                onClick={e => e.stopPropagation()}
+                                                            />
+                                                        ) : (
+                                                            <h3 className="truncate text-lg font-semibold text-ink">{order.customerName}</h3>
+                                                        )}
+                                                        <div className="mt-1 flex flex-wrap items-center gap-x-2 gap-y-1 text-sm text-ink-2">
+                                                            <span className="font-mono text-xs text-ink-3">#{order.id.slice(-6)}</span>
+                                                            <span aria-hidden="true">•</span>
+                                                            <span>{new Date(order.date).toLocaleString('en-US', { month: 'short', day: 'numeric', year: 'numeric', hour: '2-digit', minute: '2-digit' })}</span>
+                                                            <span aria-hidden="true">•</span>
+                                                            <span className="num">{totalQuantity} Items</span>
                                                         </div>
                                                     </div>
-                                                    <div className="flex items-center gap-6 shrink-0 justify-end">
-                                                        <div className="text-right">
-                                                            {editingId === order.id ? (
-                                                                <div className="flex flex-col gap-1 items-end" onClick={e => e.stopPropagation()}>
-                                                                    <div className="flex items-center gap-2">
-                                                                        <span className="text-[10px] text-slate-500 font-bold uppercase">Line total</span>
-                                                                        <input
-                                                                            type="number"
-                                                                            className="glass-input py-1 px-2 text-xs w-20 text-right"
-                                                                            aria-label={`Line total for ${item.details.itemName}`}
-                                                                            step="0.01"
-                                                                            min="0"
-                                                                            value={editPricing?.items?.find(priced => priced.id === item.id)?.amount ?? editForm.items[idx]?.amount ?? 0}
-                                                                            onChange={e => {
-                                                                                const priced = editPricing?.items?.find(priced => priced.id === item.id);
-                                                                                if (!priced) return showToast('Enter a valid quantity before changing the line total.', 'error');
-                                                                                const newItems = [...editForm.items];
-                                                                                newItems[idx].amount = Number(e.target.value);
-                                                                                newItems[idx].priceAdjustment = Number(((priced.priceAdjustment || 0) + Number(e.target.value) - priced.amount).toFixed(2));
-                                                                                setEditForm({ ...editForm, items: newItems });
-                                                                            }}
-                                                                        />
-                                                                    </div>
-                                                                    <div className="flex items-center gap-2">
-                                                                        <span className="text-[10px] text-slate-500 font-bold uppercase">Qty</span>
-                                                                        <input
-                                                                            type="number"
-                                                                            min="1"
-                                                                            step="1"
-                                                                            aria-label={`Quantity for ${item.details.itemName}`}
-                                                                            className="glass-input py-1 px-2 text-xs w-16 text-right"
-                                                                            value={editForm.items[idx]?.details?.quantity || 0}
-                                                                            onChange={e => {
-                                                                                const newItems = [...editForm.items];
-                                                                                newItems[idx].details.quantity = Number(e.target.value);
-                                                                                setEditForm({ ...editForm, items: newItems });
-                                                                            }}
-                                                                        />
-                                                                    </div>
-                                                                </div>
-                                                            ) : (
-                                                                <>
-                                                                    <p className="font-mono font-bold text-white text-base">₱{(item.details?.originalAmount ?? item.amount).toLocaleString()}</p>
-                                                                    <p className="text-xs text-slate-500 font-bold">QTY: {item.details?.quantity}</p>
-                                                                </>
-                                                            )}
-                                                        </div>
-                                                    </div>
                                                 </div>
-                                            ))}
+                                                <div className="shrink-0 text-right lg:hidden">
+                                                    <p className="text-xs text-ink-2">Total</p>
+                                                    <p className="num text-xl font-semibold text-ink">₱{order.totalAmount.toLocaleString()}</p>
+                                                </div>
+                                            </div>
 
-                                            {/* Order Breakdown (Fees) */}
-                                            <div className="mt-4 p-4 bg-black/40 rounded-xl border border-white/10 space-y-2">
-                                                <div className="flex justify-between text-xs text-slate-400">
-                                                    <span>Items Subtotal</span>
-                                                    <span>₱{(order.items.reduce((acc, item) => acc + (item.details?.originalAmount || 0), 0)).toLocaleString()}</span>
-                                                </div>
-                                                {(order.items.reduce((acc, item) => acc + (item.details?.discountShare || 0), 0)) > 0 && (
-                                                    <div className="flex justify-between text-xs text-emerald-400">
-                                                        <span>Voucher/Discount</span>
-                                                        <span>-₱{(order.items.reduce((acc, item) => acc + (item.details?.discountShare || 0), 0)).toLocaleString()}</span>
-                                                    </div>
+                                            <p className="mt-3 max-w-3xl truncate text-sm text-ink-2">{itemSummary}</p>
+
+                                            <div className="mt-3 flex flex-wrap items-center gap-2 text-sm text-ink-2">
+                                                {order.isOnlineOrder && order.fulfillmentStatus === 'pending' && (
+                                                    <span className="badge border-sky-500/40 text-sky-300">*New</span>
                                                 )}
                                                 {order.isRushOrder && (
-                                                    <div className="flex justify-between text-xs text-amber-400">
-                                                        <span>Rush Processing Fee (Synced)</span>
-                                                        <span>₱{(order.totalRushFee || 0).toLocaleString()}</span>
-                                                    </div>
+                                                    <span className="badge border-amber-500/40 text-amber-300">Rush</span>
                                                 )}
-                                                <div className="flex justify-between text-xs text-slate-400">
-                                                    <span>{order.shippingFee > 0 ? 'Shipping fee' : 'No shipping charge'}</span>
-                                                    <span>₱{(order.shippingFee || 0).toLocaleString()}</span>
-                                                </div>
-                                                <div className="flex justify-between text-base font-bold text-white pt-2 border-t border-white/5 mt-1">
-                                                    <span>Grand Total</span>
-                                                    <span>₱{order.totalAmount.toLocaleString()}</span>
-                                                </div>
+                                                <span className={`badge ${order.paymentStatus === 'paid'
+                                                    ? 'border-emerald-500/40 text-emerald-300'
+                                                    : 'border-red-500/40 text-red-300'
+                                                    }`}>
+                                                    {order.paymentStatus}
+                                                </span>
+                                                <span className={`badge capitalize ${fulfillmentBadgeClass}`}>
+                                                    <FulfillmentIcon size={14} className={order.fulfillmentStatus === 'in_progress' ? 'animate-spin' : ''} aria-hidden="true" />
+                                                    {order.fulfillmentStatus.replace('_', ' ')}
+                                                </span>
+                                                <span className="inline-flex items-center gap-1 text-ink-2">
+                                                    <Banknote size={14} aria-hidden="true" className="text-ink-3" /> {order.paymentMode}
+                                                </span>
+                                                {order.items[0]?.details?.createdBy && (
+                                                    <span className="inline-flex min-w-0 items-center gap-1 text-ink-2">
+                                                        <User size={14} aria-hidden="true" className="text-ink-3" />
+                                                        <span className="truncate">{order.items[0].details.createdBy.split('@')[0]}</span>
+                                                    </span>
+                                                )}
+                                            </div>
+                                        </div>
+
+                                        <div className="flex min-w-0 flex-col gap-3 lg:items-end">
+                                            <div className="hidden text-right lg:block">
+                                                <p className="text-xs text-ink-2">Total</p>
+                                                <p className="num text-2xl font-semibold text-ink">₱{order.totalAmount.toLocaleString()}</p>
                                             </div>
 
-                                            {/* Shipping Information for POS and Online Orders */}
-                                            {(order.items[0]?.details?.shippingDetails || order.items[0]?.details?.customerProvince || editingId === order.id) && (
-                                                <div className="mt-4 p-3 bg-white/5 rounded-xl border border-white/5" onClick={e => e.stopPropagation()}>
-                                                    <p className="text-xs font-bold text-slate-500 uppercase mb-2 flex items-center gap-2"><Truck size={12} /> Shipping Information</p>
-                                                    {editingId === order.id ? (
-                                                        <div className="grid grid-cols-1 md:grid-cols-2 gap-4 text-sm">
-                                                            <div>
-                                                                <p className="text-slate-400 text-xs text-uppercase font-bold mb-1">Address</p>
+                                            {isEditing ? (
+                                                <div className="w-full rounded-xl border border-line bg-raised p-3 lg:w-[360px]" onClick={e => e.stopPropagation()}>
+                                                    <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
+                                                        <div className="sm:col-span-2">
+                                                            <label htmlFor={dateInputId} className="field-label">Order date</label>
+                                                            <input
+                                                                id={dateInputId}
+                                                                type="date"
+                                                                disabled={readOnly}
+                                                                title={readOnly ? READ_ONLY_HINT : undefined}
+                                                                value={editForm.date || ''}
+                                                                onChange={e => setEditForm({ ...editForm, date: e.target.value })}
+                                                                className="field py-2 text-sm"
+                                                            />
+                                                        </div>
+
+                                                        <div className="sm:col-span-2">
+                                                            <label htmlFor={trackingInputId} className="field-label">Tracking number</label>
+                                                            <div className="relative">
+                                                                <Truck className="pointer-events-none absolute left-3 top-1/2 -translate-y-1/2 text-ink-3" size={16} aria-hidden="true" />
                                                                 <input
-                                                                    type="text"
-                                                                    className="glass-input py-1.5 px-3 text-sm w-full"
-                                                                    value={editForm.address || ''}
-                                                                    onChange={e => setEditForm({ ...editForm, address: e.target.value })}
-                                                                    placeholder="Street address / House No."
+                                                                    id={trackingInputId}
+                                                                    placeholder="Tracking number"
+                                                                    disabled={readOnly || isReseller}
+                                                                    title={readOnly ? READ_ONLY_HINT : undefined}
+                                                                    value={editForm.trackingNumber || ''}
+                                                                    onChange={e => {
+                                                                        const val = e.target.value;
+                                                                        setEditForm(prev => ({
+                                                                            ...prev,
+                                                                            trackingNumber: val,
+                                                                            fulfillmentStatus: val ? 'shipped' : prev.fulfillmentStatus
+                                                                        }));
+                                                                    }}
+                                                                    className="field pl-9 py-2 text-sm"
                                                                 />
                                                             </div>
+                                                        </div>
+
+                                                        {!isReseller && (
                                                             <div>
-                                                                <p className="text-slate-400 text-xs text-uppercase font-bold mb-1">Contact Number</p>
-                                                                <input
-                                                                    type="text"
-                                                                    className="glass-input py-1.5 px-3 text-sm w-full"
-                                                                    value={editForm.contactNumber || ''}
-                                                                    onChange={e => setEditForm({ ...editForm, contactNumber: e.target.value })}
-                                                                    placeholder="e.g. 09123456789"
-                                                                />
+                                                                <label htmlFor={fulfillmentSelectId} className="field-label">Fulfillment status</label>
+                                                                <select
+                                                                    id={fulfillmentSelectId}
+                                                                    disabled={readOnly}
+                                                                    title={readOnly ? READ_ONLY_HINT : undefined}
+                                                                    value={editForm.fulfillmentStatus}
+                                                                    onChange={e => setEditForm({ ...editForm, fulfillmentStatus: e.target.value })}
+                                                                    className="field py-2 text-sm capitalize"
+                                                                >
+                                                                    {FULFILLMENT_STATUSES.map(s => <option key={s} value={s} className="bg-slate-900">{s.replace('_', ' ')}</option>)}
+                                                                </select>
                                                             </div>
-                                                            <div className="col-span-1 md:col-span-2 grid grid-cols-1 sm:grid-cols-3 gap-4">
+                                                        )}
+                                                        <div>
+                                                            <label htmlFor={paymentStatusSelectId} className="field-label">Payment status</label>
+                                                            <select
+                                                                id={paymentStatusSelectId}
+                                                                value={editForm.paymentStatus}
+                                                                disabled={readOnly || isReseller}
+                                                                title={readOnly ? READ_ONLY_HINT : undefined}
+                                                                onChange={e => setEditForm({ ...editForm, paymentStatus: e.target.value })}
+                                                                className="field py-2 text-sm capitalize"
+                                                            >
+                                                                {PAYMENT_STATUSES.map(s => <option key={s} value={s} className="bg-slate-900">{s}</option>)}
+                                                            </select>
+                                                        </div>
+                                                        <div className="sm:col-span-2">
+                                                            <label htmlFor={paymentModeSelectId} className="field-label">Payment mode</label>
+                                                            <select
+                                                                id={paymentModeSelectId}
+                                                                disabled={readOnly}
+                                                                title={readOnly ? READ_ONLY_HINT : undefined}
+                                                                value={editForm.paymentMode}
+                                                                onChange={e => setEditForm({ ...editForm, paymentMode: e.target.value })}
+                                                                className="field py-2 text-sm"
+                                                            >
+                                                                {PAYMENT_MODES.map(s => <option key={s} value={s} className="bg-slate-900">{s}</option>)}
+                                                            </select>
+                                                        </div>
+                                                    </div>
+                                                    <div className="mt-3 flex gap-2">
+                                                        <button type="button" aria-label="Save order changes" disabled={readOnly || loading || !!editPricing?.error} title={readOnly ? READ_ONLY_HINT : undefined} onClick={() => handleSave(order.id)} className="btn-success flex-1 px-3">
+                                                            <Save size={16} aria-hidden="true" /> Save
+                                                        </button>
+                                                        <button type="button" aria-label="Cancel order changes" disabled={loading} onClick={() => setEditingId(null)} className="btn-danger flex-1 px-3">
+                                                            <X size={16} aria-hidden="true" /> Cancel
+                                                        </button>
+                                                    </div>
+                                                </div>
+                                            ) : (
+                                                <div className="flex w-full flex-col gap-2 sm:w-auto sm:items-end" onClick={e => e.stopPropagation()}>
+                                                    <div className="relative w-full sm:w-52">
+                                                        <Truck size={16} className={`pointer-events-none absolute left-3 top-1/2 -translate-y-1/2 ${order.items[0]?.details?.trackingNumber ? 'text-primary' : 'text-ink-3'}`} aria-hidden="true" />
+                                                        <input
+                                                            aria-label={`Tracking number for ${order.customerName}`}
+                                                            defaultValue={order.items[0]?.details?.trackingNumber || ''}
+                                                            readOnly={isReseller}
+                                                            disabled={readOnly}
+                                                            title={readOnly ? READ_ONLY_HINT : undefined}
+                                                            placeholder="Add tracking"
+                                                            className={`field pl-9 pr-3 py-2 text-sm ${order.items[0]?.details?.trackingNumber
+                                                                ? 'border-primary/40 bg-primary/10 text-primary font-mono font-semibold'
+                                                                : ''
+                                                                }`}
+                                                            onKeyDown={(e) => {
+                                                                if (e.key === 'Enter') {
+                                                                    e.target.blur();
+                                                                }
+                                                            }}
+                                                            onBlur={(e) => {
+                                                                const val = e.target.value.trim();
+                                                                const current = order.items[0]?.details?.trackingNumber || '';
+                                                                if (val !== current) {
+                                                                    handleQuickTracking(order.id, val);
+                                                                }
+                                                            }}
+                                                        />
+                                                    </div>
+
+                                                    <div className="flex flex-wrap items-center gap-2 sm:justify-end">
+                                                        {!isSelectionMode && (
+                                                            <>
+                                                                {!isReseller && order.fulfillmentStatus !== 'returned' && (
+                                                                    <button
+                                                                        type="button"
+                                                                        onClick={(e) => { e.stopPropagation(); handleMarkReturned(order.id); }}
+                                                                        disabled={readOnly}
+                                                                        className="icon-btn text-amber-300 hover:bg-amber-500/10 hover:text-amber-200"
+                                                                        title={readOnly ? READ_ONLY_HINT : "Mark as returned"}
+                                                                        aria-label="Mark order as returned"
+                                                                    >
+                                                                        <RotateCcw size={18} aria-hidden="true" />
+                                                                    </button>
+                                                                )}
+                                                                <button type="button" aria-label={`Edit order for ${order.customerName}`} disabled={readOnly} title={readOnly ? READ_ONLY_HINT : undefined} onClick={(e) => { e.stopPropagation(); startEditing(order); }} className="icon-btn"><Edit2 size={18} aria-hidden="true" /></button>
+                                                                <button type="button" aria-label={`Delete order for ${order.customerName}`} disabled={readOnly} title={readOnly ? READ_ONLY_HINT : undefined} onClick={(e) => { e.stopPropagation(); handleDeleteOrder(order.id); }} className="icon-btn text-red-400 hover:bg-red-500/10 hover:text-red-300"><Trash2 size={18} aria-hidden="true" /></button>
+                                                            </>
+                                                        )}
+                                                        <button
+                                                            type="button"
+                                                            aria-label={isExpanded ? `Collapse order for ${order.customerName}` : `Expand order for ${order.customerName}`}
+                                                            onClick={(e) => { e.stopPropagation(); toggleExpansion(order.id); }}
+                                                            className="icon-btn"
+                                                        >
+                                                            {isExpanded ? <ChevronUp size={20} aria-hidden="true" /> : <ChevronDown size={20} aria-hidden="true" />}
+                                                        </button>
+                                                    </div>
+                                                </div>
+                                            )}
+                                        </div>
+                                    </div>
+                                </div>
+
+                                <AnimatePresence>
+                                    {isExpanded && (
+                                        <motion.div
+                                            initial={{ height: 0 }}
+                                            animate={{ height: 'auto' }}
+                                            exit={{ height: 0 }}
+                                            className="overflow-hidden border-t border-line bg-surface"
+                                        >
+                                            <div className="p-4 sm:p-5">
+                                                {isEditing && editPricing && (
+                                                    <div role={editPricing.error ? 'alert' : 'status'} className="mb-4 rounded-xl border border-line bg-raised p-3 text-sm text-ink-2">
+                                                        {editPricing.error || `Updated total: PHP ${editPricing.total.toLocaleString(undefined, { maximumFractionDigits: 2 })}`}
+                                                        {editPricing.options?.legacyDiscount && <p className="mt-1 text-ink-2">This older order keeps its original peso discount when quantities change.</p>}
+                                                    </div>
+                                                )}
+
+                                                <div className="divide-y divide-line">
+                                                    {order.items.map((item, idx) => (
+                                                        <div key={item.id} className="flex flex-col gap-3 py-3 first:pt-0 last:pb-0 md:flex-row md:items-center md:justify-between">
+                                                            <div className="flex min-w-0 flex-1 items-center gap-3">
+                                                                <div className="grid size-12 shrink-0 place-items-center overflow-hidden rounded-lg bg-well text-ink-3">
+                                                                    {item.details.imageUrl ? (
+                                                                        <img
+                                                                            src={item.details.imageUrl}
+                                                                            className="size-full object-cover"
+                                                                            alt={item.details.itemName}
+                                                                        />
+                                                                    ) : (
+                                                                        <ShoppingBag size={20} aria-hidden="true" />
+                                                                    )}
+                                                                </div>
+                                                                <div className="min-w-0 flex-1 space-y-1">
+                                                                    {isEditing ? (
+                                                                        <div className="grid grid-cols-1 gap-2 md:grid-cols-3" onClick={e => e.stopPropagation()}>
+                                                                            <select
+                                                                                aria-label={`Product for line ${idx + 1}`}
+                                                                                disabled={readOnly}
+                                                                                title={readOnly ? READ_ONLY_HINT : undefined}
+                                                                                className="field py-2 text-sm"
+                                                                                value={editForm.items[idx]?.details?.itemName || ''}
+                                                                                onChange={e => {
+                                                                                    const selectedProductName = e.target.value;
+                                                                                    const product = products.find(p => p.name === selectedProductName);
+                                                                                    const newItems = [...editForm.items];
+
+                                                                                    newItems[idx].details.itemName = selectedProductName;
+                                                                                    if (product) {
+                                                                                        newItems[idx].productChanged = true;
+                                                                                        newItems[idx].priceAdjustment = 0;
+                                                                                        newItems[idx].details.unitPrice = product.price;
+                                                                                        newItems[idx].details.category = product.category || 'shirts';
+                                                                                        newItems[idx].details.imageUrl = product.imageUrl;
+                                                                                        newItems[idx].details.color = product.linkedColor || 'Varied';
+                                                                                        newItems[idx].details.brand = product.brand || 'Sypik';
+                                                                                    }
+
+                                                                                    setEditForm({ ...editForm, items: newItems });
+                                                                                }}
+                                                                            >
+                                                                                <option value="" disabled>Select product</option>
+                                                                                {products.map(p => (
+                                                                                    <option key={p.id} value={p.name} className="bg-slate-900">{p.name} - ₱{p.price}</option>
+                                                                                ))}
+                                                                            </select>
+
+                                                                            <select
+                                                                                aria-label={`Size for ${item.details.itemName}`}
+                                                                                disabled={readOnly}
+                                                                                title={readOnly ? READ_ONLY_HINT : undefined}
+                                                                                className="field py-2 text-sm"
+                                                                                value={editForm.items[idx]?.details?.size || ''}
+                                                                                onChange={e => {
+                                                                                    const newItems = [...editForm.items];
+                                                                                    newItems[idx].details.size = e.target.value;
+                                                                                    setEditForm({ ...editForm, items: newItems });
+                                                                                }}
+                                                                            >
+                                                                                <option value="" disabled>Size</option>
+                                                                                {SIZES.map(s => (
+                                                                                    <option key={s} value={s} className="bg-slate-900">{s}</option>
+                                                                                ))}
+                                                                            </select>
+
+                                                                            <input
+                                                                                aria-label={`Color for ${item.details.itemName}`}
+                                                                                disabled={readOnly}
+                                                                                title={readOnly ? READ_ONLY_HINT : undefined}
+                                                                                className="field py-2 text-sm"
+                                                                                value={editForm.items[idx]?.details?.color || ''}
+                                                                                onChange={e => {
+                                                                                    const newItems = [...editForm.items];
+                                                                                    newItems[idx].details.color = e.target.value;
+                                                                                    setEditForm({ ...editForm, items: newItems });
+                                                                                }}
+                                                                                placeholder="Color"
+                                                                            />
+                                                                        </div>
+                                                                    ) : (
+                                                                        <>
+                                                                            <p className="truncate font-semibold text-ink">{item.details?.itemName}</p>
+                                                                            <p className="text-xs font-medium text-ink-2">
+                                                                                {item.details?.brand && `${item.details.brand} • `}
+                                                                                {item.details?.size !== 'N/A' && `${item.details?.size} • `}
+                                                                                {item.details?.color}
+                                                                            </p>
+                                                                        </>
+                                                                    )}
+                                                                </div>
+                                                            </div>
+                                                            <div className="flex shrink-0 items-center justify-between gap-6 md:justify-end">
+                                                                <div className="text-right">
+                                                                    {isEditing ? (
+                                                                        <div className="flex flex-col gap-2 items-end" onClick={e => e.stopPropagation()}>
+                                                                            <label className="flex items-center gap-2 text-xs font-medium text-ink-2">
+                                                                                Line total
+                                                                                <input
+                                                                                    type="number"
+                                                                                    disabled={readOnly}
+                                                                                    title={readOnly ? READ_ONLY_HINT : undefined}
+                                                                                    className="field w-24 py-2 text-right text-sm num"
+                                                                                    aria-label={`Line total for ${item.details.itemName}`}
+                                                                                    step="0.01"
+                                                                                    min="0"
+                                                                                    value={editPricing?.items?.find(priced => priced.id === item.id)?.amount ?? editForm.items[idx]?.amount ?? 0}
+                                                                                    onChange={e => {
+                                                                                        const priced = editPricing?.items?.find(priced => priced.id === item.id);
+                                                                                        if (!priced) return showToast('Enter a valid quantity before changing the line total.', 'error');
+                                                                                        const newItems = [...editForm.items];
+                                                                                        newItems[idx].amount = Number(e.target.value);
+                                                                                        newItems[idx].priceAdjustment = Number(((priced.priceAdjustment || 0) + Number(e.target.value) - priced.amount).toFixed(2));
+                                                                                        setEditForm({ ...editForm, items: newItems });
+                                                                                    }}
+                                                                                />
+                                                                            </label>
+                                                                            <label className="flex items-center gap-2 text-xs font-medium text-ink-2">
+                                                                                Qty
+                                                                                <input
+                                                                                    type="number"
+                                                                                    disabled={readOnly}
+                                                                                    title={readOnly ? READ_ONLY_HINT : undefined}
+                                                                                    min="1"
+                                                                                    step="1"
+                                                                                    aria-label={`Quantity for ${item.details.itemName}`}
+                                                                                    className="field w-20 py-2 text-right text-sm num"
+                                                                                    value={editForm.items[idx]?.details?.quantity || 0}
+                                                                                    onChange={e => {
+                                                                                        const newItems = [...editForm.items];
+                                                                                        newItems[idx].details.quantity = Number(e.target.value);
+                                                                                        setEditForm({ ...editForm, items: newItems });
+                                                                                    }}
+                                                                                />
+                                                                            </label>
+                                                                        </div>
+                                                                    ) : (
+                                                                        <>
+                                                                            <p className="num text-base font-semibold text-ink">₱{(item.details?.originalAmount ?? item.amount).toLocaleString()}</p>
+                                                                            <p className="text-xs font-medium text-ink-2">Qty: {item.details?.quantity}</p>
+                                                                        </>
+                                                                    )}
+                                                                </div>
+                                                            </div>
+                                                        </div>
+                                                    ))}
+                                                </div>
+
+                                                <div className="mt-4 border-t border-line pt-4">
+                                                    <div className="space-y-2 text-sm">
+                                                        <div className="flex justify-between gap-4 text-ink-2">
+                                                            <span>Items subtotal</span>
+                                                            <span className="num">₱{(order.items.reduce((acc, item) => acc + (item.details?.originalAmount || 0), 0)).toLocaleString()}</span>
+                                                        </div>
+                                                        {(order.items.reduce((acc, item) => acc + (item.details?.discountShare || 0), 0)) > 0 && (
+                                                            <div className="flex justify-between gap-4 text-emerald-300">
+                                                                <span>Voucher/Discount</span>
+                                                                <span className="num">-₱{(order.items.reduce((acc, item) => acc + (item.details?.discountShare || 0), 0)).toLocaleString()}</span>
+                                                            </div>
+                                                        )}
+                                                        {order.isRushOrder && (
+                                                            <div className="flex justify-between gap-4 text-amber-300">
+                                                                <span>Rush processing fee (synced)</span>
+                                                                <span className="num">₱{(order.totalRushFee || 0).toLocaleString()}</span>
+                                                            </div>
+                                                        )}
+                                                        <div className="flex justify-between gap-4 text-ink-2">
+                                                            <span>{order.shippingFee > 0 ? 'Shipping fee' : 'No shipping charge'}</span>
+                                                            <span className="num">₱{(order.shippingFee || 0).toLocaleString()}</span>
+                                                        </div>
+                                                        <div className="flex justify-between gap-4 border-t border-line pt-2 text-base font-semibold text-ink">
+                                                            <span>Grand total</span>
+                                                            <span className="num">₱{order.totalAmount.toLocaleString()}</span>
+                                                        </div>
+                                                    </div>
+                                                </div>
+
+                                                {(order.items[0]?.details?.shippingDetails || order.items[0]?.details?.customerProvince || isEditing) && (
+                                                    <div className="mt-4 border-t border-line pt-4" onClick={e => e.stopPropagation()}>
+                                                        <p className="section-title mb-3 flex items-center gap-2"><Truck size={16} aria-hidden="true" /> Shipping information</p>
+                                                        {isEditing ? (
+                                                            <div className="grid grid-cols-1 gap-4 text-sm md:grid-cols-2">
                                                                 <div>
-                                                                    <p className="text-slate-400 text-xs text-uppercase font-bold mb-1">Barangay</p>
+                                                                    <label htmlFor={addressInputId} className="field-label">Address</label>
                                                                     <input
+                                                                        id={addressInputId}
                                                                         type="text"
-                                                                        className="glass-input py-1.5 px-3 text-sm w-full"
+                                                                        disabled={readOnly}
+                                                                        title={readOnly ? READ_ONLY_HINT : undefined}
+                                                                        className="field py-2 text-sm"
+                                                                        value={editForm.address || ''}
+                                                                        onChange={e => setEditForm({ ...editForm, address: e.target.value })}
+                                                                        placeholder="Street address / House No."
+                                                                    />
+                                                                </div>
+                                                                <div>
+                                                                    <label htmlFor={contactInputId} className="field-label">Contact number</label>
+                                                                    <input
+                                                                        id={contactInputId}
+                                                                        type="text"
+                                                                        disabled={readOnly}
+                                                                        title={readOnly ? READ_ONLY_HINT : undefined}
+                                                                        className="field py-2 text-sm"
+                                                                        value={editForm.contactNumber || ''}
+                                                                        onChange={e => setEditForm({ ...editForm, contactNumber: e.target.value })}
+                                                                        placeholder="e.g. 09123456789"
+                                                                    />
+                                                                </div>
+                                                                <div>
+                                                                    <label htmlFor={barangayInputId} className="field-label">Barangay</label>
+                                                                    <input
+                                                                        id={barangayInputId}
+                                                                        type="text"
+                                                                        disabled={readOnly}
+                                                                        title={readOnly ? READ_ONLY_HINT : undefined}
+                                                                        className="field py-2 text-sm"
                                                                         value={editForm.barangay || ''}
                                                                         onChange={e => setEditForm({ ...editForm, barangay: e.target.value })}
                                                                     />
                                                                 </div>
                                                                 <div>
-                                                                    <p className="text-slate-400 text-xs text-uppercase font-bold mb-1">City/Municipality</p>
+                                                                    <label htmlFor={cityInputId} className="field-label">City/municipality</label>
                                                                     <input
+                                                                        id={cityInputId}
                                                                         type="text"
-                                                                        className="glass-input py-1.5 px-3 text-sm w-full"
+                                                                        disabled={readOnly}
+                                                                        title={readOnly ? READ_ONLY_HINT : undefined}
+                                                                        className="field py-2 text-sm"
                                                                         value={editForm.city || ''}
                                                                         onChange={e => setEditForm({ ...editForm, city: e.target.value })}
                                                                     />
                                                                 </div>
-                                                                <div>
-                                                                    <p className="text-slate-400 text-xs text-uppercase font-bold mb-1">Province</p>
+                                                                <div className="md:col-span-2">
+                                                                    <label htmlFor={provinceInputId} className="field-label">Province</label>
                                                                     <input
+                                                                        id={provinceInputId}
                                                                         type="text"
-                                                                        className="glass-input py-1.5 px-3 text-sm w-full"
+                                                                        disabled={readOnly}
+                                                                        title={readOnly ? READ_ONLY_HINT : undefined}
+                                                                        className="field py-2 text-sm"
                                                                         value={editForm.province || ''}
                                                                         onChange={e => setEditForm({ ...editForm, province: e.target.value })}
                                                                     />
                                                                 </div>
                                                             </div>
-                                                        </div>
-                                                    ) : (
-                                                        <div className="grid grid-cols-1 md:grid-cols-2 gap-4 text-sm">
-                                                            <div>
-                                                                <p className="text-slate-400 text-xs text-uppercase font-bold mb-1">Address</p>
-                                                                <p
-                                                                    className="text-white hover:text-primary transition-colors cursor-pointer flex items-center gap-2 group/address"
-                                                                    onClick={() => handleCopyToClipboard(order.items[0].details.shippingDetails?.address || order.items[0].details.customerAddress, 'Address')}
-                                                                    title="Click to copy address"
-                                                                >
-                                                                    {order.items[0].details.shippingDetails?.address || order.items[0].details.customerAddress || 'No address provided'}
-                                                                    <Copy size={12} className="opacity-0 group-hover/address:opacity-100 transition-opacity" />
-                                                                </p>
-                                                            </div>
-                                                            <div>
-                                                                <p className="text-slate-400 text-xs text-uppercase font-bold mb-1">Contact</p>
-                                                                <p
-                                                                    className="text-white hover:text-primary transition-colors cursor-pointer flex items-center gap-2 group/contact"
-                                                                    onClick={() => {
-                                                                        const raw = order.items[0].details.shippingDetails?.contactNumber || order.items[0].details.customerContact || order.items[0].details.contactNumber;
-                                                                        handleCopyToClipboard(formatContactForCopy(raw), 'Contact number');
-                                                                    }}
-                                                                    title="Click to copy contact (starts with 9)"
-                                                                >
-                                                                    {order.items[0].details.shippingDetails?.contactNumber || order.items[0].details.customerContact || order.items[0].details.contactNumber || 'N/A'}
-                                                                    <Copy size={12} className="opacity-0 group-hover/contact:opacity-100 transition-opacity" />
-                                                                </p>
-                                                            </div>
-                                                            <div className="col-span-1 md:col-span-2">
-                                                                <p className="text-slate-400 text-xs text-uppercase font-bold mb-1">Details (Barangay, City, Province)</p>
-                                                                <p className="text-white">
-                                                                    {order.items[0].details.shippingDetails ? (
-                                                                        `${order.items[0].details.shippingDetails.barangay ? order.items[0].details.shippingDetails.barangay + ', ' : ''}${order.items[0].details.shippingDetails.city ? order.items[0].details.shippingDetails.city + ', ' : ''}${order.items[0].details.shippingDetails.province || ''}`
-                                                                    ) : (
-                                                                        `${order.items[0].details.customerBarangay ? order.items[0].details.customerBarangay + ', ' : ''}${order.items[0].details.customerCity ? order.items[0].details.customerCity + ', ' : ''}${order.items[0].details.customerProvince || ''}`
-                                                                    )}
-                                                                </p>
-                                                            </div>
-                                                            {order.items[0].details.trackingNumber && (
-                                                                <div className="col-span-1 md:col-span-2 mt-2 pt-2 border-t border-white/5">
-                                                                    <p className="text-slate-400 text-xs flex items-center gap-2 mb-1"><Truck size={10} /> Tracking Number</p>
-                                                                    <p className="text-primary font-mono font-bold tracking-wider">{order.items[0].details.trackingNumber}</p>
+                                                        ) : (
+                                                            <div className="grid grid-cols-1 gap-4 text-sm md:grid-cols-2">
+                                                                <div>
+                                                                    <p className="field-label">Address</p>
+                                                                    <button
+                                                                        type="button"
+                                                                        className="group/address flex min-h-11 w-full items-center gap-2 text-left text-ink transition-colors hover:text-primary"
+                                                                        onClick={() => handleCopyToClipboard(order.items[0].details.shippingDetails?.address || order.items[0].details.customerAddress, 'Address')}
+                                                                        title="Click to copy address"
+                                                                    >
+                                                                        <span className="min-w-0 flex-1">{order.items[0].details.shippingDetails?.address || order.items[0].details.customerAddress || 'No address provided'}</span>
+                                                                        <Copy size={14} className="shrink-0 opacity-0 transition-opacity group-hover/address:opacity-100" aria-hidden="true" />
+                                                                    </button>
                                                                 </div>
-                                                            )}
-                                                        </div>
-                                                    )}
-                                                </div>
-                                            )}
+                                                                <div>
+                                                                    <p className="field-label">Contact</p>
+                                                                    <button
+                                                                        type="button"
+                                                                        className="group/contact flex min-h-11 w-full items-center gap-2 text-left text-ink transition-colors hover:text-primary"
+                                                                        onClick={() => {
+                                                                            const raw = order.items[0].details.shippingDetails?.contactNumber || order.items[0].details.customerContact || order.items[0].details.contactNumber;
+                                                                            handleCopyToClipboard(formatContactForCopy(raw), 'Contact number');
+                                                                        }}
+                                                                        title="Click to copy contact (starts with 9)"
+                                                                    >
+                                                                        <span className="min-w-0 flex-1">{order.items[0].details.shippingDetails?.contactNumber || order.items[0].details.customerContact || order.items[0].details.contactNumber || 'N/A'}</span>
+                                                                        <Copy size={14} className="shrink-0 opacity-0 transition-opacity group-hover/contact:opacity-100" aria-hidden="true" />
+                                                                    </button>
+                                                                </div>
+                                                                <div className="md:col-span-2">
+                                                                    <p className="field-label">Details (barangay, city, province)</p>
+                                                                    <p className="text-ink">
+                                                                        {order.items[0].details.shippingDetails ? (
+                                                                            `${order.items[0].details.shippingDetails.barangay ? order.items[0].details.shippingDetails.barangay + ', ' : ''}${order.items[0].details.shippingDetails.city ? order.items[0].details.shippingDetails.city + ', ' : ''}${order.items[0].details.shippingDetails.province || ''}`
+                                                                        ) : (
+                                                                            `${order.items[0].details.customerBarangay ? order.items[0].details.customerBarangay + ', ' : ''}${order.items[0].details.customerCity ? order.items[0].details.customerCity + ', ' : ''}${order.items[0].details.customerProvince || ''}`
+                                                                        )}
+                                                                    </p>
+                                                                </div>
+                                                                {order.items[0].details.trackingNumber && (
+                                                                    <div className="md:col-span-2 border-t border-line pt-3">
+                                                                        <p className="field-label flex items-center gap-2"><Truck size={14} aria-hidden="true" /> Tracking number</p>
+                                                                        <p className="font-mono font-semibold text-primary">{order.items[0].details.trackingNumber}</p>
+                                                                    </div>
+                                                                )}
+                                                            </div>
+                                                        )}
+                                                    </div>
+                                                )}
 
-                                            {/* Proof of Payment Display */}
-                                            {order.items[0]?.details?.proofOfPayment && (
-                                                <div className="mt-2 p-3 bg-emerald-500/5 rounded-xl border border-emerald-500/20">
-                                                    <p className="text-xs font-bold text-emerald-400 uppercase mb-2 flex items-center gap-2"><CheckCircle size={12} /> Proof of Payment</p>
-                                                    <div className="relative group">
-                                                        <img
-                                                            src={order.items[0].details.proofOfPayment}
-                                                            className="h-32 rounded-lg bg-black/40 object-contain cursor-pointer transition-transform hover:scale-105"
+                                                {order.items[0]?.details?.proofOfPayment && (
+                                                    <div className="mt-4 border-t border-line pt-4">
+                                                        <p className="section-title mb-3 flex items-center gap-2 text-emerald-300"><CheckCircle size={16} aria-hidden="true" /> Proof of payment</p>
+                                                        <button
+                                                            type="button"
+                                                            aria-label="View proof of payment"
+                                                            className="group/proof block overflow-hidden rounded-lg bg-well"
                                                             onClick={() => window.open(order.items[0].details.proofOfPayment, '_blank')}
+                                                        >
+                                                            <img
+                                                                src={order.items[0].details.proofOfPayment}
+                                                                className="h-32 max-w-full object-contain transition-opacity group-hover/proof:opacity-80"
+                                                                alt="Proof of payment"
+                                                            />
+                                                            <span className="sr-only">Click to view</span>
+                                                        </button>
+                                                    </div>
+                                                )}
+
+                                                <div className="mt-4 border-t border-line pt-4" onClick={e => e.stopPropagation()}>
+                                                    <p className="section-title mb-3 flex items-center gap-2">
+                                                        <MessageSquare size={16} aria-hidden="true" /> Order notes & comments
+                                                    </p>
+
+                                                    <div className="mb-4 max-h-48 space-y-3 overflow-y-auto pr-1 custom-scrollbar">
+                                                        {order.comments && order.comments.length > 0 ? (
+                                                            order.comments.map((comment) => (
+                                                                <div key={comment.id} className="rounded-lg border border-line bg-raised p-3">
+                                                                    <div className="mb-1 flex items-start justify-between gap-3">
+                                                                        <span className="text-xs font-semibold text-primary">{comment.author.split('@')[0]}</span>
+                                                                        <span className="text-xs text-ink-2">{new Date(comment.date).toLocaleString()}</span>
+                                                                    </div>
+                                                                    <p className="text-sm leading-relaxed text-ink-2">{comment.text}</p>
+                                                                </div>
+                                                            ))
+                                                        ) : (
+                                                            <p className="py-2 text-center text-xs text-ink-2">No comments yet. Add a note below.</p>
+                                                        )}
+                                                    </div>
+
+                                                    <div className="flex gap-2">
+                                                        <input
+                                                            type="text"
+                                                            aria-label="Write a note..."
+                                                            placeholder="Write a note..."
+                                                            className="field flex-1 py-2 text-sm"
+                                                            disabled={readOnly || loading}
+                                                            title={readOnly ? READ_ONLY_HINT : undefined}
+                                                            onKeyDown={async (e) => {
+                                                                if (e.key === 'Enter' && e.target.value.trim() && !loading) {
+                                                                    const input = e.currentTarget;
+                                                                    if (await handleSaveComment(order.id, input.value)) input.value = '';
+                                                                }
+                                                            }}
                                                         />
-                                                        <div className="absolute inset-0 flex items-center justify-center pointer-events-none opacity-0 group-hover:opacity-100 transition-opacity">
-                                                            <span className="bg-black/80 text-white text-xs px-2 py-1 rounded">Click to View</span>
-                                                        </div>
+                                                        <button
+                                                            type="button"
+                                                            aria-label="Add note"
+                                                            disabled={readOnly || loading}
+                                                            title={readOnly ? READ_ONLY_HINT : undefined}
+                                                            onClick={async (e) => {
+                                                                const input = e.currentTarget.previousSibling;
+                                                                if (input.value.trim()) {
+                                                                    if (await handleSaveComment(order.id, input.value)) input.value = '';
+                                                                }
+                                                            }}
+                                                            className="icon-btn bg-primary/10 text-primary hover:bg-primary-strong hover:text-white"
+                                                        >
+                                                            <Send size={16} aria-hidden="true" />
+                                                        </button>
                                                     </div>
                                                 </div>
-                                            )}
-
-                                            {/* Order Comments Section */}
-                                            <div className="mt-4 p-3 bg-white/5 rounded-xl border border-white/5" onClick={e => e.stopPropagation()}>
-                                                <p className="text-xs font-bold text-slate-500 uppercase mb-3 flex items-center gap-2">
-                                                    <MessageSquare size={12} /> Order Notes & Comments
-                                                </p>
-                                                
-                                                <div className="space-y-3 mb-4 max-h-48 overflow-y-auto pr-1 custom-scrollbar">
-                                                    {order.comments && order.comments.length > 0 ? (
-                                                        order.comments.map((comment) => (
-                                                            <div key={comment.id} className="bg-black/20 p-2.5 rounded-lg border border-white/5 relative group/comment">
-                                                                <div className="flex justify-between items-start mb-1">
-                                                                    <span className="text-[10px] font-bold text-primary">{comment.author.split('@')[0]}</span>
-                                                                    <span className="text-[9px] text-slate-500">{new Date(comment.date).toLocaleString()}</span>
-                                                                </div>
-                                                                <p className="text-xs text-slate-300 leading-relaxed">{comment.text}</p>
-                                                            </div>
-                                                        ))
-                                                    ) : (
-                                                        <p className="text-[11px] text-slate-500 italic text-center py-2">No comments yet. Add a note below.</p>
-                                                    )}
-                                                </div>
-
-                                                <div className="flex gap-2">
-                                                    <input 
-                                                        type="text" 
-                                                        placeholder="Write a note..."
-                                                        className="glass-input py-1.5 px-3 text-xs flex-1"
-                                                        disabled={loading}
-                                                        onKeyDown={async (e) => {
-                                                            if (e.key === 'Enter' && e.target.value.trim() && !loading) {
-                                                                const input = e.currentTarget;
-                                                                if (await handleSaveComment(order.id, input.value)) input.value = '';
-                                                            }
-                                                        }}
-                                                    />
-                                                    <button 
-                                                        disabled={loading}
-                                                        onClick={async (e) => {
-                                                            const input = e.currentTarget.previousSibling;
-                                                            if (input.value.trim()) {
-                                                                if (await handleSaveComment(order.id, input.value)) input.value = '';
-                                                            }
-                                                        }}
-                                                        className="p-2 bg-primary/20 text-primary hover:bg-primary hover:text-white rounded-lg transition-all"
-                                                    >
-                                                        <Send size={14} />
-                                                    </button>
-                                                </div>
                                             </div>
-                                        </div>
-                                    </motion.div>
-                                )}
-                            </AnimatePresence>
-                        </motion.div>
-                    ))}
+                                        </motion.div>
+                                    )}
+                                </AnimatePresence>
+                            </div>
+                        );
+                    })}
                     {filteredOrders.length === 0 && (
-                        <div className="text-center text-slate-500 mt-20">
-                            <Package size={48} className="mx-auto mb-4 opacity-50" />
+                        <div className="mt-6 rounded-2xl border border-dashed border-line p-10 text-center text-ink-2">
+                            <Package size={32} className="mx-auto mb-3 text-ink-3" aria-hidden="true" />
                             <p>No orders matched your filters</p>
                         </div>
                     )}
-                </AnimatePresence>
+                </div>
             </div>
 
-            {/* Bulk Edit Modal */}
-            <AnimatePresence>
-                {showBulkEditModal && (
-                    <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/80 backdrop-blur-sm p-4">
-                        <motion.div
-                            initial={{ scale: 0.95, opacity: 0 }}
-                            animate={{ scale: 1, opacity: 1 }}
-                            exit={{ scale: 0.95, opacity: 0 }}
-                            className="glass-panel p-6 max-w-sm w-full"
-                        >
-                            <h3 className="text-xl font-bold text-white mb-4">Bulk Update ({selectedOrderIds.size})</h3>
-
-                            <div className="space-y-4">
-                                <div>
-                                    {!isReseller && (
-                                        <>
-                                            <label className="text-xs font-bold text-slate-500 uppercase">Fulfillment Status</label>
-                                            <div className="flex flex-wrap gap-2 mt-2">
-                                                {FULFILLMENT_STATUSES.map(s => (
-                                                    <button key={s} onClick={() => handleBulkUpdate({ fulfillmentStatus: s })} className="px-3 py-1 bg-white/5 hover:bg-primary hover:text-white rounded-lg text-xs capitalize transition-colors border border-white/5">
-                                                        {s.replace('_', ' ')}
-                                                    </button>
-                                                ))}
-                                            </div>
-                                        </>
-                                    )}
-                                </div>
-                                <div>
-                                    <label className="text-xs font-bold text-slate-500 uppercase">Payment Status</label>
-                                    <div className="flex flex-wrap gap-2 mt-2">
-                                        {PAYMENT_STATUSES.map(s => (
-                                            <button key={s} onClick={() => handleBulkUpdate({ paymentStatus: s })} className="px-3 py-1 bg-white/5 hover:bg-emerald-600 hover:text-white rounded-lg text-xs capitalize transition-colors border border-white/5">
-                                                {s}
-                                            </button>
-                                        ))}
-                                    </div>
+            {showBulkEditModal && (
+                <Dialog
+                    onClose={() => setShowBulkEditModal(false)}
+                    title={`Bulk update (${selectedOrderIds.size})`}
+                    size="sm"
+                    footer={(
+                        <button type="button" onClick={() => setShowBulkEditModal(false)} className="btn-secondary w-full">Cancel</button>
+                    )}
+                >
+                    <div className="space-y-5">
+                        {!isReseller && (
+                            <div>
+                                <p className="field-label">Fulfillment status</p>
+                                <div className="mt-2 flex flex-wrap gap-2">
+                                    {FULFILLMENT_STATUSES.map(s => (
+                                        <button key={s} type="button" disabled={readOnly} title={readOnly ? READ_ONLY_HINT : undefined} onClick={() => handleBulkUpdate({ fulfillmentStatus: s })} className="chip capitalize">
+                                            {s.replace('_', ' ')}
+                                        </button>
+                                    ))}
                                 </div>
                             </div>
-
-                            <button onClick={() => setShowBulkEditModal(false)} className="mt-6 w-full py-2 bg-white/5 hover:bg-white/10 rounded-xl text-slate-400">Cancel</button>
-                        </motion.div>
+                        )}
+                        <div>
+                            <p className="field-label">Payment status</p>
+                            <div className="mt-2 flex flex-wrap gap-2">
+                                {PAYMENT_STATUSES.map(s => (
+                                    <button key={s} type="button" disabled={readOnly} title={readOnly ? READ_ONLY_HINT : undefined} onClick={() => handleBulkUpdate({ paymentStatus: s })} className="chip capitalize">
+                                        {s}
+                                    </button>
+                                ))}
+                            </div>
+                        </div>
                     </div>
-                )}
-            </AnimatePresence>
+                </Dialog>
+            )}
         </div>
     );
 }

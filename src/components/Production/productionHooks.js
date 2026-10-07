@@ -62,7 +62,46 @@ export function useProductionData(owner = false) {
     return { ...data, loading, error, online, load };
 }
 
-export function useProductionMutation(reload) {
+export function useProductionWallet(enabled = true) {
+    const [data, setData] = useState({ wallet: null, wallets: [], unattributed: { shirts: 0, recent: [] } });
+    const [loading, setLoading] = useState(enabled);
+    const [error, setError] = useState(null);
+    const generation = useRef(0);
+    const load = useCallback(async () => {
+        if (!enabled) return;
+        const current = ++generation.current;
+        setLoading(true);
+        try {
+            const result = await apiRequest('/api/production/wallet');
+            if (!result || (!result.wallet && !Array.isArray(result.wallets))) throw new Error('Wallet response could not be verified.');
+            if (current !== generation.current) return;
+            setData({ wallet: result.wallet || null, wallets: result.wallets || [],
+                unattributed: result.unattributed || { shirts: 0, recent: [] } });
+            setError(null);
+        } catch (failure) {
+            if (current === generation.current) setError(failure);
+        } finally {
+            if (current === generation.current) setLoading(false);
+        }
+    }, [enabled]);
+    useEffect(() => {
+        if (!enabled) return undefined;
+        load();
+        const refresh = () => { if (document.visibilityState === 'visible') load(); };
+        const timer = window.setInterval(refresh, 30000);
+        window.addEventListener('online', load);
+        document.addEventListener('visibilitychange', refresh);
+        return () => {
+            ++generation.current;
+            window.clearInterval(timer);
+            window.removeEventListener('online', load);
+            document.removeEventListener('visibilitychange', refresh);
+        };
+    }, [enabled, load]);
+    return { ...data, loading, error, load };
+}
+
+export function useProductionMutation(reload, { serverErrors = false } = {}) {
     const { showToast } = useToast();
     const [busy, setBusy] = useState(false);
     const [error, setError] = useState('');
@@ -87,7 +126,7 @@ export function useProductionMutation(reload) {
             setUncertain(unknown);
             if (!unknown) pending.current = null;
             setError(unknown ? 'Save not confirmed. Keep these inputs unchanged and retry the same save. It will not be counted twice.'
-                : productionError(failure));
+                : serverErrors && failure.message ? failure.message : productionError(failure));
             if (failure.status === 409 || failure.status === 403) await reload();
             return false;
         } finally {

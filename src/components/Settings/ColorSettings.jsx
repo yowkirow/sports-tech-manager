@@ -1,13 +1,14 @@
 import React, { useState } from 'react';
 import { Palette, Plus, Trash2, Check, X, Loader2 } from 'lucide-react';
 import { useColors } from '../../hooks/useInventory';
-import { motion, AnimatePresence } from 'framer-motion';
 import { useToast } from '../ui/Toast';
 import { useActivityLog } from '../../hooks/useActivityLog';
+import { useReadOnly, READ_ONLY_HINT } from '../ui/ReadOnly';
 
 export default function ColorSettings({ transactions, onAddTransaction }) {
     const { showToast } = useToast();
     const { logActivity } = useActivityLog();
+    const readOnly = useReadOnly();
     const colors = useColors(transactions);
 
     const [isAdding, setIsAdding] = useState(false);
@@ -76,104 +77,105 @@ export default function ColorSettings({ transactions, onAddTransaction }) {
     };
 
     return (
-        <div className="space-y-6">
-            <div className="flex justify-between items-center">
+        <section className="surface space-y-5 p-5 sm:p-6" aria-labelledby="color-settings-title">
+            <div className="flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between">
                 <div>
-                    <h3 className="text-lg font-bold text-white flex items-center gap-2">
-                        <Palette className="text-primary" size={20} />
+                    <h3 id="color-settings-title" className="section-title flex items-center gap-2">
+                        <Palette className="text-ink-3" size={20} aria-hidden="true" />
                         Shirt Color Management
                     </h3>
-                    <p className="text-xs text-slate-500">Manage colors available across the system</p>
+                    <p className="mt-1 text-xs text-ink-2">Manage colors available across the system</p>
                 </div>
                 {!isAdding && (
-                    <button
-                        onClick={() => setIsAdding(true)}
-                        className="px-4 py-2 bg-white/5 hover:bg-white/10 text-white rounded-xl text-sm font-bold flex items-center gap-2 border border-white/5"
-                    >
-                        <Plus size={16} /> Add Color
+                    <button type="button" onClick={() => setIsAdding(true)} disabled={readOnly} title={readOnly ? READ_ONLY_HINT : undefined} className="btn-secondary">
+                        <Plus size={16} aria-hidden="true" /> Add Color
                     </button>
                 )}
             </div>
 
-            <AnimatePresence>
-                {isAdding && (
-                    <motion.div
-                        initial={{ opacity: 0, y: -10 }}
-                        animate={{ opacity: 1, y: 0 }}
-                        exit={{ opacity: 0, y: -10 }}
-                        className="p-4 bg-white/5 border border-white/10 rounded-2xl flex flex-col md:flex-row items-end gap-4"
-                    >
-                        <div className="flex-1 space-y-2 w-full">
-                            <label className="text-[10px] font-bold text-slate-500 uppercase">Color Name</label>
+            {isAdding && (
+                <div className="flex flex-col gap-4 rounded-xl border border-line bg-raised p-4 md:flex-row md:items-end">
+                    <div className="w-full flex-1">
+                        <label htmlFor="color-name" className="field-label">Color Name</label>
+                        <input
+                            id="color-name"
+                            type="text"
+                            value={newName}
+                            onChange={(e) => setNewName(e.target.value)}
+                            placeholder="e.g., Lavender"
+                            disabled={readOnly}
+                            className="field"
+                        />
+                    </div>
+                    <div className="shrink-0">
+                        <label htmlFor="marker-color" className="field-label">Marker Color</label>
+                        <div className="flex items-center gap-2">
+                            <input
+                                id="marker-color"
+                                type="color"
+                                value={newHex}
+                                onChange={(e) => setNewHex(e.target.value)}
+                                disabled={readOnly}
+                                className="h-11 w-12 cursor-pointer rounded-lg border border-line bg-transparent p-1"
+                            />
                             <input
                                 type="text"
-                                value={newName}
-                                onChange={(e) => setNewName(e.target.value)}
-                                placeholder="e.g., Lavender"
-                                className="glass-input"
+                                value={newHex}
+                                onChange={(e) => setNewHex(e.target.value)}
+                                aria-label="Marker Color hex"
+                                disabled={readOnly}
+                                className="field w-28 font-mono text-xs uppercase"
                             />
                         </div>
-                        <div className="space-y-2 shrink-0">
-                            <label className="text-[10px] font-bold text-slate-500 uppercase">Marker Color</label>
-                            <div className="flex items-center gap-2">
-                                <input
-                                    type="color"
-                                    value={newHex}
-                                    onChange={(e) => setNewHex(e.target.value)}
-                                    className="w-10 h-10 rounded-lg bg-transparent border-none cursor-pointer"
-                                />
-                                <input
-                                    type="text"
-                                    value={newHex}
-                                    onChange={(e) => setNewHex(e.target.value)}
-                                    className="glass-input w-24 text-xs font-mono uppercase"
-                                />
-                            </div>
-                        </div>
-                        <div className="flex gap-2 shrink-0">
-                            <button
-                                onClick={handleAddColor}
-                                disabled={loading || !newName}
-                                className="p-3 bg-primary text-white rounded-xl hover:bg-primary/80 disabled:opacity-50"
-                            >
-                                {loading ? <Loader2 size={20} className="animate-spin" /> : <Check size={20} />}
-                            </button>
-                            <button
-                                onClick={() => { setIsAdding(false); setNewName(''); }}
-                                className="p-3 bg-white/5 text-slate-400 rounded-xl hover:bg-white/10"
-                            >
-                                <X size={20} />
-                            </button>
-                        </div>
-                    </motion.div>
-                )}
-            </AnimatePresence>
+                    </div>
+                    <div className="flex shrink-0 gap-2">
+                        <button
+                            type="button"
+                            onClick={handleAddColor}
+                            disabled={readOnly || loading || !newName}
+                            title={readOnly ? READ_ONLY_HINT : undefined}
+                            className="btn-primary min-h-11 px-4"
+                            aria-label="Save color"
+                        >
+                            {loading ? <Loader2 size={20} className="animate-spin" aria-hidden="true" /> : <Check size={20} aria-hidden="true" />}
+                        </button>
+                        <button
+                            type="button"
+                            onClick={() => { setIsAdding(false); setNewName(''); }}
+                            className="btn-secondary min-h-11 px-4"
+                            aria-label="Cancel color"
+                        >
+                            <X size={20} aria-hidden="true" />
+                        </button>
+                    </div>
+                </div>
+            )}
 
-            <div className="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-4 gap-4">
+            <div className="grid grid-cols-1 gap-3 sm:grid-cols-2 lg:grid-cols-4">
                 {colors.map((color) => (
-                    <motion.div
-                        layout
-                        key={color.name}
-                        className="group relative p-4 bg-white/5 border border-white/5 rounded-2xl hover:border-white/20 transition-all flex items-center gap-3"
-                    >
+                    <div key={color.name} className="group flex items-center gap-3 rounded-xl border border-line bg-raised p-4 transition-colors hover:border-slate-600">
                         <div
-                            className="w-10 h-10 rounded-full border border-white/10 shadow-inner"
+                            className="size-10 shrink-0 rounded-full border border-line"
                             style={{ backgroundColor: color.hex }}
                         />
-                        <div className="flex-1 min-w-0">
-                            <p className="font-bold text-white truncate">{color.name}</p>
-                            <p className="text-[10px] text-slate-500 font-mono uppercase">{color.hex}</p>
+                        <div className="min-w-0 flex-1">
+                            <p className="truncate font-semibold text-ink">{color.name}</p>
+                            <p className="num text-xs uppercase text-ink-2">{color.hex}</p>
                         </div>
 
                         <button
+                            type="button"
                             onClick={() => handleDeleteColor(color)}
-                            className="p-2 text-slate-600 hover:text-red-400 opacity-0 group-hover:opacity-100 transition-opacity"
+                            disabled={readOnly}
+                            title={readOnly ? READ_ONLY_HINT : undefined}
+                            className="btn-danger min-h-10 px-3 opacity-100 sm:opacity-0 sm:transition-opacity sm:group-hover:opacity-100 sm:focus:opacity-100"
+                            aria-label={`Delete ${color.name}`}
                         >
-                            <Trash2 size={16} />
+                            <Trash2 size={16} aria-hidden="true" />
                         </button>
-                    </motion.div>
+                    </div>
                 ))}
             </div>
-        </div>
+        </section>
     );
 }

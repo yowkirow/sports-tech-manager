@@ -1,10 +1,12 @@
 import React, { useMemo, useState } from 'react';
-import { createPortal } from 'react-dom';
 import clsx from 'clsx';
-import { Banknote, Calendar, Edit2, Filter, Loader2, Plus, Save, Search, Trash2, TrendingDown, Trophy, X } from 'lucide-react';
+import { Banknote, Calendar, Edit2, Filter, Loader2, Plus, Save, Search, Trash2, TrendingDown, Trophy } from 'lucide-react';
 import { api } from '../lib/apiClient';
 import { useToast } from './ui/Toast';
+import Dialog from './ui/Dialog';
+import { useReadOnly, READ_ONLY_HINT } from './ui/ReadOnly';
 import { isReturnedSale } from '../lib/transactionStatus';
+import { withLocalDate } from '../lib/transactionDate';
 
 const CLUB_SLUG = 'downtown-dinks';
 const INCOME_TYPES = [
@@ -36,19 +38,18 @@ const makeDateWithCurrentTime = (date) => {
 };
 
 const StatCard = ({ title, amount, icon: Icon, tone }) => (
-    <div className="glass-panel rounded-2xl p-6 flex items-center gap-4">
-        <div className={clsx("p-4 rounded-xl", tone)}>
-            <Icon size={30} />
-        </div>
+    <div className="flex min-w-0 items-start gap-3 p-4 sm:p-5">
+        <Icon size={20} aria-hidden="true" className="mt-1 shrink-0 text-ink-3" />
         <div className="min-w-0">
-            <p className="text-sm text-slate-400">{title}</p>
-            <h3 className="text-2xl font-bold text-white truncate">{formatCurrency(amount)}</h3>
+            <p className="text-sm text-ink-2">{title}</p>
+            <p className={clsx('display mt-2 truncate text-3xl num', tone)}>{formatCurrency(amount)}</p>
         </div>
     </div>
 );
 
 const EarningModal = ({ initialData, onAddTransaction, onUpdateTransaction, onClose }) => {
     const { showToast } = useToast();
+    const readOnly = useReadOnly();
     const [incomeType, setIncomeType] = useState(initialData?.details?.incomeType || 'open_plays');
     const [amount, setAmount] = useState(initialData?.amount || '');
     const [description, setDescription] = useState(initialData?.description || '');
@@ -108,90 +109,77 @@ const EarningModal = ({ initialData, onAddTransaction, onUpdateTransaction, onCl
     };
 
     return (
-        <div className="bg-slate-900 border border-white/10 rounded-2xl max-w-lg w-full mx-auto shadow-2xl relative flex flex-col">
-            <div className="p-6 border-b border-white/10 flex justify-between items-center shrink-0">
-                <h2 className="text-xl font-bold text-white">{initialData ? 'Edit Earning' : 'Add Earning'}</h2>
-                <button
-                    onClick={onClose}
-                    className="text-slate-400 hover:text-white transition-colors bg-white/5 p-2 rounded-lg hover:bg-white/10"
-                >
-                    <X size={20} />
+        <Dialog onClose={onClose} title={initialData ? 'Edit Earning' : 'Add Earning'} size="md" bodyClassName="p-5 sm:p-6">
+            <form onSubmit={handleSubmit} className="space-y-4">
+                <div>
+                    <label htmlFor="dinks-income-type" className="field-label">Income Type</label>
+                    <select
+                        id="dinks-income-type"
+                        value={incomeType}
+                        onChange={(e) => setIncomeType(e.target.value)}
+                        className="field"
+                        required
+                    >
+                        {INCOME_TYPES.map(type => (
+                            <option key={type.value} value={type.value}>
+                                {type.label}
+                            </option>
+                        ))}
+                    </select>
+                </div>
+
+                <div>
+                    <label htmlFor="dinks-amount" className="field-label">Amount (₱)</label>
+                    <input
+                        id="dinks-amount"
+                        type="number"
+                        value={amount}
+                        onChange={(e) => setAmount(e.target.value)}
+                        className="field num"
+                        placeholder="0.00"
+                        min="0"
+                        step="0.01"
+                        required
+                    />
+                </div>
+
+                <div>
+                    <label htmlFor="dinks-description" className="field-label">Notes / Title</label>
+                    <input
+                        id="dinks-description"
+                        type="text"
+                        value={description}
+                        onChange={(e) => setDescription(e.target.value)}
+                        className="field"
+                        placeholder="e.g. Saturday open play"
+                        required
+                    />
+                </div>
+
+                <div>
+                    <label htmlFor="dinks-date" className="field-label">Date</label>
+                    <input
+                        id="dinks-date"
+                        type="date"
+                        value={date}
+                        onChange={(e) => setDate(e.target.value)}
+                        className="field"
+                        required
+                    />
+                </div>
+
+                <button type="submit" disabled={readOnly || loading} title={readOnly ? READ_ONLY_HINT : undefined} className="btn-primary w-full">
+                    {loading ? <Loader2 size={18} className="animate-spin" aria-hidden="true" /> : (initialData ? <Save size={18} aria-hidden="true" /> : <Plus size={18} aria-hidden="true" />)}
+                    {loading ? 'Saving...' : (initialData ? 'Update Earning' : 'Add Earning')}
                 </button>
-            </div>
-
-            <div className="p-6">
-                <form onSubmit={handleSubmit} className="space-y-4">
-                    <div className="space-y-2">
-                        <label className="text-sm text-slate-400">Income Type</label>
-                        <select
-                            value={incomeType}
-                            onChange={(e) => setIncomeType(e.target.value)}
-                            className="glass-input appearance-none"
-                            required
-                        >
-                            {INCOME_TYPES.map(type => (
-                                <option key={type.value} value={type.value} className="bg-slate-900">
-                                    {type.label}
-                                </option>
-                            ))}
-                        </select>
-                    </div>
-
-                    <div className="space-y-2">
-                        <label className="text-sm text-slate-400">Amount (₱)</label>
-                        <input
-                            type="number"
-                            value={amount}
-                            onChange={(e) => setAmount(e.target.value)}
-                            className="glass-input"
-                            placeholder="0.00"
-                            min="0"
-                            step="0.01"
-                            required
-                        />
-                    </div>
-
-                    <div className="space-y-2">
-                        <label className="text-sm text-slate-400">Notes / Title</label>
-                        <input
-                            type="text"
-                            value={description}
-                            onChange={(e) => setDescription(e.target.value)}
-                            className="glass-input"
-                            placeholder="e.g. Saturday open play"
-                            required
-                        />
-                    </div>
-
-                    <div className="space-y-2">
-                        <label className="text-sm text-slate-400">Date</label>
-                        <input
-                            type="date"
-                            value={date}
-                            onChange={(e) => setDate(e.target.value)}
-                            className="glass-input appearance-none w-full"
-                            required
-                        />
-                    </div>
-
-                    <div className="pt-2">
-                        <button
-                            type="submit"
-                            disabled={loading}
-                            className="btn-primary w-full py-3"
-                        >
-                            {loading ? <Loader2 className="animate-spin" /> : (initialData ? <Save size={18} /> : <Plus size={18} />)}
-                            {loading ? 'Saving...' : (initialData ? 'Update Earning' : 'Add Earning')}
-                        </button>
-                    </div>
-                </form>
-            </div>
-        </div>
+            </form>
+        </Dialog>
     );
 };
 
 export default function DowntownDinks({ transactions, onAddTransaction, onUpdateTransaction, onDeleteTransaction }) {
     const { showToast } = useToast();
+    const readOnly = useReadOnly();
     const [searchTerm, setSearchTerm] = useState('');
     const [filterType, setFilterType] = useState('all');
     const [showModal, setShowModal] = useState(false);
@@ -251,89 +239,89 @@ export default function DowntownDinks({ transactions, onAddTransaction, onUpdate
 
     const renderTypeBadge = (incomeType) => (
         <span className={clsx(
-            "px-2 py-1 rounded-md text-xs font-bold",
+            'badge',
             incomeType === 'tournaments'
-                ? "bg-purple-500/20 text-purple-300"
-                : "bg-emerald-500/20 text-emerald-300"
+                ? 'border-sky-500/40 text-sky-300'
+                : 'border-emerald-500/40 text-emerald-300'
         )}>
             {incomeTypeLabel(incomeType)}
         </span>
     );
 
     const renderActions = (transaction, className = '') => (
-        <div className={clsx("flex min-w-[84px] gap-2 justify-center", className)}>
+        <div className={clsx('flex min-w-[88px] justify-end gap-1', className)}>
             <button
+                type="button"
                 onClick={() => openEditModal(transaction)}
-                className="p-2 text-slate-400 hover:text-white hover:bg-white/10 rounded-lg transition-colors"
-                title="Edit"
+                disabled={readOnly}
+                title={readOnly ? READ_ONLY_HINT : undefined}
+                className="icon-btn size-10"
+                aria-label="Edit"
             >
-                <Edit2 size={16} />
+                <Edit2 size={16} aria-hidden="true" />
             </button>
             <button
+                type="button"
                 onClick={() => handleDelete(transaction.id)}
-                className="p-2 text-slate-400 hover:text-rose-400 hover:bg-rose-500/10 rounded-lg transition-colors"
-                title="Delete"
+                disabled={readOnly}
+                title={readOnly ? READ_ONLY_HINT : undefined}
+                className="icon-btn size-10 text-red-400 hover:bg-red-500/10 hover:text-red-300"
+                aria-label="Delete"
             >
-                <Trash2 size={16} />
+                <Trash2 size={16} aria-hidden="true" />
             </button>
         </div>
     );
 
     return (
         <div className="space-y-6">
-            <div className="flex flex-col gap-4 sm:flex-row sm:items-center sm:justify-between">
-                <div className="flex items-center gap-3">
-                    <div className="p-3 bg-emerald-500/20 rounded-xl text-emerald-400">
-                        <Trophy size={24} />
-                    </div>
-                    <div>
-                        <h2 className="text-2xl font-bold text-white">Downtown Dinks</h2>
-                        <p className="text-sm text-slate-400">Club earnings from Open Plays and Tournaments</p>
-                    </div>
+            <div className="flex flex-col gap-4 sm:flex-row sm:items-end sm:justify-between">
+                <div className="min-w-0">
+                    <h2 className="section-title flex items-center gap-2"><Trophy size={20} aria-hidden="true" className="text-ink-3" />Downtown Dinks</h2>
+                    <p className="mt-1 text-sm text-ink-2">Club earnings from Open Plays and Tournaments</p>
                 </div>
-                <button
-                    onClick={openCreateModal}
-                    className="btn-primary py-3 px-4 text-sm whitespace-nowrap"
-                >
-                    <Plus size={18} /> Add Earning
+                <button type="button" onClick={openCreateModal} disabled={readOnly} title={readOnly ? READ_ONLY_HINT : undefined} className="btn-primary whitespace-nowrap">
+                    <Plus size={18} aria-hidden="true" /> Add Earning
                 </button>
             </div>
 
-            <div className="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-5 gap-6">
-                <StatCard title="Total Earnings" amount={totals.total} icon={Banknote} tone="bg-emerald-500/10 text-emerald-400" />
-                <StatCard title="Club Expenses" amount={totals.expenses} icon={TrendingDown} tone="bg-rose-500/10 text-rose-400" />
-                <StatCard title="Net Earnings" amount={totals.net} icon={Banknote} tone={totals.net >= 0 ? "bg-cyan-500/10 text-cyan-400" : "bg-rose-500/10 text-rose-400"} />
-                <StatCard title="Open Plays" amount={totals.openPlays} icon={Calendar} tone="bg-cyan-500/10 text-cyan-400" />
-                <StatCard title="Tournaments" amount={totals.tournaments} icon={Trophy} tone="bg-purple-500/10 text-purple-400" />
+            <div className="surface grid overflow-hidden sm:grid-cols-2 xl:grid-cols-5">
+                <StatCard title="Total Earnings" amount={totals.total} icon={Banknote} tone="text-emerald-300" />
+                <StatCard title="Club Expenses" amount={totals.expenses} icon={TrendingDown} tone="text-red-300" />
+                <StatCard title="Net Earnings" amount={totals.net} icon={Banknote} tone={totals.net >= 0 ? 'text-emerald-300' : 'text-red-300'} />
+                <StatCard title="Open Plays" amount={totals.openPlays} icon={Calendar} tone="text-ink" />
+                <StatCard title="Tournaments" amount={totals.tournaments} icon={Trophy} tone="text-ink" />
             </div>
 
-            <div className="glass-panel rounded-2xl p-4 sm:p-6">
-                <div className="flex flex-col gap-4 mb-6 lg:flex-row lg:items-center lg:justify-between">
-                    <h3 className="text-xl font-bold text-white flex items-center gap-2">
-                        <Calendar className="text-primary" /> Earnings History
+            <section className="surface p-4 sm:p-6" aria-labelledby="dinks-history-title">
+                <div className="mb-5 flex flex-col gap-4 lg:flex-row lg:items-center lg:justify-between">
+                    <h3 id="dinks-history-title" className="section-title flex items-center gap-2">
+                        <Calendar size={20} aria-hidden="true" className="text-ink-3" /> Earnings History
                     </h3>
 
-                    <div className="flex flex-col gap-2 w-full sm:flex-row lg:w-auto">
-                        <div className="relative flex-1 lg:flex-none">
-                            <Search className="absolute left-3 top-1/2 -translate-y-1/2 text-slate-400" size={16} />
+                    <div className="flex w-full flex-col gap-2 sm:flex-row lg:w-auto">
+                        <div className="relative flex-1 lg:w-72 lg:flex-none">
+                            <Search className="absolute left-3 top-1/2 -translate-y-1/2 text-ink-3" size={16} aria-hidden="true" />
                             <input
                                 type="text"
+                                aria-label="Search earnings"
                                 placeholder="Search earnings..."
                                 value={searchTerm}
                                 onChange={e => setSearchTerm(e.target.value)}
-                                className="glass-input pl-9 py-2 text-sm"
+                                className="field pl-9 text-sm"
                             />
                         </div>
-                        <div className="relative">
-                            <Filter className="absolute left-3 top-1/2 -translate-y-1/2 text-slate-400" size={16} />
+                        <div className="relative sm:w-48">
+                            <Filter className="absolute left-3 top-1/2 -translate-y-1/2 text-ink-3" size={16} aria-hidden="true" />
                             <select
+                                aria-label="Filter income type"
                                 value={filterType}
                                 onChange={e => setFilterType(e.target.value)}
-                                className="glass-input pl-9 py-2 text-sm min-w-40 appearance-none"
+                                className="field pl-9 text-sm"
                             >
-                                <option value="all" className="bg-slate-900">All Types</option>
+                                <option value="all">All Types</option>
                                 {INCOME_TYPES.map(type => (
-                                    <option key={type.value} value={type.value} className="bg-slate-900">
+                                    <option key={type.value} value={type.value}>
                                         {type.label}
                                     </option>
                                 ))}
@@ -342,27 +330,27 @@ export default function DowntownDinks({ transactions, onAddTransaction, onUpdate
                     </div>
                 </div>
 
-                <div className="space-y-3 sm:hidden">
+                <div className="divide-y divide-line sm:hidden">
                     {earnings.length === 0 ? (
-                        <div className="p-8 text-center text-slate-500">
+                        <div className="rounded-2xl border border-dashed border-line p-8 text-center text-sm text-ink-2">
                             No Downtown Dinks earnings found.
                         </div>
                     ) : (
                         earnings.map(earning => (
-                            <div key={earning.id} className="rounded-xl border border-white/10 bg-white/5 p-4">
+                            <div key={earning.id} className="py-4 first:pt-0 last:pb-0">
                                 <div className="flex items-start justify-between gap-3">
                                     <div className="min-w-0">
-                                        <p className="break-words font-medium text-slate-100">{earning.description}</p>
+                                        <p className="break-words font-medium text-ink">{earning.description}</p>
                                         <div className="mt-2">{renderTypeBadge(earning.details?.incomeType)}</div>
                                     </div>
-                                    <p className="shrink-0 text-right font-bold text-emerald-400">{formatCurrency(earning.amount)}</p>
+                                    <p className="num shrink-0 text-right font-semibold text-emerald-300">{formatCurrency(earning.amount)}</p>
                                 </div>
 
-                                <div className="mt-3 text-xs text-slate-500">
+                                <div className="mt-3 text-xs text-ink-2">
                                     {formatDate(earning.date)}
                                 </div>
 
-                                <div className="mt-4 flex justify-end border-t border-white/5 pt-3">
+                                <div className="mt-3 flex justify-end border-t border-line pt-3">
                                     {renderActions(earning)}
                                 </div>
                             </div>
@@ -371,32 +359,32 @@ export default function DowntownDinks({ transactions, onAddTransaction, onUpdate
                 </div>
 
                 <div className="hidden overflow-x-auto sm:block">
-                    <table className="w-full min-w-[720px] text-left border-collapse">
+                    <table className="w-full min-w-[720px] text-sm">
                         <thead>
-                            <tr className="text-slate-400 text-sm border-b border-white/5">
-                                <th className="p-4 font-medium">Notes / Title</th>
-                                <th className="p-4 font-medium">Type</th>
-                                <th className="p-4 font-medium">Date</th>
-                                <th className="p-4 font-medium text-right">Amount</th>
-                                <th className="p-4 font-medium text-center">Action</th>
+                            <tr className="border-b border-line text-left font-medium text-ink-2">
+                                <th className="px-3 py-3 font-medium">Notes / Title</th>
+                                <th className="px-3 py-3 font-medium">Type</th>
+                                <th className="px-3 py-3 font-medium">Date</th>
+                                <th className="px-3 py-3 text-right font-medium">Amount</th>
+                                <th className="px-3 py-3 text-right font-medium">Action</th>
                             </tr>
                         </thead>
-                        <tbody className="text-sm">
+                        <tbody>
                             {earnings.length === 0 ? (
                                 <tr>
-                                    <td colSpan="5" className="p-8 text-center text-slate-500">
+                                    <td colSpan="5" className="px-3 py-8 text-center text-ink-2">
                                         No Downtown Dinks earnings found.
                                     </td>
                                 </tr>
                             ) : (
                                 earnings.map(earning => (
-                                    <tr key={earning.id} className="border-b border-white/5 hover:bg-white/5 transition-colors group">
-                                        <td className="p-4 text-slate-200 font-medium">{earning.description}</td>
-                                        <td className="p-4">{renderTypeBadge(earning.details?.incomeType)}</td>
-                                        <td className="p-4 text-slate-400">{formatDate(earning.date)}</td>
-                                        <td className="p-4 text-right text-emerald-400 font-bold">{formatCurrency(earning.amount)}</td>
-                                        <td className="p-4 text-center">
-                                            {renderActions(earning, "opacity-0 transition-opacity group-hover:opacity-100 focus-within:opacity-100")}
+                                    <tr key={earning.id} className="group border-b border-line transition-colors last:border-0 hover:bg-white/[0.04]">
+                                        <td className="px-3 py-3 font-medium text-ink">{earning.description}</td>
+                                        <td className="px-3 py-3">{renderTypeBadge(earning.details?.incomeType)}</td>
+                                        <td className="px-3 py-3 text-ink-2">{formatDate(earning.date)}</td>
+                                        <td className="num px-3 py-3 text-right font-semibold text-emerald-300">{formatCurrency(earning.amount)}</td>
+                                        <td className="px-3 py-3 text-right">
+                                            {renderActions(earning, 'opacity-100 sm:opacity-0 transition-opacity group-hover:opacity-100 focus-within:opacity-100')}
                                         </td>
                                     </tr>
                                 ))
@@ -404,23 +392,19 @@ export default function DowntownDinks({ transactions, onAddTransaction, onUpdate
                         </tbody>
                     </table>
                 </div>
-            </div>
+            </section>
 
-            {showModal && createPortal(
-                <div className="fixed inset-0 z-[9999] flex items-center justify-center bg-black/80 backdrop-blur-sm p-4">
-                    <EarningModal
-                        initialData={editingTransaction}
-                        onAddTransaction={onAddTransaction}
-                        onUpdateTransaction={onUpdateTransaction}
-                        onClose={() => {
-                            setShowModal(false);
-                            setEditingTransaction(null);
-                        }}
-                    />
-                </div>,
-                document.body
+            {showModal && (
+                <EarningModal
+                    initialData={editingTransaction}
+                    onAddTransaction={onAddTransaction}
+                    onUpdateTransaction={onUpdateTransaction}
+                    onClose={() => {
+                        setShowModal(false);
+                        setEditingTransaction(null);
+                    }}
+                />
             )}
         </div>
     );
 }
-import { withLocalDate } from '../lib/transactionDate';

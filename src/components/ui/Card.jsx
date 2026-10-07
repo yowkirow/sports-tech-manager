@@ -1,11 +1,9 @@
 import React from 'react';
 
-const Card = ({ children, className = '' }) => {
-  return (
-    <div className={`glass-panel p-6 ${className}`} style={{ padding: '1.5rem' }}>
-      {children}
+const Card = ({ children, className = '' }) => (
+    <div className={`surface p-6 ${className}`}>
+        {children}
     </div>
-  );
-};
+);
 
 export default Card;

@@ -3,11 +3,13 @@ import { useMemo, useState } from 'react';
 import clsx from 'clsx';
 import { useToast } from './ui/Toast';
 import { getInventoryRows } from '../lib/inventory.js';
+import { useReadOnly, READ_ONLY_HINT } from './ui/ReadOnly';
 
 const InventoryList = ({ transactions, onAddTransaction, onDeleteTransaction, onOpenAddStock }) => {
     const [searchTerm, setSearchTerm] = useState('');
     const [exporting, setExporting] = useState(false);
     const { showToast } = useToast();
+    const readOnly = useReadOnly();
 
     // Calculate inventory
     const inventoryItems = useMemo(() => getInventoryRows(transactions), [transactions]);
@@ -18,6 +20,9 @@ const InventoryList = ({ transactions, onAddTransaction, onDeleteTransaction, on
             item.name.toLowerCase().includes(searchTerm.toLowerCase()) ||
             item.variant.toLowerCase().includes(searchTerm.toLowerCase())
         );
+
+    const totalUnits = inventoryList.reduce((sum, item) => sum + (item.count || 0), 0);
+    const outOfStock = inventoryList.filter(item => item.count <= 0).length;
 
     const exportToExcel = async () => {
         setExporting(true);
@@ -54,91 +59,150 @@ const InventoryList = ({ transactions, onAddTransaction, onDeleteTransaction, on
     };
 
     return (
-        <div className="glass-panel rounded-2xl p-6 relative">
-            <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4 mb-6">
-                <div className="flex items-center gap-3">
-                    <div className="p-2 bg-primary/20 rounded-lg text-primary">
-                        <Package size={24} />
-                    </div>
-                    <h2 className="text-xl font-bold text-white">Inventory Status</h2>
+        <div className="space-y-5">
+            <div className="surface grid grid-cols-1 divide-y divide-line overflow-hidden sm:grid-cols-4 sm:divide-x sm:divide-y-0">
+                <div className="p-4 sm:p-5">
+                    <p className="text-sm text-ink-2">Visible SKUs</p>
+                    <p className="display mt-2 text-3xl num">{inventoryList.length}</p>
                 </div>
-
-                <div className="flex items-center gap-3 w-full sm:w-auto">
-                    <div className="relative flex-1 sm:flex-none">
-                        <Search className="absolute left-3 top-1/2 -translate-y-1/2 text-slate-400" size={16} />
-                        <input
-                            type="text"
-                            placeholder="Search..."
-                            value={searchTerm}
-                            onChange={(e) => setSearchTerm(e.target.value)}
-                            className="glass-input pl-9 py-2 text-sm w-full sm:w-48"
-                        />
-                    </div>
-
-                    <button
-                        onClick={() => {
-                            console.log('Add Stock Clicked');
-                            onOpenAddStock();
-                        }}
-                        className="btn-primary py-2 px-4 text-sm whitespace-nowrap flex items-center gap-2"
-                    >
-                        <Plus size={16} /> Add Stock
-                    </button>
-
-                    <button
-                        onClick={exportToExcel}
-                        disabled={exporting}
-                        className="btn-secondary py-2 px-4 text-sm whitespace-nowrap"
-                    >
-                        <Download size={16} /> {exporting ? 'Exporting...' : 'Export'}
-                    </button>
+                <div className="p-4 sm:p-5">
+                    <p className="text-sm text-ink-2">Total units</p>
+                    <p className="display mt-2 text-3xl num">{totalUnits}</p>
+                </div>
+                <div className="p-4 sm:p-5">
+                    <p className="text-sm text-ink-2">Out of stock</p>
+                    <p className={clsx("display mt-2 text-3xl num", outOfStock > 0 ? "text-red-400" : "text-ink")}>{outOfStock}</p>
+                </div>
+                <div className="p-4 sm:p-5">
+                    <p className="text-sm text-ink-2">Source records</p>
+                    <p className="display mt-2 text-3xl num">{inventoryList.reduce((sum, item) => sum + item.transactionIds.length, 0)}</p>
                 </div>
             </div>
 
-            {inventoryList.length === 0 ? (
-                <div className="flex flex-col items-center justify-center py-16 text-slate-500 border border-dashed border-white/10 rounded-xl">
-                    <Package size={48} className="mb-4 opacity-50" />
-                    <p>No inventory data found.</p>
-                </div>
-            ) : (
-                <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 xl:grid-cols-4 gap-4">
-                    {inventoryList.map((item) => (
-                        <div key={item.id} className="relative group">
-                            <div
-                                className={clsx(
-                                    "flex items-center justify-between p-4 rounded-xl border transition-all",
-                                    item.count > 0
-                                        ? "bg-white/5 border-white/5 hover:border-white/10"
-                                        : "bg-red-500/10 border-red-500/20"
-                                )}
-                            >
-                                <div className="min-w-0 pr-6">
-                                    <div className="font-semibold text-slate-200 truncate">{item.name}</div>
-                                    <div className={clsx(
-                                        "text-sm",
-                                        item.count > 0 ? "text-slate-500" : "text-red-100/80"
-                                    )}>
-                                        Var: {item.variant}
-                                    </div>
-                                </div>
-                                <div className={clsx(
-                                    "text-2xl font-bold",
-                                    item.count > 0 ? "text-white" : "text-red-400"
-                                )}>
-                                    {item.count}
-                                </div>
-                            </div>
+            <section className="surface overflow-hidden">
+                <div className="flex flex-col gap-4 border-b border-line p-4 sm:flex-row sm:items-center sm:justify-between sm:p-5">
+                    <div className="flex items-center gap-3">
+                        <Package size={22} className="text-ink-3" aria-hidden="true" />
+                        <h2 className="section-title">Inventory Status</h2>
+                    </div>
+
+                    <div className="flex w-full flex-col gap-3 sm:w-auto sm:flex-row sm:items-center">
+                        <div className="relative min-w-0 sm:w-56">
+                            <Search className="absolute left-3 top-1/2 -translate-y-1/2 text-ink-3" size={16} aria-hidden="true" />
+                            <input
+                                type="text"
+                                aria-label="Search inventory"
+                                placeholder="Search..."
+                                value={searchTerm}
+                                onChange={(e) => setSearchTerm(e.target.value)}
+                                className="field pl-9 text-sm"
+                            />
+                        </div>
+
+                        <div className="flex gap-2">
                             <button
-                                onClick={() => handleDeleteItem(item)}
-                                className="absolute top-2 right-2 p-1.5 bg-black/50 hover:bg-red-500/80 rounded-lg text-white/80 hover:text-white opacity-0 group-hover:opacity-100 transition-all backdrop-blur-sm"
-                                title="Delete all history for this item"
+                                type="button"
+                                onClick={() => {
+                                    console.log('Add Stock Clicked');
+                                    onOpenAddStock();
+                                }}
+                                disabled={readOnly}
+                                title={readOnly ? READ_ONLY_HINT : undefined}
+                                className="btn-primary whitespace-nowrap"
                             >
-                                <X size={14} />
+                                <Plus size={16} aria-hidden="true" /> Add Stock
+                            </button>
+
+                            <button
+                                type="button"
+                                onClick={exportToExcel}
+                                disabled={exporting}
+                                className="btn-secondary whitespace-nowrap"
+                            >
+                                <Download size={16} aria-hidden="true" /> {exporting ? 'Exporting...' : 'Export'}
                             </button>
                         </div>
-                    ))}
+                    </div>
                 </div>
-            )}
+
+                {inventoryList.length === 0 ? (
+                    <div className="m-4 flex flex-col items-center justify-center rounded-2xl border border-dashed border-line px-4 py-16 text-center text-ink-2 sm:m-5">
+                        <Package size={32} className="mb-3 text-ink-3" aria-hidden="true" />
+                        <p>No inventory data found.</p>
+                    </div>
+                ) : (
+                    <>
+                        <div className="divide-y divide-line sm:hidden">
+                            {inventoryList.map((item) => (
+                                <div key={item.id} className="p-4">
+                                    <div className="flex items-start justify-between gap-3">
+                                        <div className="min-w-0 flex-1">
+                                            <p className="truncate font-semibold text-ink">{item.name}</p>
+                                            <p className="mt-1 text-sm text-ink-2">Var: {item.variant}</p>
+                                        </div>
+                                        <div className="text-right">
+                                            <p className={clsx("display text-3xl num", item.count > 0 ? "text-ink" : "text-red-400")}>{item.count}</p>
+                                            <span className={clsx("badge mt-1", item.count > 0 ? "border-emerald-500/40 text-emerald-300" : "border-red-500/40 text-red-300")}>
+                                                {item.count > 0 ? 'In stock' : 'Out of stock'}
+                                            </span>
+                                        </div>
+                                        <button
+                                            type="button"
+                                            onClick={() => handleDeleteItem(item)}
+                                            disabled={readOnly}
+                                            className="icon-btn -mr-2 -mt-1"
+                                            title={readOnly ? READ_ONLY_HINT : 'Delete all history for this item'}
+                                            aria-label={`Delete all history for ${item.name} ${item.variant}`}
+                                        >
+                                            <X size={18} aria-hidden="true" />
+                                        </button>
+                                    </div>
+                                </div>
+                            ))}
+                        </div>
+
+                        <div className="hidden overflow-x-auto sm:block">
+                            <table className="w-full min-w-[680px] text-sm">
+                                <thead>
+                                    <tr className="border-b border-line text-left text-ink-2">
+                                        <th className="px-3 py-3 font-medium">Item</th>
+                                        <th className="px-3 py-3 font-medium">Variant</th>
+                                        <th className="px-3 py-3 text-right font-medium">Count</th>
+                                        <th className="px-3 py-3 text-center font-medium">Status</th>
+                                        <th className="px-3 py-3 text-right font-medium">Action</th>
+                                    </tr>
+                                </thead>
+                                <tbody>
+                                    {inventoryList.map((item) => (
+                                        <tr key={item.id} className="border-b border-line transition-colors last:border-0 hover:bg-white/[0.04]">
+                                            <td className="px-3 py-3 font-medium text-ink">{item.name}</td>
+                                            <td className="px-3 py-3 text-ink-2">{item.variant}</td>
+                                            <td className={clsx("px-3 py-3 text-right font-semibold num", item.count > 0 ? "text-ink" : "text-red-400")}>{item.count}</td>
+                                            <td className="px-3 py-3 text-center">
+                                                <span className={clsx("badge", item.count > 0 ? "border-emerald-500/40 text-emerald-300" : "border-red-500/40 text-red-300")}>
+                                                    {item.count > 0 ? 'In stock' : 'Out of stock'}
+                                                </span>
+                                            </td>
+                                            <td className="px-3 py-3 text-right">
+                                                <button
+                                                    type="button"
+                                                    onClick={() => handleDeleteItem(item)}
+                                                    disabled={readOnly}
+                                                    className="icon-btn ml-auto"
+                                                    title={readOnly ? READ_ONLY_HINT : 'Delete all history for this item'}
+                                                    aria-label={`Delete all history for ${item.name} ${item.variant}`}
+                                                >
+                                                    <X size={18} aria-hidden="true" />
+                                                </button>
+                                            </td>
+                                        </tr>
+                                    ))}
+                                </tbody>
+                            </table>
+                        </div>
+                    </>
+                )}
+            </section>
         </div>
     );
 };

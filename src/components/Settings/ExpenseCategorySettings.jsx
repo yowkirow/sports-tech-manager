@@ -2,7 +2,7 @@ import React, { useState, useEffect } from 'react';
 import { api } from '../../lib/apiClient';
 import { useToast } from '../ui/Toast';
 import { Tag, Plus, X, Save, Loader2 } from 'lucide-react';
-import { motion, AnimatePresence } from 'framer-motion';
+import { useReadOnly, READ_ONLY_HINT } from '../ui/ReadOnly';
 
 const DEFAULT_CATEGORIES = [
     'Rent',
@@ -16,6 +16,7 @@ const DEFAULT_CATEGORIES = [
 
 export default function ExpenseCategorySettings() {
     const { showToast } = useToast();
+    const readOnly = useReadOnly();
     const [loading, setLoading] = useState(false);
     const [categories, setCategories] = useState([]);
     const [newCategory, setNewCategory] = useState('');
@@ -76,88 +77,89 @@ export default function ExpenseCategorySettings() {
     };
 
     return (
-        <motion.div
-            initial={{ opacity: 0, y: 20 }}
-            animate={{ opacity: 1, y: 0 }}
-            className="glass-card space-y-6"
-        >
-            <div className="flex justify-between items-center border-b border-white/5 pb-4">
-                <div className="flex items-center gap-3">
-                    <div className="p-2 bg-indigo-500/20 text-indigo-400 rounded-lg">
-                        <Tag size={24} />
-                    </div>
-                    <div>
-                        <h3 className="text-xl font-bold text-white">Expense Categories</h3>
-                        <p className="text-xs text-slate-400">Manage order and general expense categories</p>
-                    </div>
+        <section className="surface space-y-5 p-5 sm:p-6" aria-labelledby="expense-categories-title">
+            <div className="flex items-start gap-3 border-b border-line pb-4">
+                <Tag size={22} aria-hidden="true" className="mt-0.5 text-ink-3" />
+                <div>
+                    <h3 id="expense-categories-title" className="section-title">Expense Categories</h3>
+                    <p className="mt-1 text-xs text-ink-2">Manage order and general expense categories</p>
                 </div>
             </div>
 
-            {loadError && <p role="alert" className="text-sm text-red-300">
+            {loadError && <p role="alert" className="rounded-xl border border-red-500/40 bg-red-500/10 p-4 text-sm text-red-200">
                 Could not load expense categories: {loadError}
-                <button type="button" onClick={() => setAttempt(value => value + 1)} className="btn-secondary ml-3">Retry</button>
+                <button type="button" onClick={() => setAttempt(value => value + 1)} className="btn-secondary ml-3 min-h-10 px-4 py-2">Retry</button>
             </p>}
             <div className="space-y-4">
-                <div className="flex gap-2">
-                    <input
-                        type="text"
-                        value={newCategory}
-                        onChange={(e) => setNewCategory(e.target.value)}
-                        onKeyDown={(e) => e.key === 'Enter' && handleAddCategory()}
-                        placeholder="Add new category..."
-                        className="glass-input flex-1"
-                    />
-                    <button
-                        onClick={handleAddCategory}
-                        className="p-2 bg-primary/20 text-primary hover:bg-primary hover:text-white rounded-xl transition-all"
-                    >
-                        <Plus size={20} />
-                    </button>
+                <div>
+                    <label htmlFor="new-expense-category" className="field-label">Add new category...</label>
+                    <div className="flex gap-2">
+                        <input
+                            id="new-expense-category"
+                            type="text"
+                            value={newCategory}
+                            onChange={(e) => setNewCategory(e.target.value)}
+                            onKeyDown={(e) => e.key === 'Enter' && handleAddCategory()}
+                            placeholder="Add new category..."
+                            disabled={readOnly}
+                            className="field flex-1"
+                        />
+                        <button
+                            type="button"
+                            onClick={handleAddCategory}
+                            disabled={readOnly}
+                            title={readOnly ? READ_ONLY_HINT : undefined}
+                            className="btn-secondary min-h-11 px-4"
+                            aria-label="Add category"
+                        >
+                            <Plus size={20} aria-hidden="true" />
+                        </button>
+                    </div>
                 </div>
 
-                <div className="flex flex-wrap gap-2 max-h-60 overflow-y-auto p-2 rounded-xl bg-black/20 border border-white/5 custom-scrollbar">
-                    <AnimatePresence>
-                        {categories.map((cat) => (
-                            <motion.span
-                                key={cat}
-                                initial={{ opacity: 0, scale: 0.8 }}
-                                animate={{ opacity: 1, scale: 1 }}
-                                exit={{ opacity: 0, scale: 0.8 }}
-                                className="group flex items-center gap-2 px-3 py-1.5 bg-white/5 hover:bg-white/10 text-slate-300 rounded-lg border border-white/5 text-sm transition-all"
+                <div className="flex max-h-60 flex-wrap gap-2 overflow-y-auto rounded-xl border border-line bg-raised p-3">
+                    {categories.map((cat) => (
+                        <span key={cat} className="badge group border-slate-600 text-ink">
+                            {cat}
+                            <button
+                                type="button"
+                                onClick={() => handleRemoveCategory(cat)}
+                                disabled={readOnly}
+                                title={readOnly ? READ_ONLY_HINT : undefined}
+                                className="ml-1 rounded-full p-1 text-ink-2 hover:bg-red-500/10 hover:text-red-300"
+                                aria-label={`Remove ${cat}`}
                             >
-                                {cat}
-                                <button
-                                    onClick={() => handleRemoveCategory(cat)}
-                                    className="p-0.5 hover:bg-red-500/20 hover:text-red-400 rounded-md transition-colors"
-                                >
-                                    <X size={12} />
-                                </button>
-                            </motion.span>
-                        ))}
-                    </AnimatePresence>
+                                <X size={12} aria-hidden="true" />
+                            </button>
+                        </span>
+                    ))}
                     {categories.length === 0 && (
-                        <p className="text-sm text-slate-500 italic w-full text-center py-4">No categories added</p>
+                        <p className="w-full py-4 text-center text-sm text-ink-2">No categories added</p>
                     )}
                 </div>
 
-                <div className="flex gap-3 pt-4 border-t border-white/5">
+                <div className="flex flex-col gap-3 border-t border-line pt-4 sm:flex-row">
                     <button
+                        type="button"
                         onClick={handleSave}
-                        disabled={loading || !loaded}
-                        className="btn-primary flex-1 py-1.5 h-10 shadow-lg shadow-indigo-500/20"
+                        disabled={readOnly || loading || !loaded}
+                        title={readOnly ? READ_ONLY_HINT : undefined}
+                        className="btn-primary flex-1"
                     >
-                        {loading ? <Loader2 className="animate-spin" /> : <Save size={18} />}
+                        {loading ? <Loader2 size={18} className="animate-spin" aria-hidden="true" /> : <Save size={18} aria-hidden="true" />}
                         {loading ? 'Saving...' : 'Save Categories'}
                     </button>
                     <button
+                        type="button"
                         onClick={handleReset}
-                        disabled={loading || !loaded}
-                        className="px-4 py-1.5 h-10 bg-white/5 hover:bg-white/10 text-slate-400 rounded-xl transition-all border border-white/5 text-sm font-medium"
+                        disabled={readOnly || loading || !loaded}
+                        title={readOnly ? READ_ONLY_HINT : undefined}
+                        className="btn-danger"
                     >
                         Reset Defaults
                     </button>
                 </div>
             </div>
-        </motion.div>
+        </section>
     );
 }

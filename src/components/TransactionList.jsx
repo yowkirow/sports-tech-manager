@@ -1,9 +1,10 @@
 import React from 'react';
-import { ArrowUpRight, ArrowDownLeft, Trash2, Calendar, ShoppingBag } from 'lucide-react';
+import { ArrowUpRight, ArrowDownLeft, Trash2, ReceiptText } from 'lucide-react';
 import clsx from 'clsx';
 import { isReturnedSale } from '../lib/transactionStatus';
+import { READ_ONLY_HINT } from './ui/ReadOnly';
 
-const TransactionList = ({ transactions, onDelete }) => {
+const TransactionList = ({ transactions, onDelete, readOnly = false }) => {
     // Sort by date desc
     const sorted = transactions
         .filter(t => !isReturnedSale(t) && !t.details?.removedFromOrder)
@@ -26,72 +27,57 @@ const TransactionList = ({ transactions, onDelete }) => {
     };
 
     return (
-        <div className="glass-panel rounded-2xl p-6">
-            <h2 className="text-xl font-bold text-white mb-6 flex items-center gap-2">
-                <Calendar className="text-primary" size={24} />
-                Recent Activity
-            </h2>
+        <section className="surface" aria-labelledby="recent-activity-title">
+            <div className="flex items-center justify-between border-b border-line px-5 py-4 sm:px-6">
+                <h2 id="recent-activity-title" className="section-title">Recent Activity</h2>
+                <span className="num text-sm text-ink-2">{sorted.length.toLocaleString()} records</span>
+            </div>
 
             {sorted.length === 0 ? (
-                <div className="flex flex-col items-center justify-center py-16 text-slate-500">
-                    <ShoppingBag size={48} className="mb-4 opacity-50" />
-                    <p>No transactions yet.</p>
+                <div className="flex flex-col items-center justify-center px-6 py-16 text-center">
+                    <ReceiptText size={30} className="text-ink-3" aria-hidden="true" />
+                    <p className="mt-3 text-ink-2">No transactions yet.</p>
                 </div>
             ) : (
-                <div className="space-y-4">
+                <ul className="divide-y divide-line">
                     {sorted.map((t) => (
-                        <div
-                            key={t.id}
-                            className="group flex flex-col sm:flex-row sm:items-center justify-between gap-4 p-4 rounded-xl bg-white/5 hover:bg-white/10 transition-colors border border-white/5 hover:border-white/10"
-                        >
-                            <div className="flex gap-4 items-start sm:items-center">
-                                <div className={clsx(
-                                    "p-3 rounded-xl flex items-center justify-center shrink-0",
-                                    t.type === 'sale' ? "bg-emerald-500/10 text-emerald-400" : "bg-rose-500/10 text-rose-400"
-                                )}>
-                                    {t.type === 'sale' ? <ArrowUpRight size={20} /> : <ArrowDownLeft size={20} />}
-                                </div>
-                                <div>
-                                    <div className="font-semibold text-slate-200 line-clamp-1">{t.description}</div>
-                                    <div className="flex flex-wrap items-center gap-2 text-sm text-slate-500 mt-1">
-                                        <span>{formatDate(t.date)}</span>
-                                        <span className="w-1 h-1 rounded-full bg-slate-600"></span>
-                                        <span>{getCategoryLabel(t.category)}</span>
-
-                                        {t.details && t.details.size && (
-                                            <span className="px-2 py-0.5 rounded bg-white/10 text-slate-300 text-xs">
-                                                {t.details.quantity ?? 1}x {t.details.size} / {t.details.color}
-                                            </span>
-                                        )}
-                                        {t.details && t.details.subCategory && (
-                                            <span className="px-2 py-0.5 rounded bg-white/10 text-slate-300 text-xs">
-                                                {t.details.subCategory}
-                                            </span>
-                                        )}
-                                    </div>
-                                </div>
+                        <li key={t.id} className="group flex items-start gap-3 px-5 py-3.5 hover:bg-white/[0.02] sm:items-center sm:px-6">
+                            <span className={clsx('mt-0.5 shrink-0 sm:mt-0', t.type === 'sale' ? 'text-emerald-400' : 'text-ink-3')} aria-hidden="true">
+                                {t.type === 'sale' ? <ArrowUpRight size={20} /> : <ArrowDownLeft size={20} />}
+                            </span>
+                            <div className="min-w-0 flex-1">
+                                <p className="line-clamp-1 font-medium text-ink">{t.description || getCategoryLabel(t.category)}</p>
+                                <p className="mt-0.5 flex flex-wrap items-center gap-x-2 gap-y-1 text-sm text-ink-2">
+                                    <span>{formatDate(t.date)}</span>
+                                    <span aria-hidden="true">·</span>
+                                    <span>{getCategoryLabel(t.category)}</span>
+                                    {t.details && t.details.size && (
+                                        <span className="rounded bg-raised px-1.5 py-0.5 text-xs text-ink">
+                                            {t.details.quantity ?? 1}× {t.details.size}{t.details.color ? ` / ${t.details.color}` : ''}
+                                        </span>
+                                    )}
+                                    {t.details && t.details.subCategory && (
+                                        <span className="rounded bg-raised px-1.5 py-0.5 text-xs text-ink">{t.details.subCategory}</span>
+                                    )}
+                                </p>
                             </div>
-
-                            <div className="flex items-center justify-between sm:justify-end gap-6 ml-14 sm:ml-0">
-                                <div className={clsx(
-                                    "font-bold text-lg",
-                                    t.type === 'sale' ? "text-emerald-400" : "text-rose-400"
-                                )}>
-                                    {t.type === 'sale' ? '+' : '-'} ₱{t.amount.toLocaleString()}
-                                </div>
-                                <button
-                                    onClick={() => onDelete(t.id)}
-                                    className="p-2 text-slate-500 hover:text-rose-400 hover:bg-rose-500/10 rounded-lg transition-colors opacity-0 group-hover:opacity-100 focus:opacity-100"
-                                    title="Delete"
-                                >
-                                    <Trash2 size={18} />
-                                </button>
+                            <div className="flex shrink-0 items-center gap-1">
+                                <p className={clsx('num text-right font-semibold', t.type === 'sale' ? 'text-emerald-400' : 'text-ink')}>
+                                    <span className="sr-only">{t.type === 'sale' ? 'Income' : 'Expense'} </span>
+                                    {t.type === 'sale' ? '+' : '−'}₱{Number(t.amount).toLocaleString()}
+                                </p>
+                                {!readOnly && (
+                                    <button type="button" onClick={() => onDelete(t.id)} aria-label={`Delete ${t.description || 'transaction'}`} title="Delete"
+                                        className="icon-btn size-10 hover:text-red-400 lg:opacity-0 lg:group-hover:opacity-100 lg:focus-visible:opacity-100">
+                                        <Trash2 size={17} />
+                                    </button>
+                                )}
                             </div>
-                        </div>
+                        </li>
                     ))}
-                </div>
+                </ul>
             )}
-        </div>
+        </section>
     );
 };
 

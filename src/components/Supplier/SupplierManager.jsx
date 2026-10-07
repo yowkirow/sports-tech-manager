@@ -1,9 +1,9 @@
 import React, { useState, useMemo } from 'react';
-import { Package, Copy, CheckCircle2, Circle, Filter, Calendar, Truck, AlertCircle } from 'lucide-react';
-import { motion, AnimatePresence } from 'framer-motion';
+import { Package, Copy, CheckCircle2, Circle, Truck, AlertCircle } from 'lucide-react';
 import { useToast } from '../ui/Toast';
 import clsx from 'clsx';
 import { groupOrders } from '../../lib/orderItems.js';
+import { useReadOnly } from '../ui/ReadOnly';
 
 const numberOr = (value, fallback = 0) => {
     if (value === undefined || value === null || value === '') return fallback;
@@ -16,6 +16,7 @@ export default function SupplierManager({ transactions }) {
     const [filterType, setFilterType] = useState('unfulfilled'); // 'unfulfilled' | 'week'
     const [selectedOrderIds, setSelectedOrderIds] = useState(new Set());
     const [copying, setCopying] = useState(false);
+    const readOnly = useReadOnly();
 
     // 1. Group transactions into logical orders (Sale types)
     const orders = useMemo(() => {
@@ -94,6 +95,11 @@ export default function SupplierManager({ transactions }) {
         return { shirts: shirtMap, items: itemMap, hasMissingShirtData };
     }, [orders, selectedOrderIds]);
 
+    const totalSelectedItems = Object.values(aggregatedData.shirts).reduce((sum, group) =>
+        sum + Object.values(group.sizes).reduce((a, b) => a + b, 0), 0
+    ) + Object.values(aggregatedData.items).reduce((a, b) => a + b, 0);
+    const selectedColors = Object.keys(aggregatedData.shirts).length;
+
     // 4. Formatting Engine
     const generatedText = useMemo(() => {
         const shirts = Object.entries(aggregatedData.shirts);
@@ -131,10 +137,10 @@ export default function SupplierManager({ transactions }) {
         return (
             <span
                 key={item.id || idx}
-                className="text-[10px] bg-white/15 px-2 py-0.5 rounded text-slate-300 flex items-center gap-1"
+                className="badge border-line text-ink-2 num"
             >
                 {item.details?.category === 'shirts' && (
-                    <span className="w-1.5 h-1.5 rounded-full" style={{ backgroundColor: color.toLowerCase() === 'white' ? '#fff' : color }} />
+                    <span className="size-2 rounded-full border border-line" style={{ backgroundColor: color.toLowerCase() === 'white' ? '#fff' : color }} />
                 )}
                 {label}
             </span>
@@ -142,172 +148,173 @@ export default function SupplierManager({ transactions }) {
     };
 
     return (
-        <div className="space-y-6 h-full flex flex-col">
+        <div className="flex h-full flex-col gap-5" data-read-only={readOnly ? 'true' : undefined}>
             {/* Header / Toolbar */}
-            <div className="flex flex-col md:flex-row justify-between items-start md:items-center gap-4">
-                <div className="flex bg-white/5 p-1 rounded-xl">
+            <div className="flex flex-col gap-3 md:flex-row md:items-center md:justify-between">
+                <div className="flex gap-2 overflow-x-auto pb-1 scrollbar-hide" aria-label="Supplier filters">
                     <button
+                        type="button"
                         onClick={() => setFilterType('unfulfilled')}
-                        className={clsx(
-                            "px-4 py-2 rounded-lg text-sm font-bold transition-all",
-                            filterType === 'unfulfilled' ? "bg-primary text-white shadow-lg" : "text-slate-400 hover:text-white"
-                        )}
+                        className="chip"
+                        aria-pressed={filterType === 'unfulfilled'}
                     >
                         Pending Orders
                     </button>
                     <button
+                        type="button"
                         onClick={() => setFilterType('week')}
-                        className={clsx(
-                            "px-4 py-2 rounded-lg text-sm font-bold transition-all",
-                            filterType === 'week' ? "bg-primary text-white shadow-lg" : "text-slate-400 hover:text-white"
-                        )}
+                        className="chip"
+                        aria-pressed={filterType === 'week'}
                     >
                         Pending (Last 7 Days)
                     </button>
                 </div>
 
                 <div className="flex gap-2">
-                    <button onClick={selectAll} className="text-xs font-bold text-slate-400 hover:text-white px-3 py-2">Select All</button>
-                    <button onClick={selectNone} className="text-xs font-bold text-slate-400 hover:text-white px-3 py-2">Clear</button>
+                    <button type="button" onClick={selectAll} className="btn-secondary">Select All</button>
+                    <button type="button" onClick={selectNone} className="btn-ghost">Clear</button>
                 </div>
             </div>
 
-            <div className="grid lg:grid-cols-2 gap-6 flex-1 min-h-0">
+            <div className="surface grid grid-cols-1 divide-y divide-line overflow-hidden sm:grid-cols-4 sm:divide-x sm:divide-y-0">
+                <div className="p-4 sm:p-5">
+                    <p className="text-sm text-ink-2">Pending Orders</p>
+                    <p className="display mt-2 text-3xl num">{orders.length}</p>
+                </div>
+                <div className="p-4 sm:p-5">
+                    <p className="text-sm text-ink-2">Selected</p>
+                    <p className="display mt-2 text-3xl num">{selectedOrderIds.size}</p>
+                </div>
+                <div className="p-4 sm:p-5">
+                    <p className="text-sm text-ink-2">Total Items</p>
+                    <p className="display mt-2 text-3xl num">{totalSelectedItems}</p>
+                </div>
+                <div className="p-4 sm:p-5">
+                    <p className="text-sm text-ink-2">Colors</p>
+                    <p className="display mt-2 text-3xl num">{selectedColors}</p>
+                </div>
+            </div>
+
+            <div className="grid min-h-0 flex-1 gap-5 lg:grid-cols-2">
                 {/* Left Column: Order Selection */}
-                <div className="glass-card flex flex-col p-0 overflow-hidden min-h-[400px]">
-                    <div className="p-4 border-b border-white/5 flex justify-between items-center bg-white/[0.02]">
-                        <h3 className="font-bold flex items-center gap-2">
-                            <Truck size={18} className="text-primary" />
+                <section className="surface flex min-h-[400px] flex-col overflow-hidden">
+                    <div className="flex items-center justify-between gap-3 border-b border-line px-4 py-3 sm:px-5">
+                        <h3 className="section-title flex items-center gap-2">
+                            <Truck size={18} className="text-ink-3" aria-hidden="true" />
                             Pending Orders ({orders.length})
                         </h3>
-                        <span className="text-xs text-slate-500 font-mono">
+                        <span className="text-sm text-ink-2 num">
                             {selectedOrderIds.size} selected
                         </span>
                     </div>
 
-                    <div className="flex-1 overflow-y-auto p-4 space-y-3 custom-scrollbar">
+                    <div className="min-h-0 flex-1 overflow-y-auto">
                         {orders.length === 0 ? (
-                            <div className="h-full flex flex-col items-center justify-center text-slate-500 space-y-2 opacity-50">
-                                <Package size={48} />
+                            <div className="m-4 flex h-[320px] flex-col items-center justify-center rounded-2xl border border-dashed border-line text-center text-ink-2">
+                                <Package size={32} className="mb-3 text-ink-3" aria-hidden="true" />
                                 <p>No matching orders found</p>
                             </div>
                         ) : (
-                            orders.map(order => (
-                                <motion.div
-                                    key={order.id}
-                                    layout
-                                    onClick={() => toggleOrder(order.id)}
-                                    className={clsx(
-                                        "p-4 rounded-xl border cursor-pointer transition-all flex items-center gap-4 group",
-                                        selectedOrderIds.has(order.id)
-                                            ? "bg-primary/10 border-primary/30 shadow-lg shadow-primary/5"
-                                            : "bg-white/5 border-white/5 hover:border-white/10"
-                                    )}
-                                >
-                                    <div className={clsx(
-                                        "shrink-0 transition-colors",
-                                        selectedOrderIds.has(order.id) ? "text-primary" : "text-slate-600 group-hover:text-slate-400"
-                                    )}>
-                                        {selectedOrderIds.has(order.id) ? <CheckCircle2 size={24} /> : <Circle size={24} />}
-                                    </div>
+                            <div className="divide-y divide-line">
+                                {orders.map(order => (
+                                    <button
+                                        key={order.id}
+                                        type="button"
+                                        onClick={() => toggleOrder(order.id)}
+                                        className={clsx(
+                                            "flex w-full items-start gap-3 p-4 text-left transition-colors hover:bg-white/[0.04] sm:gap-4",
+                                            selectedOrderIds.has(order.id) && "bg-primary/10"
+                                        )}
+                                    >
+                                        <span className={clsx(
+                                            "mt-0.5 shrink-0 transition-colors",
+                                            selectedOrderIds.has(order.id) ? "text-primary" : "text-ink-3"
+                                        )}>
+                                            {selectedOrderIds.has(order.id) ? <CheckCircle2 size={24} aria-hidden="true" /> : <Circle size={24} aria-hidden="true" />}
+                                        </span>
 
-                                    <div className="flex-1 min-w-0">
-                                        <div className="flex justify-between items-start mb-1">
-                                            <h4 className="font-bold text-white truncate">{order.customerName}</h4>
-                                            <span className="text-[10px] text-slate-500 font-mono italic">#{order.id.slice(-6).toUpperCase()}</span>
-                                        </div>
-                                        <div className="flex flex-wrap gap-2">
-                                            {order.items.map(renderOrderItemChip)}
-                                        </div>
-                                    </div>
+                                        <span className="min-w-0 flex-1">
+                                            <span className="mb-1 flex items-start justify-between gap-3">
+                                                <span className="truncate font-semibold text-ink">{order.customerName}</span>
+                                                <span className="shrink-0 text-xs text-ink-3">#{order.id.slice(-6).toUpperCase()}</span>
+                                            </span>
+                                            <span className="flex flex-wrap gap-2">
+                                                {order.items.map(renderOrderItemChip)}
+                                            </span>
+                                        </span>
 
-                                    <div className="text-right shrink-0">
-                                        <p className="text-[10px] text-slate-500">{new Date(order.date).toLocaleDateString()}</p>
-                                        <p className="text-[10px] font-bold text-primary uppercase tracking-tighter">{order.fulfillmentStatus}</p>
-                                    </div>
-                                </motion.div>
-                            ))
+                                        <span className="shrink-0 text-right">
+                                            <span className="block text-xs text-ink-2">{new Date(order.date).toLocaleDateString()}</span>
+                                            <span className="badge mt-1 border-amber-500/40 capitalize text-amber-300">{order.fulfillmentStatus}</span>
+                                        </span>
+                                    </button>
+                                ))}
+                            </div>
                         )}
                     </div>
-                </div>
+                </section>
 
                 {/* Right Column: Preview & Output */}
-                <div className="flex flex-col gap-6 h-full">
+                <div className="flex min-h-0 flex-col gap-5">
                     {/* Data Quality Check */}
                     {selectedOrderIds.size > 0 && aggregatedData.hasMissingShirtData && (
-                        <motion.div
-                            initial={{ opacity: 0, x: 20 }}
-                            animate={{ opacity: 1, x: 0 }}
-                            className="bg-orange-500/10 border border-orange-500/20 p-4 rounded-xl flex items-start gap-4"
-                        >
-                            <AlertCircle className="text-orange-400 shrink-0" size={20} />
+                        <div className="flex items-start gap-3 rounded-xl border border-amber-500/30 bg-amber-500/10 p-4">
+                            <AlertCircle className="shrink-0 text-amber-300" size={20} aria-hidden="true" />
                             <div>
-                                <h4 className="text-sm font-bold text-orange-200">Missing Data Detected</h4>
-                                <p className="text-xs text-orange-200/60 mt-1">
+                                <h4 className="text-sm font-semibold text-amber-200">Missing Data Detected</h4>
+                                <p className="mt-1 text-xs text-amber-100/80">
                                     Some selected orders are missing Color or Size information. Please check your product definitions.
                                 </p>
                             </div>
-                        </motion.div>
+                        </div>
                     )}
 
-                    <div className="glass-card flex-1 flex flex-col p-0 overflow-hidden relative group">
-                        <div className="p-4 border-b border-white/5 flex justify-between items-center bg-white/[0.02]">
-                            <h3 className="font-bold flex items-center gap-2">
-                                <Copy size={18} className="text-primary" />
+                    <section className="surface flex min-h-[400px] flex-1 flex-col overflow-hidden">
+                        <div className="flex flex-col gap-3 border-b border-line px-4 py-3 sm:flex-row sm:items-center sm:justify-between sm:px-5">
+                            <h3 className="section-title flex items-center gap-2">
+                                <Copy size={18} className="text-ink-3" aria-hidden="true" />
                                 Supplier Message Preview
                             </h3>
                             <button
+                                type="button"
                                 onClick={handleCopy}
                                 disabled={selectedOrderIds.size === 0}
                                 className={clsx(
-                                    "px-4 py-2 rounded-lg text-sm font-bold flex items-center gap-2 transition-all",
-                                    selectedOrderIds.size === 0
-                                        ? "bg-white/5 text-slate-600 cursor-not-allowed"
-                                        : "bg-primary text-white hover:bg-primary-hover shadow-lg shadow-primary/20"
+                                    "btn-primary w-full sm:w-auto",
+                                    selectedOrderIds.size === 0 && "bg-well text-ink-3 hover:bg-well"
                                 )}
                             >
-                                {copying ? <CheckCircle2 size={16} /> : <Copy size={16} />}
+                                {copying ? <CheckCircle2 size={16} aria-hidden="true" /> : <Copy size={16} aria-hidden="true" />}
                                 {copying ? 'Copied!' : 'Copy to Clipboard'}
                             </button>
                         </div>
 
-                        <div className="flex-1 p-6 font-mono text-sm overflow-y-auto custom-scrollbar bg-black/20">
+                        <div className="min-h-0 flex-1 overflow-y-auto bg-well p-5 font-mono text-sm">
                             {selectedOrderIds.size === 0 ? (
-                                <div className="h-full flex items-center justify-center text-slate-600 italic">
+                                <div className="flex h-full items-center justify-center text-center text-ink-2">
                                     Select orders from the left to generate text...
                                 </div>
                             ) : (
-                                <pre className="whitespace-pre-wrap text-emerald-400">
+                                <pre className="whitespace-pre-wrap text-ink">
                                     {generatedText}
                                 </pre>
                             )}
                         </div>
 
                         {/* Summary Widget */}
-                        <AnimatePresence>
-                            {selectedOrderIds.size > 0 && (
-                                <motion.div
-                                    initial={{ opacity: 0, y: 10 }}
-                                    animate={{ opacity: 1, y: 0 }}
-                                    exit={{ opacity: 0, y: 10 }}
-                                    className="p-4 bg-white/[0.02] border-t border-white/10 grid grid-cols-2 gap-4"
-                                >
-                                    <div>
-                                        <p className="text-slate-500 text-[10px] uppercase font-bold tracking-widest mb-1">Total Items</p>
-                                        <p className="text-2xl font-bold font-mono">
-                                            {Object.values(aggregatedData.shirts).reduce((sum, group) =>
-                                                sum + Object.values(group.sizes).reduce((a, b) => a + b, 0), 0
-                                            ) + Object.values(aggregatedData.items).reduce((a, b) => a + b, 0)}
-                                        </p>
-                                    </div>
-                                    <div className="text-right">
-                                        <p className="text-slate-500 text-[10px] uppercase font-bold tracking-widest mb-1">Colors</p>
-                                        <p className="text-2xl font-bold font-mono">{Object.keys(aggregatedData.shirts).length}</p>
-                                    </div>
-                                </motion.div>
-                            )}
-                        </AnimatePresence>
-                    </div>
+                        {selectedOrderIds.size > 0 && (
+                            <div className="grid grid-cols-2 divide-x divide-line border-t border-line">
+                                <div className="p-4">
+                                    <p className="text-sm text-ink-2">Total Items</p>
+                                    <p className="display mt-1 text-2xl num">{totalSelectedItems}</p>
+                                </div>
+                                <div className="p-4 text-right">
+                                    <p className="text-sm text-ink-2">Colors</p>
+                                    <p className="display mt-1 text-2xl num">{selectedColors}</p>
+                                </div>
+                            </div>
+                        )}
+                    </section>
                 </div>
             </div>
         </div>

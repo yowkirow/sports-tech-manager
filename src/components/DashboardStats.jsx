@@ -1,43 +1,28 @@
 import React, { useState } from 'react';
-import { TrendingUp, TrendingDown, DollarSign, Calendar, Trash2 } from 'lucide-react';
+import { Trash2 } from 'lucide-react';
 import clsx from 'clsx';
 import { isReturnedSale } from '../lib/transactionStatus';
+import { READ_ONLY_HINT } from './ui/ReadOnly';
 
-const StatCard = ({ title, amount, icon: Icon, colorClass, gradient }) => (
-    <div className="glass-card relative overflow-hidden group">
-        <div className={`absolute top-0 right-0 p-4 opacity-10 group-hover:opacity-20 transition-opacity`}>
-            <Icon size={100} />
-        </div>
-        <div className="relative z-10">
-            <div className="flex items-center justify-between mb-4">
-                <h3 className="text-sm uppercase tracking-wider text-slate-400 font-medium">{title}</h3>
-                <div className={clsx("p-2 rounded-lg bg-white/5", colorClass)}>
-                    <Icon size={20} />
-                </div>
-            </div>
-            <div className="text-3xl font-bold text-white tracking-tight">
-                ₱ {amount.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
-            </div>
-        </div>
-        <div className={clsx("absolute bottom-0 left-0 w-full h-1", gradient)}></div>
+const formatPeso = (amount) => `₱${Math.abs(amount).toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`;
+
+const Stat = ({ title, amount, tone, sign = '' }) => (
+    <div className="px-5 py-5 sm:px-6">
+        <p className="text-sm text-ink-2">{title}</p>
+        <p className={clsx('display num mt-1.5 text-[34px] leading-none sm:text-4xl', tone)}>
+            {sign}{formatPeso(amount)}
+        </p>
     </div>
 );
 
-const FilterButton = ({ active, onClick, children }) => (
-    <button
-        onClick={onClick}
-        className={clsx(
-            "px-4 py-2 rounded-lg text-sm font-medium transition-all duration-200",
-            active
-                ? "bg-primary text-white shadow-lg shadow-primary/20"
-                : "text-slate-400 hover:bg-white/5 hover:text-slate-200"
-        )}
-    >
-        {children}
-    </button>
-);
+const FILTERS = [
+    { id: 'all', label: 'All Time' },
+    { id: 'yearly', label: 'This Year' },
+    { id: 'monthly', label: 'This Month' },
+    { id: 'daily', label: 'Today' },
+];
 
-const DashboardStats = ({ transactions, onDeleteAll }) => {
+const DashboardStats = ({ transactions, onDeleteAll, readOnly = false }) => {
     const [filter, setFilter] = useState('all'); // all, daily, monthly, yearly
 
     const getFilteredTransactions = () => {
@@ -71,52 +56,32 @@ const DashboardStats = ({ transactions, onDeleteAll }) => {
     const netProfit = totalSales - totalExpenses;
 
     return (
-        <div className="space-y-6">
-            <div className="flex flex-col md:flex-row md:items-center justify-between gap-4">
-                <h2 className="text-xl font-bold text-white hidden md:block">Overview</h2>
-                <div className="flex flex-wrap items-center gap-2 bg-slate-900/50 p-1.5 rounded-xl border border-white/5 backdrop-blur-md">
-                    <FilterButton active={filter === 'all'} onClick={() => setFilter('all')}>All Time</FilterButton>
-                    <FilterButton active={filter === 'yearly'} onClick={() => setFilter('yearly')}>This Year</FilterButton>
-                    <FilterButton active={filter === 'monthly'} onClick={() => setFilter('monthly')}>This Month</FilterButton>
-                    <FilterButton active={filter === 'daily'} onClick={() => setFilter('daily')}>Today</FilterButton>
+        <section className="space-y-4" aria-labelledby="overview-title">
+            <div className="flex flex-wrap items-center justify-between gap-3">
+                <h2 id="overview-title" className="sr-only">Overview</h2>
+                <div role="group" aria-label="Time period" className="-mx-4 flex gap-2 overflow-x-auto px-4 scrollbar-hide sm:mx-0 sm:px-0">
+                    {FILTERS.map(option => (
+                        <button key={option.id} type="button" className="chip" aria-pressed={filter === option.id} onClick={() => setFilter(option.id)}>
+                            {option.label}
+                        </button>
+                    ))}
                 </div>
-
                 {onDeleteAll && (
-                    <button
-                        onClick={onDeleteAll}
-                        className="btn-danger py-2 px-4 text-sm flex items-center gap-2 ml-auto md:ml-0"
-                        title="Delete all transactions"
-                    >
-                        <Trash2 size={14} />
+                    <button type="button" onClick={onDeleteAll} disabled={readOnly} className="btn-danger min-h-10 px-4 text-sm"
+                        title={readOnly ? READ_ONLY_HINT : 'Delete all transactions'}>
+                        <Trash2 size={15} aria-hidden="true" />
                         Reset Data
                     </button>
                 )}
             </div>
 
-            <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
-                <StatCard
-                    title="Total Sales"
-                    amount={totalSales}
-                    icon={TrendingUp}
-                    colorClass="text-emerald-400"
-                    gradient="bg-gradient-to-r from-emerald-500 to-teal-500"
-                />
-                <StatCard
-                    title="Total Expenses"
-                    amount={totalExpenses}
-                    icon={TrendingDown}
-                    colorClass="text-rose-400"
-                    gradient="bg-gradient-to-r from-rose-500 to-red-500"
-                />
-                <StatCard
-                    title="Net Profit"
-                    amount={netProfit}
-                    icon={DollarSign}
-                    colorClass={netProfit >= 0 ? 'text-emerald-400' : 'text-rose-400'}
-                    gradient={netProfit >= 0 ? "bg-gradient-to-r from-emerald-500 to-cyan-500" : "bg-gradient-to-r from-rose-500 to-orange-500"}
-                />
+            <div className="surface grid grid-cols-1 divide-y divide-line sm:grid-cols-3 sm:divide-x sm:divide-y-0">
+                <Stat title="Total Sales" amount={totalSales} tone="text-ink" />
+                <Stat title="Total Expenses" amount={totalExpenses} tone="text-ink" />
+                <Stat title="Net Profit" amount={netProfit} sign={netProfit < 0 ? '−' : ''}
+                    tone={netProfit >= 0 ? 'text-emerald-400' : 'text-red-400'} />
             </div>
-        </div>
+        </section>
     );
 };
 

@@ -1,11 +1,11 @@
 import React, { useState } from 'react';
 import { useToast } from '../ui/Toast';
 import { Plus, Loader2, X } from 'lucide-react';
-import { motion, AnimatePresence } from 'framer-motion';
 
 import { useActivityLog } from '../../hooks/useActivityLog';
 import { api } from '../../lib/apiClient';
 import { useColors, useBrands } from '../../hooks/useInventory';
+import { useReadOnly, READ_ONLY_HINT } from '../ui/ReadOnly';
 
 const SIZES = ['XS', 'S', 'M', 'L', 'XL', '2XL'];
 
@@ -14,6 +14,7 @@ export default function AddStockForm({ onAddTransaction, onClose, transactions }
     const { logActivity } = useActivityLog();
     const colors = useColors(transactions || []);
     const brands = useBrands(transactions || []);
+    const readOnly = useReadOnly();
 
     const [loading, setLoading] = useState(false);
 
@@ -97,125 +98,121 @@ export default function AddStockForm({ onAddTransaction, onClose, transactions }
     };
 
     return (
-        <div className="bg-slate-900 border border-white/10 rounded-2xl max-w-2xl mx-auto shadow-2xl relative flex flex-col max-h-[85vh]">
-            <div className="p-6 border-b border-white/10 flex justify-between items-center shrink-0">
-                <h2 className="text-2xl font-bold text-white">Add New Stock</h2>
+        <div className="mx-auto flex max-h-[85vh] w-full max-w-2xl flex-col overflow-hidden rounded-2xl border border-line bg-surface text-ink shadow-sheet">
+            <div className="flex shrink-0 items-start justify-between gap-3 border-b border-line px-5 py-4">
+                <div className="min-w-0">
+                    <h2 className="display text-2xl">Add New Stock</h2>
+                </div>
                 <button
+                    type="button"
                     onClick={onClose}
-                    className="text-slate-400 hover:text-white transition-colors bg-white/5 p-2 rounded-lg hover:bg-white/10"
+                    className="icon-btn -mr-2 -mt-1"
+                    aria-label="Close"
                 >
-                    <X size={24} />
+                    <X size={22} aria-hidden="true" />
                 </button>
             </div>
 
-            <div className="p-6 overflow-y-auto custom-scrollbar">
-                <form onSubmit={handleSubmit} className="space-y-6">
-
+            <form onSubmit={handleSubmit} className="flex min-h-0 flex-1 flex-col">
+                <fieldset disabled={readOnly} className="min-w-0 border-0 p-0 m-0 min-h-0 flex-1 overflow-y-auto">
+                    <div className="space-y-5 p-5">
                     {/* Category Selection */}
-                    <div className="grid grid-cols-2 gap-4">
-                        <button
-                            type="button"
-                            onClick={() => setCategory('blanks')}
-                            className={`p-4 rounded-xl border transition-all ${category === 'blanks'
-                                ? 'bg-primary/20 border-primary text-white'
-                                : 'bg-white/5 border-white/10 text-slate-400 hover:bg-white/10'
-                                }`}
-                        >
-                            <span className="block font-semibold">Blank Shirt</span>
-                            <span className="text-xs text-primary/80 mt-1">Fixed Cost: ₱70</span>
-                        </button>
-                        <button
-                            type="button"
-                            onClick={() => setCategory('accessories')}
-                            className={`p-4 rounded-xl border transition-all ${category === 'accessories'
-                                ? 'bg-primary/20 border-primary text-white'
-                                : 'bg-white/5 border-white/10 text-slate-400 hover:bg-white/10'
-                                }`}
-                        >
-                            <span className="block font-semibold">Accessory / Other</span>
-                        </button>
+                    <div>
+                        <p className="field-label">Item type</p>
+                        <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
+                            <button
+                                type="button"
+                                onClick={() => setCategory('blanks')}
+                                aria-pressed={category === 'blanks'}
+                                className="chip h-auto justify-start rounded-xl py-3 text-left"
+                            >
+                                <span>
+                                    <span className="block font-semibold">Blank Shirt</span>
+                                    <span className="mt-1 block text-xs text-ink-2">Fixed Cost: <span className="num">₱70</span></span>
+                                </span>
+                            </button>
+                            <button
+                                type="button"
+                                onClick={() => setCategory('accessories')}
+                                aria-pressed={category === 'accessories'}
+                                className="chip h-auto justify-start rounded-xl py-3 text-left"
+                            >
+                                <span className="block font-semibold">Accessory / Other</span>
+                            </button>
+                        </div>
                     </div>
 
                     {/* Specific Fields */}
-                    <AnimatePresence mode="wait">
-                        {category === 'blanks' ? (
-                            <motion.div
-                                key="blanks-fields"
-                                initial={{ opacity: 0, height: 0 }}
-                                animate={{ opacity: 1, height: 'auto' }}
-                                exit={{ opacity: 0, height: 0 }}
-                                className="grid grid-cols-2 gap-4"
-                            >
-                                <div className="space-y-2 col-span-2">
-                                    <label className="text-sm text-slate-400">Brand</label>
-                                    <select
-                                        value={brand}
-                                        onChange={(e) => setBrand(e.target.value)}
-                                        className="glass-input appearance-none"
-                                    >
-                                        {brands.map(b => <option key={b.name} value={b.name} className="bg-slate-900">{b.name}</option>)}
-                                    </select>
-                                </div>
-                                <div className="space-y-2">
-                                    <label className="text-sm text-slate-400">Size</label>
-                                    <select
-                                        value={size}
-                                        onChange={(e) => setSize(e.target.value)}
-                                        className="glass-input appearance-none"
-                                    >
-                                        {SIZES.map(s => <option key={s} value={s} className="bg-slate-900">{s}</option>)}
-                                    </select>
-                                </div>
-                                <div className="space-y-2">
-                                    <label className="text-sm text-slate-400">Color</label>
-                                    <select
-                                        value={color}
-                                        onChange={(e) => setColor(e.target.value)}
-                                        className="glass-input appearance-none"
-                                    >
-                                        {colors.map(c => <option key={c.name} value={c.name} className="bg-slate-900">{c.name}</option>)}
-                                    </select>
-                                </div>
-                            </motion.div>
-                        ) : (
-                            <motion.div
-                                key="acc-fields"
-                                initial={{ opacity: 0, height: 0 }}
-                                animate={{ opacity: 1, height: 'auto' }}
-                                exit={{ opacity: 0, height: 0 }}
-                            >
-                                <div className="space-y-2">
-                                    <label className="text-sm text-slate-400">Item Name</label>
-                                    <input
-                                        type="text"
-                                        value={subCategory}
-                                        onChange={(e) => setSubCategory(e.target.value)}
-                                        placeholder="e.g. Stickers, Packaging"
-                                        className="glass-input"
-                                        required
-                                    />
-                                </div>
-                            </motion.div>
-                        )}
-                    </AnimatePresence>
+                    {category === 'blanks' ? (
+                        <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
+                            <div className="sm:col-span-2">
+                                <label htmlFor="stock-brand" className="field-label">Brand</label>
+                                <select
+                                    id="stock-brand"
+                                    value={brand}
+                                    onChange={(e) => setBrand(e.target.value)}
+                                    className="field"
+                                >
+                                    {brands.map(b => <option key={b.name} value={b.name}>{b.name}</option>)}
+                                </select>
+                            </div>
+                            <div>
+                                <label htmlFor="stock-size" className="field-label">Size</label>
+                                <select
+                                    id="stock-size"
+                                    value={size}
+                                    onChange={(e) => setSize(e.target.value)}
+                                    className="field"
+                                >
+                                    {SIZES.map(s => <option key={s} value={s}>{s}</option>)}
+                                </select>
+                            </div>
+                            <div>
+                                <label htmlFor="stock-color" className="field-label">Color</label>
+                                <select
+                                    id="stock-color"
+                                    value={color}
+                                    onChange={(e) => setColor(e.target.value)}
+                                    className="field"
+                                >
+                                    {colors.map(c => <option key={c.name} value={c.name}>{c.name}</option>)}
+                                </select>
+                            </div>
+                        </div>
+                    ) : (
+                        <div>
+                            <label htmlFor="stock-item-name" className="field-label">Item Name</label>
+                            <input
+                                id="stock-item-name"
+                                type="text"
+                                value={subCategory}
+                                onChange={(e) => setSubCategory(e.target.value)}
+                                placeholder="e.g. Stickers, Packaging"
+                                className="field"
+                                required
+                            />
+                        </div>
+                    )}
 
                     {/* Common Fields */}
-                    <div className="grid grid-cols-2 gap-4">
-                        <div className="space-y-2">
-                            <label className="text-sm text-slate-400">Quantity</label>
+                    <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
+                        <div>
+                            <label htmlFor="stock-quantity" className="field-label">Quantity</label>
                             <input
+                                id="stock-quantity"
                                 type="number"
                                 value={quantity}
                                 onChange={(e) => setQuantity(e.target.value)}
                                 min="1"
-                                className="glass-input"
+                                className="field num"
                                 required
                             />
                         </div>
-                        <div className="space-y-2">
-                            <label className="text-sm text-slate-400">Total Cost (₱)</label>
+                        <div>
+                            <label htmlFor="stock-total-cost" className="field-label">Total Cost (₱)</label>
                             <div className="relative">
                                 <input
+                                    id="stock-total-cost"
                                     type="number"
                                     value={cost}
                                     onChange={(e) => setCost(e.target.value)}
@@ -223,39 +220,43 @@ export default function AddStockForm({ onAddTransaction, onClose, transactions }
                                     min="0"
                                     step="0.01"
                                     readOnly={category === 'blanks'}
-                                    className={`glass-input ${category === 'blanks' ? 'opacity-70 cursor-not-allowed bg-black/20' : ''}`}
+                                    className={`field num pr-28 ${category === 'blanks' ? 'cursor-not-allowed bg-well text-ink-2' : ''}`}
                                 />
                                 {category === 'blanks' && (
-                                    <span className="absolute right-3 top-1/2 -translate-y-1/2 text-[10px] text-slate-500 bg-black/40 px-1 rounded">
-                                        AUTO (70/unit)
+                                    <span className="badge absolute right-2 top-1/2 -translate-y-1/2 border-line text-ink-2">
+                                        Auto (70/unit)
                                     </span>
                                 )}
                             </div>
                         </div>
                     </div>
 
-                    <div className="space-y-2">
-                        <label className="text-sm text-slate-400">Description / Note</label>
+                    <div>
+                        <label htmlFor="stock-description" className="field-label">Description / Note</label>
                         <input
+                            id="stock-description"
                             type="text"
                             value={description}
                             onChange={(e) => setDescription(e.target.value)}
                             placeholder="Optional note..."
-                            className="glass-input"
+                            className="field"
                         />
                     </div>
+                    </div>
+                </fieldset>
 
+                <div className="shrink-0 border-t border-line bg-surface px-5 pt-4 pb-[max(1rem,env(safe-area-inset-bottom))]">
                     <button
                         type="submit"
-                        disabled={loading}
-                        className="btn-primary w-full py-4 text-lg shadow-lg shadow-indigo-500/20"
+                        disabled={readOnly || loading}
+                        title={readOnly ? READ_ONLY_HINT : undefined}
+                        className="btn-primary w-full"
                     >
-                        {loading ? <Loader2 className="animate-spin" /> : <Plus size={20} />}
+                        {loading ? <Loader2 className="animate-spin" aria-hidden="true" /> : <Plus size={20} aria-hidden="true" />}
                         {loading ? 'Saving...' : 'Add to Inventory'}
                     </button>
-
-                </form>
-            </div>
+                </div>
+            </form>
         </div>
     );
 }

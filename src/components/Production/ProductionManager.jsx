@@ -1,27 +1,32 @@
 import React, { useCallback, useMemo, useState } from 'react';
 import { CheckCircle2, Pause, Send, UserPlus, UserX } from 'lucide-react';
 import LoadingState from '../ui/LoadingState.jsx';
-import { productionCandidates, productionLineKey, productionQuantity } from '../../lib/production.js';
-import { useProductionData, useProductionMutation } from './productionHooks.js';
+import { productionCandidates, productionLineKey, productionQuantity, walletPeso } from '../../lib/production.js';
+import { useProductionData, useProductionMutation, useProductionWallet } from './productionHooks.js';
 import { JobActivity, JobCounts, JobHeading, JobInstructions, MutationNotice, ProductionHeader, ProductionNotice } from './ProductionParts.jsx';
+import { OperatorPayout, OperatorWallet, UnattributedShirts } from './PrintWallet.jsx';
+import { useReadOnly, READ_ONLY_HINT } from '../ui/ReadOnly';
 import './Production.css';
 
 const isActive = member => member.active === true || member.active === 1;
 const employeeName = member => member.name || member.displayName || member.email;
 
-function EmployeeAccounts({ members, reload, online, stale }) {
+function EmployeeAccounts({ members, wallets, reload, online, stale }) {
+    const readOnly = useReadOnly();
     const [email, setEmail] = useState('');
     const [name, setName] = useState('');
     const mutation = useProductionMutation(reload);
-    const blocked = !online || stale || mutation.busy || mutation.uncertain;
+    const blocked = readOnly || !online || stale || mutation.busy || mutation.uncertain;
     const employees = members.filter(member => member.role === 'print_operator');
+    const walletOf = new Map(wallets.wallets.map(wallet => [wallet.memberId, wallet]));
+    const due = wallets.wallets.reduce((total, wallet) => total + Math.max(0, wallet.balanceCentavos), 0);
     const invite = event => {
         event.preventDefault();
         mutation.run('/api/members', { email: email.trim(), name: name.trim() || 'Print operator', role: 'print_operator' },
             'Employee account prepared. Cloudflare Access must also allow this email.', () => { setEmail(''); setName(''); });
     };
     return <details className="production-section">
-        <summary>Employee accounts{employees.length ? ` (${employees.length})` : ''}</summary>
+        <summary>Employee accounts{employees.length ? ` (${employees.length})` : ''}{due > 0 ? ` · ${walletPeso(due)} due` : ''}</summary>
         <p className="production-help">Prepare one employee at a time. This does not send an invitation or grant Cloudflare access.</p>
         <ProductionNotice>Login also requires the employee’s exact email to be allowed in the Cloudflare Access policy. No employee is added automatically.</ProductionNotice>
         <form onSubmit={invite}>
@@ -33,34 +38,49 @@ function EmployeeAccounts({ members, reload, online, stale }) {
                 <label className="production-field">Individual email address
                     <input type="email" value={email} required maxLength={254} autoComplete="off" onChange={event => setEmail(event.target.value)} />
                 </label>
-                <button type="submit" className="production-button"><UserPlus size={18} aria-hidden="true" />Prepare account</button>
+                <button type="submit" className="production-button" disabled={readOnly} title={readOnly ? READ_ONLY_HINT : undefined}><UserPlus size={18} aria-hidden="true" />Prepare account</button>
             </fieldset>
         </form>
+        {wallets.error && <ProductionNotice error>Shirt counts and wallets could not be loaded. {wallets.error.message} Payouts are paused; use Reload.</ProductionNotice>}
         <ul className="production-employees">
-            {employees.map(member => <li key={member.id}>
-                <div><strong>{employeeName(member)}</strong>{member.name && <p>{member.email}</p>}
-                    <span>{isActive(member) ? 'Active print operator' : 'Access revoked'}</span></div>
-                <button type="button" className="production-button" disabled={blocked}
-                    onClick={() => mutation.run(`/api/members/${member.id}`, { active: !isActive(member) },
-                        isActive(member) ? 'Employee access revoked; unfinished jobs are on hold.' : 'Employee account reactivated. Jobs stay on hold until re-released.',
-                        undefined, 'PATCH')}>
-                    <UserX size={18} aria-hidden="true" />{isActive(member) ? 'Revoke access' : 'Reactivate'}
-                </button>
-            </li>)}
+            {employees.map(member => {
+                const wallet = walletOf.get(member.id);
+                return <li key={member.id}>
+                    <div className="production-employee">
+                        <strong>{employeeName(member)}</strong>{member.name && <p>{member.email}</p>}
+                        <span>{isActive(member) ? 'Active print operator' : 'Access revoked'}</span>
+                        {wallet ? <OperatorWallet wallet={wallet} />
+                            : !wallets.error && wallets.loading && <p role="status">Loading shirt count…</p>}
+                    </div>
+                    <div className="production-employee-actions">
+                        {wallet && <OperatorPayout wallet={wallet} reload={reload} online={online} stale={stale || !!wallets.error} />}
+                        <button type="button" className="production-button" disabled={blocked} title={readOnly ? READ_ONLY_HINT : undefined}
+                            onClick={() => mutation.run(`/api/members/${member.id}`, { active: !isActive(member) },
+                                isActive(member) ? 'Employee access revoked; unfinished jobs are on hold.' : 'Employee account reactivated. Jobs stay on hold until re-released.',
+                                undefined, 'PATCH')}>
+                            <UserX size={18} aria-hidden="true" />{isActive(member) ? 'Revoke access' : 'Reactivate'}
+                        </button>
+                    </div>
+                </li>;
+            })}
         </ul>
         {!employees.length && <p className="production-help">No print-operator accounts are prepared yet.</p>}
+        {wallets.wallets[0] && <p className="production-help">Pay rule: {walletPeso(wallets.wallets[0].rateCentavos)} for each complete {wallets.wallets[0].rateShirts} shirts
+            you accept in QA, credited to the person who printed them. Partial batches carry over as a count; they are never paid in fractions.</p>}
+        <UnattributedShirts unattributed={wallets.unattributed} />
         <MutationNotice mutation={mutation} online={online} />
     </details>;
 }
 
 function PrepareJob({ candidates, employees, reload, online, stale }) {
+    const readOnly = useReadOnly();
     const [selected, setSelected] = useState('');
     const [assignee, setAssignee] = useState('');
     const [instructions, setInstructions] = useState('');
     const [validation, setValidation] = useState('');
     const mutation = useProductionMutation(reload);
     const source = candidates.find(candidate => productionLineKey(candidate) === selected);
-    const blocked = !online || stale || mutation.busy || mutation.uncertain;
+    const blocked = readOnly || !online || stale || mutation.busy || mutation.uncertain;
     const submit = event => {
         event.preventDefault();
         if (!source || !employees.some(employee => employee.id === assignee)) {
@@ -102,7 +122,7 @@ function PrepareJob({ candidates, employees, reload, online, stale }) {
                 </label>
                 <p id="production-instructions-help" className="production-help">Visible to the assigned employee. Include only print instructions — no customer names, contacts, addresses, payment details or private comments. Provide artwork separately.</p>
                 {source && <p>Prepare <strong>{source.required} shirts</strong>. This does not release the job or change payment or inventory.</p>}
-                <button type="submit" className="production-button production-primary" disabled={!source || !assignee}>
+                <button type="submit" className="production-button production-primary" disabled={readOnly || !source || !assignee} title={readOnly ? READ_ONLY_HINT : undefined}>
                     Prepare job
                 </button>
             </fieldset>
@@ -114,6 +134,7 @@ function PrepareJob({ candidates, employees, reload, online, stale }) {
 }
 
 function OwnerJob({ job, sources, employees, reload, online, stale }) {
+    const readOnly = useReadOnly();
     const [artwork, setArtwork] = useState(false);
     const [blanks, setBlanks] = useState(false);
     const [assignee, setAssignee] = useState('');
@@ -123,7 +144,7 @@ function OwnerJob({ job, sources, employees, reload, online, stale }) {
     const [validation, setValidation] = useState('');
     const [revisedLine, setRevisedLine] = useState('');
     const mutation = useProductionMutation(reload);
-    const blocked = !online || stale || mutation.busy || mutation.uncertain;
+    const blocked = readOnly || !online || stale || mutation.busy || mutation.uncertain;
     const canRelease = ['draft', 'held'].includes(job.status);
     const replacements = sources.filter(source => source.sourceId === job.sourceId);
     const revise = retireOnly => {
@@ -186,7 +207,8 @@ function OwnerJob({ job, sources, employees, reload, online, stale }) {
                     I have checked the blanks, color, size and quantity.</label>
                 <p className="production-help">Manual release starts fulfillment for every active row in this order and stops customer self-edits. Payment does not release print jobs.</p>
                 <button type="button" className="production-button production-primary"
-                    disabled={job.sourceChanged || !artwork || !blanks || !employees.some(employee => employee.id === (assignee || job.assignee.id))}
+                    disabled={readOnly || job.sourceChanged || !artwork || !blanks || !employees.some(employee => employee.id === (assignee || job.assignee.id))}
+                    title={readOnly ? READ_ONLY_HINT : undefined}
                     onClick={() => submit('release')}><Send size={18} aria-hidden="true" />{job.status === 'held' ? 'Re-release job' : 'Release job'}</button>
             </div>}
             {job.awaitingQA > 0 && !job.sourceChanged && <div className="production-qa">
@@ -200,7 +222,7 @@ function OwnerJob({ job, sources, employees, reload, online, stale }) {
                         <input type="number" min="0" max={job.awaitingQA} step="1" inputMode="numeric"
                             value={rejected} onChange={event => setRejected(event.target.value)} />
                     </label>
-                    <button type="button" className="production-button production-primary" onClick={() => submit('qa')}>
+                    <button type="button" className="production-button production-primary" disabled={readOnly} title={readOnly ? READ_ONLY_HINT : undefined} onClick={() => submit('qa')}>
                         <CheckCircle2 size={18} aria-hidden="true" />Save quality check
                     </button>
                 </div>
@@ -222,11 +244,11 @@ function OwnerJob({ job, sources, employees, reload, online, stale }) {
                 </label>
                 <p className="production-help">Replacement starts a fresh draft with zero accepted shirts. Do not transfer completed work to a different design or variant.</p>
                 <div className="production-actions">
-                    <button type="button" className="production-button" disabled={!revisedLine || !note.trim()} onClick={() => revise(false)}>Prepare revised job</button>
-                    <button type="button" className="production-button production-warning" disabled={!note.trim()} onClick={() => revise(true)}>Retire held job</button>
+                    <button type="button" className="production-button" disabled={readOnly || !revisedLine || !note.trim()} title={readOnly ? READ_ONLY_HINT : undefined} onClick={() => revise(false)}>Prepare revised job</button>
+                    <button type="button" className="production-button production-warning" disabled={readOnly || !note.trim()} title={readOnly ? READ_ONLY_HINT : undefined} onClick={() => revise(true)}>Retire held job</button>
                 </div>
             </div>}
-            {job.status !== 'held' && <button type="button" className="production-button production-warning" onClick={() => submit('hold')}>
+            {job.status !== 'held' && <button type="button" className="production-button production-warning" disabled={readOnly} title={readOnly ? READ_ONLY_HINT : undefined} onClick={() => submit('hold')}>
                 <Pause size={18} aria-hidden="true" />Hold and withdraw
             </button>}
         </fieldset>}
@@ -239,15 +261,18 @@ function OwnerJob({ job, sources, employees, reload, online, stale }) {
 }
 
 export default function ProductionManager({ transactions = [], refetch }) {
+    const readOnly = useReadOnly();
     const data = useProductionData(true);
+    const wallets = useProductionWallet(true);
     const [filter, setFilter] = useState('active');
     const [search, setSearch] = useState('');
     const [orderRefreshError, setOrderRefreshError] = useState(false);
+    const { load: loadWallets } = wallets;
     const reload = useCallback(async () => {
-        await data.load();
+        await Promise.all([data.load(), loadWallets()]);
         try { await refetch?.(); setOrderRefreshError(false); }
         catch { setOrderRefreshError(true); }
-    }, [data.load, refetch]);
+    }, [data.load, loadWallets, refetch]);
     const candidates = useMemo(() => productionCandidates(transactions, data.sources, data.jobs), [transactions, data.sources, data.jobs]);
     const employees = data.members.filter(member => member.role === 'print_operator' && isActive(member));
     const jobs = data.jobs.filter(job => (filter === 'all' || (filter === 'completed' ? job.status === 'completed' : !['completed', 'superseded'].includes(job.status)))
@@ -261,7 +286,7 @@ export default function ProductionManager({ transactions = [], refetch }) {
                 {data.error && <ProductionNotice error>Production data could not be refreshed. {data.error.message} Saving is paused; use Reload.</ProductionNotice>}
                 {orderRefreshError && <ProductionNotice error>The print save was confirmed, but Orders could not refresh. Reload before preparing another job.</ProductionNotice>}
                 {data.loading && !data.jobs.length && !data.members.length ? <LoadingState label="Loading print production…" /> : <>
-                    <EmployeeAccounts members={data.members} reload={reload} online={data.online} stale={!!data.error} />
+                    <EmployeeAccounts members={data.members} wallets={wallets} reload={reload} online={data.online} stale={!!data.error} />
                     <PrepareJob candidates={candidates} employees={employees} reload={reload} online={data.online} stale={!!data.error || orderRefreshError} />
                     <div className="production-toolbar">
                         <label className="production-field production-filter">Show jobs

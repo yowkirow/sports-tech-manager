@@ -1,17 +1,17 @@
-import React, { useState, useMemo } from 'react';
-import { Search, Trash2, Calendar, DollarSign, Filter, Edit2, User, Coins } from 'lucide-react';
-import clsx from 'clsx';
+import React, { useMemo, useState } from 'react';
+import { Search, Trash2, Calendar, Edit2, User, Coins, X } from 'lucide-react';
 import { createPortal } from 'react-dom';
-import AddExpenseForm from './Expenses/AddExpenseForm'; // Reusing form for editing? Or create new?
 import { isReturnedSale } from '../lib/transactionStatus';
 import { withLocalDate } from '../lib/transactionDate';
 import { useToast } from './ui/Toast';
+import { useReadOnly, READ_ONLY_HINT } from './ui/ReadOnly';
 // For Sales, better to just edit simple fields or redirect to Orders.
 // User asked to "make it editable (Goal: summary of orders and amounts)"
 // I'll implement a simple Edit Modal for Sales that allows changing: Date, Description (Customer), Amount (Override).
 
 const EditSaleModal = ({ transaction, onUpdate, onClose }) => {
     const { showToast } = useToast();
+    const readOnly = useReadOnly();
     const [date, setDate] = useState(transaction.date.split('T')[0]);
     const [amount, setAmount] = useState(transaction.amount);
     const [description, setDescription] = useState(transaction.description);
@@ -39,25 +39,34 @@ const EditSaleModal = ({ transaction, onUpdate, onClose }) => {
     };
 
     return (
-        <div className="bg-slate-900 border border-white/10 rounded-2xl max-w-sm w-full shadow-2xl p-6">
-            <h3 className="text-xl font-bold text-white mb-4">Edit Sale Record</h3>
-            <form onSubmit={handleSubmit} className="space-y-4">
-                <div>
-                    <label className="text-sm text-slate-400">Date</label>
-                    <input type="date" value={date} onChange={e => setDate(e.target.value)} className="glass-input w-full" />
-                </div>
-                <div>
-                    <label className="text-sm text-slate-400">Description</label>
-                    <input value={description} onChange={e => setDescription(e.target.value)} className="glass-input w-full" />
-                </div>
-                <div>
-                    <label className="text-sm text-slate-400">Amount</label>
-                    <input type="number" step="0.01" value={amount} onChange={e => setAmount(e.target.value)} className="glass-input w-full" />
-                    <p className="text-xs text-slate-400 mt-1">Amount changes are retained as price adjustments when the order is edited.</p>
-                </div>
-                <div className="flex gap-2 pt-2">
-                    <button type="button" onClick={onClose} className="flex-1 py-2 bg-white/5 hover:bg-white/10 rounded-xl text-slate-400">Cancel</button>
-                    <button type="submit" disabled={loading} className="flex-1 py-2 btn-primary">{loading ? 'Saving...' : 'Save'}</button>
+        <div className="mx-auto flex max-h-[92dvh] w-full max-w-sm flex-col overflow-hidden rounded-2xl border border-line bg-surface text-ink shadow-sheet">
+            <div className="flex shrink-0 items-start justify-between gap-3 border-b border-line px-5 py-4">
+                <h3 className="display text-2xl">Edit Sale Record</h3>
+                <button type="button" onClick={onClose} className="icon-btn -mr-2 -mt-1" aria-label="Close">
+                    <X size={22} aria-hidden="true" />
+                </button>
+            </div>
+            <form onSubmit={handleSubmit} className="flex min-h-0 flex-1 flex-col">
+                <fieldset disabled={readOnly} className="min-w-0 border-0 p-0 m-0 min-h-0 flex-1 overflow-y-auto">
+                    <div className="space-y-4 p-5">
+                    <div>
+                        <label htmlFor="sale-edit-date" className="field-label">Date</label>
+                        <input id="sale-edit-date" type="date" value={date} onChange={e => setDate(e.target.value)} className="field w-full" />
+                    </div>
+                    <div>
+                        <label htmlFor="sale-edit-description" className="field-label">Description</label>
+                        <input id="sale-edit-description" value={description} onChange={e => setDescription(e.target.value)} className="field w-full" />
+                    </div>
+                    <div>
+                        <label htmlFor="sale-edit-amount" className="field-label">Amount</label>
+                        <input id="sale-edit-amount" type="number" step="0.01" value={amount} onChange={e => setAmount(e.target.value)} className="field w-full num" />
+                        <p className="mt-1.5 text-xs text-ink-2">Amount changes are retained as price adjustments when the order is edited.</p>
+                    </div>
+                    </div>
+                </fieldset>
+                <div className="flex shrink-0 flex-col gap-2 border-t border-line bg-surface px-5 pt-4 pb-[max(1rem,env(safe-area-inset-bottom))] sm:flex-row sm:justify-end">
+                    <button type="button" onClick={onClose} className="btn-secondary">Cancel</button>
+                    <button type="submit" disabled={readOnly || loading} title={readOnly ? READ_ONLY_HINT : undefined} className="btn-primary">{loading ? 'Saving...' : 'Save'}</button>
                 </div>
             </form>
         </div>
@@ -67,6 +76,7 @@ const EditSaleModal = ({ transaction, onUpdate, onClose }) => {
 const Sales = ({ transactions, onDeleteTransaction, onUpdateTransaction }) => {
     const [searchTerm, setSearchTerm] = useState('');
     const [editingTransaction, setEditingTransaction] = useState(null);
+    const readOnly = useReadOnly();
 
     // Filter only sale transactions
     const sales = useMemo(() => {
@@ -74,7 +84,7 @@ const Sales = ({ transactions, onDeleteTransaction, onUpdateTransaction }) => {
             .filter(t => (t.type === 'sale' && !isReturnedSale(t) && !t.details?.removedFromOrder) || t.type === 'club_income')
             .filter(t => {
                 const matchesSearch =
-                    t.description.toLowerCase().includes(searchTerm.toLowerCase()) ||
+                    (t.description || '').toLowerCase().includes(searchTerm.toLowerCase()) ||
                     (t.details?.customerName || '').toLowerCase().includes(searchTerm.toLowerCase()) ||
                     (t.details?.club || '').toLowerCase().includes(searchTerm.toLowerCase());
                 return matchesSearch;
@@ -91,95 +101,156 @@ const Sales = ({ transactions, onDeleteTransaction, onUpdateTransaction }) => {
     };
 
     return (
-        <div className="space-y-6">
-            {/* Stats Card */}
-            <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
-                <div className="glass-panel p-6 rounded-2xl flex items-center gap-4">
-                    <div className="p-4 rounded-xl bg-emerald-500/10 text-emerald-400">
-                        <Coins size={32} />
-                    </div>
-                    <div>
-                        <p className="text-sm text-slate-400">Total Sales</p>
-                        <h3 className="text-2xl font-bold text-white">₱{totalSales.toLocaleString()}</h3>
-                    </div>
+        <div className="space-y-5">
+            <div className="surface grid grid-cols-1 divide-y divide-line overflow-hidden sm:grid-cols-3 sm:divide-x sm:divide-y-0">
+                <div className="p-4 sm:p-5">
+                    <p className="text-sm text-ink-2">Total Sales</p>
+                    <p className="display mt-2 text-3xl text-emerald-300 num">₱{totalSales.toLocaleString()}</p>
+                </div>
+                <div className="p-4 sm:p-5">
+                    <p className="text-sm text-ink-2">Records</p>
+                    <p className="display mt-2 text-3xl num">{sales.length}</p>
+                </div>
+                <div className="p-4 sm:p-5">
+                    <p className="text-sm text-ink-2">Average sale</p>
+                    <p className="display mt-2 text-3xl num">₱{(sales.length ? totalSales / sales.length : 0).toLocaleString(undefined, { maximumFractionDigits: 0 })}</p>
                 </div>
             </div>
 
-            {/* List */}
-            <div className="glass-panel rounded-2xl p-6">
-                <div className="flex flex-col sm:flex-row justify-between items-center gap-4 mb-6">
-                    <h2 className="text-xl font-bold text-white flex items-center gap-2">
-                        <Calendar className="text-primary" /> Sales History
+            <section className="surface overflow-hidden">
+                <div className="flex flex-col gap-4 border-b border-line p-4 sm:flex-row sm:items-center sm:justify-between sm:p-5">
+                    <h2 className="section-title flex items-center gap-2">
+                        <Calendar size={20} className="text-ink-3" aria-hidden="true" /> Sales History
                     </h2>
 
-                    <div className="flex gap-2 w-full sm:w-auto">
-                        <div className="relative flex-1 sm:flex-none">
-                            <Search className="absolute left-3 top-1/2 -translate-y-1/2 text-slate-400" size={16} />
-                            <input
-                                type="text"
-                                placeholder="Search sales..."
-                                value={searchTerm}
-                                onChange={e => setSearchTerm(e.target.value)}
-                                className="glass-input pl-9 py-2 text-sm w-64"
-                            />
-                        </div>
+                    <div className="relative w-full sm:w-72">
+                        <Search className="absolute left-3 top-1/2 -translate-y-1/2 text-ink-3" size={16} aria-hidden="true" />
+                        <input
+                            type="text"
+                            aria-label="Search sales"
+                            placeholder="Search sales..."
+                            value={searchTerm}
+                            onChange={e => setSearchTerm(e.target.value)}
+                            className="field pl-9 text-sm"
+                        />
                     </div>
                 </div>
 
-                <div className="overflow-x-auto">
-                    <table className="w-full text-left border-collapse">
+                <div className="sm:hidden">
+                    {sales.length === 0 ? (
+                        <div className="m-4 rounded-2xl border border-dashed border-line px-4 py-12 text-center text-ink-2">
+                            No sales records found.
+                        </div>
+                    ) : (
+                        <div className="divide-y divide-line">
+                            {sales.map(t => (
+                                <div key={t.id} className="p-4">
+                                    <div className="flex items-start justify-between gap-3">
+                                        <div className="min-w-0">
+                                            <p className="break-words font-medium text-ink">{t.description}</p>
+                                            <p className="mt-1 text-sm text-ink-2">
+                                                {t.details?.club === 'downtown-dinks' ? 'Downtown Dinks' : (t.details?.customerName || 'Unknown')}
+                                            </p>
+                                        </div>
+                                        <p className="shrink-0 text-right font-semibold text-emerald-300 num">₱{t.amount?.toLocaleString()}</p>
+                                    </div>
+                                    <div className="mt-3 flex flex-wrap items-center gap-2 text-xs text-ink-2">
+                                        <span>{formatDate(t.date)}</span>
+                                        {t.details?.quantity && <span className="num">QTY: {t.details.quantity}</span>}
+                                        {t.details?.createdBy && (
+                                            <span className="badge border-line text-ink-2">
+                                                <User size={12} aria-hidden="true" /> {t.details.createdBy.split('@')[0]}
+                                            </span>
+                                        )}
+                                    </div>
+                                    <div className="mt-4 flex justify-end gap-1 border-t border-line pt-3">
+                                        <button
+                                            type="button"
+                                            onClick={() => setEditingTransaction(t)}
+                                            disabled={readOnly}
+                                            className="icon-btn"
+                                            title={readOnly ? READ_ONLY_HINT : 'Edit Record'}
+                                            aria-label="Edit Record"
+                                        >
+                                            <Edit2 size={16} aria-hidden="true" />
+                                        </button>
+                                        <button
+                                            type="button"
+                                            onClick={() => onDeleteTransaction(t.id)}
+                                            disabled={readOnly}
+                                            className="icon-btn hover:text-red-300"
+                                            title={readOnly ? READ_ONLY_HINT : 'Delete Record'}
+                                            aria-label="Delete Record"
+                                        >
+                                            <Trash2 size={16} aria-hidden="true" />
+                                        </button>
+                                    </div>
+                                </div>
+                            ))}
+                        </div>
+                    )}
+                </div>
+
+                <div className="hidden overflow-x-auto sm:block">
+                    <table className="w-full min-w-[760px] text-sm">
                         <thead>
-                            <tr className="text-slate-400 text-sm border-b border-white/5">
-                                <th className="p-4 font-medium">Description</th>
-                                <th className="p-4 font-medium">Customer</th>
-                                <th className="p-4 font-medium">Date</th>
-                                <th className="p-4 font-medium text-right">Amount</th>
-                                <th className="p-4 font-medium text-center">Action</th>
+                            <tr className="border-b border-line text-left text-ink-2">
+                                <th className="px-3 py-3 font-medium">Description</th>
+                                <th className="px-3 py-3 font-medium">Customer</th>
+                                <th className="px-3 py-3 font-medium">Date</th>
+                                <th className="px-3 py-3 text-right font-medium">Amount</th>
+                                <th className="px-3 py-3 text-center font-medium">Action</th>
                             </tr>
                         </thead>
-                        <tbody className="text-sm">
+                        <tbody>
                             {sales.length === 0 ? (
                                 <tr>
-                                    <td colSpan="5" className="p-8 text-center text-slate-500">
+                                    <td colSpan="5" className="px-3 py-12 text-center text-ink-2">
                                         No sales records found.
                                     </td>
                                 </tr>
                             ) : (
                                 sales.map(t => (
-                                    <tr key={t.id} className="border-b border-white/5 hover:bg-white/5 transition-colors group">
-                                        <td className="p-4 text-slate-200 font-medium">
+                                    <tr key={t.id} className="group border-b border-line transition-colors last:border-0 hover:bg-white/[0.04]">
+                                        <td className="px-3 py-3 font-medium text-ink">
                                             {t.description}
-                                            <div className="flex items-center gap-2 mt-1">
-                                                {t.details?.quantity && <span className="text-xs text-slate-500">QTY: {t.details.quantity}</span>}
+                                            <div className="mt-1 flex items-center gap-2">
+                                                {t.details?.quantity && <span className="text-xs text-ink-2 num">QTY: {t.details.quantity}</span>}
                                                 {t.details?.createdBy && (
-                                                    <span className="text-[10px] bg-white/10 px-1.5 py-0.5 rounded text-slate-400 flex items-center gap-1">
-                                                        <User size={10} /> {t.details.createdBy.split('@')[0]}
+                                                    <span className="badge border-line text-ink-2">
+                                                        <User size={12} aria-hidden="true" /> {t.details.createdBy.split('@')[0]}
                                                     </span>
                                                 )}
                                             </div>
                                         </td>
-                                        <td className="p-4 text-slate-300">
+                                        <td className="px-3 py-3 text-ink-2">
                                             {t.details?.club === 'downtown-dinks' ? 'Downtown Dinks' : (t.details?.customerName || 'Unknown')}
                                         </td>
-                                        <td className="p-4 text-slate-400">{formatDate(t.date)}</td>
-                                        <td className="p-4 text-right text-emerald-400 font-bold">
+                                        <td className="px-3 py-3 text-ink-2">{formatDate(t.date)}</td>
+                                        <td className="px-3 py-3 text-right font-semibold text-emerald-300 num">
                                             ₱{t.amount?.toLocaleString()}
                                         </td>
-                                        <td className="p-4 text-center">
-                                            <div className="flex gap-2 justify-center opacity-0 group-hover:opacity-100 focus-within:opacity-100 transition-opacity">
+                                        <td className="px-3 py-3 text-center">
+                                            <div className="flex justify-center gap-1">
                                                 <button
+                                                    type="button"
                                                     onClick={() => setEditingTransaction(t)}
-                                                    className="p-2 text-slate-500 hover:text-white hover:bg-white/10 rounded-lg transition-colors"
-                                                    title="Edit Record"
+                                                    disabled={readOnly}
+                                                    className="icon-btn"
+                                                    title={readOnly ? READ_ONLY_HINT : 'Edit Record'}
+                                                    aria-label="Edit Record"
                                                 >
-                                                    <Edit2 size={16} />
+                                                    <Edit2 size={16} aria-hidden="true" />
                                                 </button>
                                                 <button
+                                                    type="button"
                                                     onClick={() => onDeleteTransaction(t.id)}
-                                                    className="p-2 text-slate-500 hover:text-rose-400 hover:bg-rose-500/10 rounded-lg transition-colors"
-                                                    title="Delete Record"
+                                                    disabled={readOnly}
+                                                    className="icon-btn hover:text-red-300"
+                                                    title={readOnly ? READ_ONLY_HINT : 'Delete Record'}
+                                                    aria-label="Delete Record"
                                                 >
-                                                    <Trash2 size={16} />
+                                                    <Trash2 size={16} aria-hidden="true" />
                                                 </button>
                                             </div>
                                         </td>
@@ -189,16 +260,18 @@ const Sales = ({ transactions, onDeleteTransaction, onUpdateTransaction }) => {
                         </tbody>
                     </table>
                 </div>
-            </div>
+            </section>
 
             {/* Edit Modal */}
             {editingTransaction && createPortal(
-                <div className="fixed inset-0 z-[9999] flex items-center justify-center bg-black/80 backdrop-blur-sm p-4">
-                    <EditSaleModal
-                        transaction={editingTransaction}
-                        onUpdate={onUpdateTransaction}
-                        onClose={() => setEditingTransaction(null)}
-                    />
+                <div className="fixed inset-0 z-[9999] flex items-end justify-center bg-black/75 sm:items-center sm:p-6">
+                    <div className="max-h-[92dvh] w-full max-w-sm overflow-y-auto rounded-t-2xl sm:rounded-2xl">
+                        <EditSaleModal
+                            transaction={editingTransaction}
+                            onUpdate={onUpdateTransaction}
+                            onClose={() => setEditingTransaction(null)}
+                        />
+                    </div>
                 </div>,
                 document.body
             )}

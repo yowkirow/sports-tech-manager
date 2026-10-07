@@ -28,3 +28,10 @@ dist-ssr
 *.njsproj
 *.sln
 *.sw?
+
+# Impeccable session artifacts
+.impeccable/questions/
+.impeccable/mocks/
+.impeccable/review/
+.playwright-mcp/
+.impeccable/hook.cache.json

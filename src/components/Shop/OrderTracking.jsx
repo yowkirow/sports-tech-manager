@@ -1,18 +1,40 @@
 import React, { useState, useEffect, useMemo, useRef } from 'react';
-import { motion, AnimatePresence } from 'framer-motion';
-import { Package, CheckCircle, Clock, Truck, ShieldCheck, Search, ArrowLeft, Copy, ShoppingCart, MapPin, Phone, User, ExternalLink, X, Plus, Minus, RotateCcw } from 'lucide-react';
+import clsx from 'clsx';
+import { ArrowLeft, Check, Copy, ImageOff, Loader2, Minus, Plus, RefreshCw, RotateCcw, X } from 'lucide-react';
 import { refreshTrackedOrder, saveTrackedOrder, trackOrder, trackingToken } from '../../lib/publicShopApi';
 import { useToast } from '../ui/Toast';
+import Logo from '../ui/Logo';
 import { getEditableOrderItems, priceOrderChanges } from '../../lib/orderEditingPure';
 
 const STATUS_STEPS = [
-    { key: 'pending', label: 'Order Placed', icon: Clock, description: 'We have received your order.' },
-    { key: 'in_progress', label: 'Processing', icon: Package, description: 'We are preparing your items.' },
-    { key: 'ready', label: 'Ready', icon: CheckCircle, description: 'Your order is ready for pickup or shipping.' },
-    { key: 'shipped', label: 'Shipped', icon: Truck, description: 'Your order is on its way!' },
+    { key: 'pending', label: 'Order Placed', description: 'We have received your order.' },
+    { key: 'in_progress', label: 'Processing', description: 'We are preparing your items.' },
+    { key: 'ready', label: 'Ready', description: 'Your order is ready for pickup or shipping.' },
+    { key: 'shipped', label: 'Shipped', description: 'Your order is on its way!' },
 ];
 
 const SIZES = ['XS', 'S', 'M', 'L', 'XL', '2XL'];
+const STATUS_LABELS = { pending: 'Order placed', in_progress: 'Processing', ready: 'Ready', shipped: 'Shipped', returned: 'Returned' };
+const peso = (value) => `₱${(Number(value) || 0).toLocaleString()}`;
+const longDate = (value) => new Date(value).toLocaleDateString('en-PH', { month: 'long', day: 'numeric', year: 'numeric' });
+
+function Thumb({ src }) {
+    return (
+        <div className="h-20 w-16 shrink-0 overflow-hidden rounded-lg bg-well">
+            {src ? <img src={src} alt="" className="size-full object-cover" /> : <div className="grid size-full place-items-center text-ink-3"><ImageOff size={22} aria-hidden="true" /></div>}
+        </div>
+    );
+}
+
+function ContactLine() {
+    return (
+        <p className="py-10 text-center text-sm text-ink-2">
+            Questions about your order? Message us on{' '}
+            <a href="https://facebook.com/sportstech.fb" target="_blank" rel="noreferrer" className="font-semibold text-ink underline">Facebook</a> or{' '}
+            <a href="https://instagram.com/sportstech.ig" target="_blank" rel="noreferrer" className="font-semibold text-ink underline">Instagram</a>.
+        </p>
+    );
+}
 
 export default function OrderTracking() {
     const { showToast } = useToast();
@@ -191,493 +213,277 @@ export default function OrderTracking() {
     const statusIdx = Math.max(0, STATUS_STEPS.findIndex(s => s.key === timelineStatus));
     const canEdit = currentStatus === 'pending' && order?.items.length > 0;
 
+    const updateEditItem = (idx, changes) => setEditItems(prev => prev.map((entry, i) => (i === idx ? { ...entry, ...changes } : entry)));
+    const cancelEditing = async () => {
+        setIsEditing(false);
+        setSaveError('');
+        await fetchOrder(orderId, contactVerify, { verifyContact: false, notify: false });
+    };
+
     if (!isVerified || !order?.items.length) {
         return (
-            <div className="min-h-screen bg-slate-900 text-slate-100 flex flex-col items-center justify-center p-4">
-                <motion.div
-                    initial={{ opacity: 0, y: 20 }}
-                    animate={{ opacity: 1, y: 0 }}
-                    className="glass-panel p-8 max-w-md w-full"
-                >
-                    <div className="flex items-center gap-3 mb-6">
-                        <div className="p-3 rounded-2xl bg-primary/20 text-primary">
-                            <ShieldCheck size={32} />
-                        </div>
-                        <div>
-                            <h2 className="text-2xl font-bold text-white">Track Order</h2>
-                            <p className="text-slate-400 text-sm">Verify your identity to proceed</p>
-                        </div>
+            <div className="flex min-h-dvh flex-col bg-ground text-ink">
+                <header className="border-b border-line">
+                    <div className="mx-auto flex h-16 max-w-5xl items-center px-4 sm:px-6">
+                        <a href="/" aria-label="SportsTech home"><Logo className="h-9 sm:h-10" /></a>
                     </div>
-
-                    <form onSubmit={handleVerify} className="space-y-4">
-                        <div className="space-y-1">
-                            <label className="text-xs font-bold text-slate-500 uppercase ml-1">Contact Number</label>
-                            <div className="relative">
-                                <Phone className="absolute left-4 top-1/2 -translate-y-1/2 text-slate-500" size={18} />
-                                <input
-                                    type="tel"
-                                    value={contactVerify}
-                                    onChange={e => setContactVerify(e.target.value)}
-                                    placeholder="Enter your registered number"
-                                    className="glass-input pl-12 w-full py-3"
-                                    required
-                                />
-                            </div>
+                </header>
+                <main className="mx-auto flex w-full max-w-md flex-1 flex-col justify-center px-4 py-12">
+                    <h1 className="display text-5xl sm:text-6xl">Track order</h1>
+                    <p className="mt-3 text-ink-2">Verify your identity to proceed. Enter the contact number you used at checkout.</p>
+                    <form onSubmit={handleVerify} className="mt-8 space-y-4">
+                        <div>
+                            <label htmlFor="verify-phone" className="field-label">Contact number</label>
+                            <input id="verify-phone" type="tel" inputMode="tel" autoComplete="tel" value={contactVerify}
+                                onChange={e => setContactVerify(e.target.value)} placeholder="Enter your registered number" className="field" required />
                         </div>
-
-                        <button
-                            type="submit"
-                            disabled={loading}
-                            className="btn-primary w-full py-4 font-bold flex items-center justify-center gap-2"
-                        >
-                            {loading ? <Clock className="animate-spin" /> : 'Track Order'}
+                        <button type="submit" disabled={loading} className="btn-primary h-12 w-full text-base">
+                            {loading ? <><Loader2 size={18} className="animate-spin" aria-hidden="true" /> Checking…</> : 'Track order'}
                         </button>
                     </form>
-
-                    <button
-                        onClick={() => window.location.href = '/'}
-                        className="w-full mt-4 text-sm text-slate-500 hover:text-white flex items-center justify-center gap-2 transition-colors"
-                    >
-                        <ArrowLeft size={14} /> Back to Shop
-                    </button>
-                </motion.div>
+                    <a href="/" className="btn-ghost mt-4 self-center"><ArrowLeft size={16} aria-hidden="true" /> Back to shop</a>
+                </main>
             </div>
         );
     }
 
+    const subtotal = order.items.reduce((acc, item) => acc + (item.details.originalAmount || item.amount), 0);
+    const balance = Math.max(0, order.totalAmount - order.paidAmount);
+    const shipping = order.details.shippingDetails || {};
+
     return (
-        <div className="min-h-screen bg-slate-900 text-slate-100 flex flex-col font-sans">
-            <header className="h-20 border-b border-white/5 bg-slate-900/80 backdrop-blur-md sticky top-0 z-30 px-4 md:px-8 flex items-center justify-between">
-                <div className="flex items-center gap-3">
-                    <img src="/logo.png" alt="SportsTech" className="h-10 w-auto object-contain cursor-pointer" onClick={() => window.location.href = '/'} />
-                    <div className="h-8 w-[1px] bg-white/10 mx-2 hidden sm:block" />
-                    <h2 className="text-lg font-bold text-white hidden sm:block">Track Order</h2>
-                </div>
-                <div className="flex items-center gap-4">
-                    {canEdit && !isEditing && (
-                        <button
-                            onClick={startEditing}
-                            className="text-primary hover:bg-primary/10 px-4 py-2 rounded-xl text-sm font-bold border border-primary/20 transition-all flex items-center gap-2"
-                        >
-                            Modify Order
-                        </button>
-                    )}
-                    <button
-                        onClick={() => window.location.href = '/'}
-                        className="text-slate-400 hover:text-white flex items-center gap-2 text-sm font-medium"
-                    >
-                        <ArrowLeft size={18} /> Back to Shop
-                    </button>
+        <div className="min-h-dvh bg-ground text-ink">
+            <header className="sticky top-0 z-30 border-b border-line bg-ground">
+                <div className="mx-auto flex h-16 max-w-5xl items-center justify-between gap-3 px-4 sm:px-6">
+                    <a href="/" aria-label="SportsTech home"><Logo className="h-9 sm:h-10" /></a>
+                    <a href="/" className="btn-ghost"><ArrowLeft size={16} aria-hidden="true" /> <span>Back to shop</span></a>
                 </div>
             </header>
 
-            <main className="flex-1 p-4 md:p-8 max-w-4xl mx-auto w-full space-y-6">
-                {!isEditing && (
-                    <div className="flex items-center justify-between gap-4 text-sm text-slate-400">
-                        <p role="status">{refreshError || 'Status refreshes every 30 seconds while this page is visible.'}</p>
-                        <button type="button" disabled={loading} onClick={() => fetchOrder(orderId, contactVerify, { verifyContact: false, notify: false })}
-                            className="text-primary shrink-0 disabled:opacity-50">Refresh</button>
-                    </div>
-                )}
+            <main className="mx-auto w-full max-w-5xl px-4 pt-8 pb-4 sm:px-6 sm:pt-12">
                 {!isEditing ? (
                     <>
-                        {/* Header Card */}
-                        <motion.div
-                            initial={{ opacity: 0, y: 10 }}
-                            animate={{ opacity: 1, y: 0 }}
-                            className="glass-panel p-6 flex flex-col sm:flex-row sm:items-center justify-between gap-4"
-                        >
-                            <div>
-                                <div className="flex items-center gap-2 text-xs font-bold text-slate-400 uppercase tracking-widest mb-1">
-                                    Order ID: <span className="text-primary">{orderId.slice(0, 8)}...</span>
-                                    <button
-                                        onClick={() => {
-                                            navigator.clipboard.writeText(orderId);
-                                            showToast('ID copied!', 'success');
-                                        }}
-                                        className="p-1 hover:bg-white/5 rounded transition-colors"
-                                    >
-                                        <Copy size={12} />
+                        <div className="flex flex-col gap-5 sm:flex-row sm:items-end sm:justify-between">
+                            <div className="min-w-0">
+                                <p className="flex items-center gap-1 text-sm text-ink-2">
+                                    Order <span className="num font-semibold text-ink">#{orderId.slice(0, 8).toUpperCase()}</span>
+                                    <button type="button" className="icon-btn size-9" aria-label="Copy order ID"
+                                        onClick={() => { navigator.clipboard.writeText(orderId); showToast('ID copied!', 'success'); }}>
+                                        <Copy size={15} />
                                     </button>
-                                </div>
-                                <h1 className="text-2xl font-bold text-white">Hello, {order.details.customerName}!</h1>
-                                <p className="text-slate-400 text-sm mt-1">Placed on {new Date(order.date).toLocaleDateString('en-PH', { month: 'long', day: 'numeric', year: 'numeric' })}</p>
+                                </p>
+                                <h1 className="display mt-1 text-4xl sm:text-5xl">Hello, {order.details.customerName}</h1>
+                                <p className="mt-2 text-ink-2">Placed on {longDate(order.date)}</p>
                             </div>
-                            <div className="flex items-center gap-3 bg-white/5 px-4 py-2 rounded-full border border-white/5">
-                                <div className={`w-2 h-2 rounded-full animate-pulse ${currentStatus === 'returned' ? 'bg-amber-400' :
-                                    currentStatus === 'shipped' ? 'bg-green-500' : 'bg-primary'
-                                }`} />
-                                <span className="text-sm font-bold uppercase tracking-wider">
-                                    {currentStatus.replace('_', ' ')}
+                            <div className="flex flex-wrap items-center gap-2">
+                                <span className={clsx('badge h-9 px-3.5 text-sm',
+                                    currentStatus === 'returned' ? 'border-amber-500/50 text-amber-300'
+                                        : currentStatus === 'shipped' ? 'border-emerald-500/50 text-emerald-300' : 'border-slate-600 text-ink')}>
+                                    <span className={clsx('size-2 rounded-full', currentStatus === 'returned' ? 'bg-amber-400' : currentStatus === 'shipped' ? 'bg-emerald-400' : 'bg-primary')} aria-hidden="true" />
+                                    {STATUS_LABELS[currentStatus] || currentStatus.replace('_', ' ')}
                                 </span>
+                                {canEdit && <button type="button" onClick={startEditing} className="btn-light">Modify order</button>}
                             </div>
-                        </motion.div>
+                        </div>
+
+                        <div className="mt-5 flex items-center justify-between gap-3 border-y border-line py-2.5 text-sm">
+                            <p role="status" className={refreshError ? 'text-amber-300' : 'text-ink-2'}>{refreshError || 'Status refreshes every 30 seconds while this page is visible.'}</p>
+                            <button type="button" disabled={loading} onClick={() => fetchOrder(orderId, contactVerify, { verifyContact: false, notify: false })}
+                                className="btn-ghost min-h-10 shrink-0 text-sm">
+                                <RefreshCw size={15} className={loading ? 'animate-spin' : ''} aria-hidden="true" /> Refresh
+                            </button>
+                        </div>
 
                         {currentStatus === 'returned' && (
-                            <motion.div
-                                initial={{ opacity: 0, y: 10 }}
-                                animate={{ opacity: 1, y: 0 }}
-                                className="rounded-2xl border border-amber-500/20 bg-amber-500/10 p-5 flex items-start gap-4"
-                            >
-                                <div className="p-2.5 rounded-xl bg-amber-500/20 text-amber-400">
-                                    <RotateCcw size={22} />
-                                </div>
+                            <div className="mt-6 flex items-start gap-3 rounded-xl border border-amber-500/40 bg-amber-500/10 p-4">
+                                <RotateCcw size={20} className="mt-0.5 shrink-0 text-amber-300" aria-hidden="true" />
                                 <div>
-                                    <h3 className="font-bold text-amber-300">Order returned</h3>
-                                    <p className="text-sm text-amber-100/70 mt-1">
-                                        This order was marked as returned
-                                        {order.details.returnedAt ? ` on ${new Date(order.details.returnedAt).toLocaleDateString('en-PH', { month: 'long', day: 'numeric', year: 'numeric' })}` : ''}.
+                                    <h2 className="font-semibold text-amber-200">Order returned</h2>
+                                    <p className="mt-0.5 text-sm text-amber-100/80">
+                                        This order was marked as returned{order.details.returnedAt ? ` on ${longDate(order.details.returnedAt)}` : ''}.
                                     </p>
                                 </div>
-                            </motion.div>
+                            </div>
                         )}
 
-                        {/* Status Timeline */}
-                        <section className="glass-panel p-6 md:p-8">
-                            <h3 className="text-sm font-bold text-slate-400 uppercase tracking-wider mb-8">Order Status</h3>
-
-                            <div className="relative">
-                                {/* Progress Line */}
-                                <div className="absolute left-6 md:left-1/2 md:-translate-x-1/2 top-0 bottom-0 w-1 bg-white/5 hidden sm:block" />
-                                <div
-                                    className="absolute left-6 md:left-1/2 md:-translate-x-1/2 top-0 w-1 bg-primary transition-all duration-1000 hidden sm:block"
-                                    style={{ height: `${(statusIdx / (STATUS_STEPS.length - 1)) * 100}%` }}
-                                />
-
-                                <div className="space-y-12">
-                                    {STATUS_STEPS.map((step, index) => {
-                                        const isCompleted = index <= statusIdx;
-                                        const isCurrent = index === statusIdx;
-                                        return (
-                                            <div key={step.key} className="relative flex items-start sm:items-center gap-6 md:gap-0">
-                                                <div className="md:w-1/2 md:pr-12 md:text-right hidden md:block">
-                                                    {index % 2 === 0 && (
-                                                        <div className={isCompleted ? 'opacity-100' : 'opacity-30'}>
-                                                            <h4 className="font-bold text-white text-lg">{step.label}</h4>
-                                                            <p className="text-sm text-slate-400">{step.description}</p>
-                                                        </div>
-                                                    )}
-                                                </div>
-
-                                                <div className={`relative z-10 w-12 h-12 rounded-full flex items-center justify-center border-2 transition-all duration-500 shrink-0
-                                                    ${isCompleted ? 'bg-primary border-primary text-white shadow-lg shadow-primary/20' : 'bg-slate-800 border-white/10 text-slate-500'}`}
-                                                >
-                                                    <step.icon size={20} />
-                                                    {isCurrent && (
-                                                        <motion.div
-                                                            layoutId="outline"
-                                                            className="absolute -inset-2 border border-primary rounded-full animate-ping opacity-20"
-                                                        />
-                                                    )}
-                                                </div>
-
-                                                <div className="md:w-1/2 md:pl-12">
-                                                    <div className={index % 2 === 0 ? 'md:hidden' : ''}>
-                                                        <div className={isCompleted ? 'opacity-100' : 'opacity-30'}>
-                                                            <h4 className="font-bold text-white text-lg">{step.label}</h4>
-                                                            <p className="text-sm text-slate-400">{step.description}</p>
-                                                        </div>
-                                                    </div>
-                                                </div>
+                        <section className="mt-8" aria-labelledby="status-title">
+                            <h2 id="status-title" className="section-title">Order status</h2>
+                            <ol className="mt-5 grid gap-0 sm:grid-cols-4 sm:gap-3">
+                                {STATUS_STEPS.map((step, index) => {
+                                    const done = index < statusIdx || (index === statusIdx && timelineStatus === 'shipped');
+                                    const current = index === statusIdx;
+                                    const reached = index <= statusIdx;
+                                    return (
+                                        <li key={step.key} aria-current={current ? 'step' : undefined}
+                                            className="relative flex gap-4 pb-6 last:pb-0 sm:flex-col sm:gap-3 sm:pb-0">
+                                            <span className={clsx('absolute top-8 bottom-0 left-[15px] w-0.5 sm:hidden', index === STATUS_STEPS.length - 1 && 'hidden', index < statusIdx ? 'bg-primary' : 'bg-line')} aria-hidden="true" />
+                                            <span className={clsx('hidden h-1 rounded-full sm:block', reached ? 'bg-primary' : 'bg-line')} aria-hidden="true" />
+                                            <span className={clsx('relative z-10 grid size-8 shrink-0 place-items-center rounded-full border-2 text-sm font-bold sm:hidden',
+                                                reached ? 'border-primary bg-primary text-white' : 'border-line bg-ground text-ink-3')}>
+                                                {done || index < statusIdx ? <Check size={16} aria-hidden="true" /> : index + 1}
+                                            </span>
+                                            <div className={clsx(!reached && 'opacity-55')}>
+                                                <p className="flex items-center gap-2 font-semibold">
+                                                    {step.label}
+                                                    {current && <span className="badge border-primary/50 text-primary">Current</span>}
+                                                </p>
+                                                <p className="mt-0.5 text-sm text-ink-2">{step.description}</p>
                                             </div>
-                                        );
-                                    })}
-                                </div>
-                            </div>
+                                        </li>
+                                    );
+                                })}
+                            </ol>
                         </section>
 
-                        <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
-                            {/* Order Summary */}
-                            <div className="glass-panel p-6 flex flex-col">
-                                <h3 className="text-sm font-bold text-slate-400 uppercase tracking-wider mb-4 flex items-center gap-2">
-                                    <ShoppingCart size={14} className="text-primary" /> Order Summary
-                                </h3>
-                                <div className="flex-1 space-y-4">
+                        <div className="mt-10 grid gap-6 md:grid-cols-[minmax(0,1.3fr)_minmax(0,1fr)]">
+                            <section className="surface p-5 sm:p-6" aria-labelledby="summary-title">
+                                <h2 id="summary-title" className="section-title">Order summary</h2>
+                                <ul className="mt-4 divide-y divide-line">
                                     {order.items.map(item => (
-                                        <div key={item.id} className="flex gap-4">
-                                            <div className="w-16 h-20 bg-black/40 rounded-lg overflow-hidden shrink-0 border border-white/5">
-                                                {item.details.imageUrl ? (
-                                                    <img src={item.details.imageUrl} className="w-full h-full object-cover" />
-                                                ) : (
-                                                    <div className="w-full h-full flex items-center justify-center text-slate-700">
-                                                        <Package size={24} />
-                                                    </div>
-                                                )}
+                                        <li key={item.id} className="flex gap-4 py-3 first:pt-0">
+                                            <Thumb src={item.details.imageUrl} />
+                                            <div className="min-w-0 flex-1">
+                                                <p className="font-semibold leading-snug">{item.details.itemName}</p>
+                                                <p className="mt-0.5 text-sm text-ink-2">{item.details.size && item.details.size !== 'N/A' ? `Size ${item.details.size} · ` : ''}Qty {item.details.quantity}</p>
                                             </div>
-                                            <div className="flex-1">
-                                                <h4 className="font-bold text-white leading-tight">{item.details.itemName}</h4>
-                                                <p className="text-xs text-slate-400 mt-1">Size: {item.details.size} • Qty: {item.details.quantity}</p>
-                                                <p className="text-primary font-mono text-sm mt-1">₱{(item.details.originalAmount || item.amount).toLocaleString()}</p>
-                                            </div>
-                                        </div>
+                                            <p className="num shrink-0 font-semibold">{peso(item.details.originalAmount || item.amount)}</p>
+                                        </li>
                                     ))}
-                                </div>
-                                <div className="mt-6 pt-4 border-t border-white/5 space-y-2">
-                                    <div className="flex justify-between text-sm text-slate-400">
-                                        <span>Subtotal</span>
-                                        <span>₱{(order.items.reduce((acc, item) => acc + (item.details.originalAmount || item.amount), 0)).toLocaleString()}</span>
-                                    </div>
-                                    {order.discountAmount > 0 && (
-                                        <div className="flex justify-between text-sm text-emerald-400">
-                                            <span>Discount</span>
-                                            <span>-₱{order.discountAmount.toLocaleString()}</span>
-                                        </div>
-                                    )}
-                                    <div className="flex justify-between text-sm text-slate-400">
-                                        <span>Shipping</span>
-                                        <span>₱{(order.details.shippingDetails?.shippingFee || 0).toLocaleString()}</span>
-                                    </div>
-                                    {order.totalRushFee > 0 && (
-                                        <div className="flex justify-between text-sm text-amber-400"><span>Rush processing</span><span>₱{order.totalRushFee.toLocaleString()}</span></div>
-                                    )}
-                                    {order.priceAdjustment !== 0 && (
-                                        <div className="flex justify-between text-sm text-slate-400"><span>Saved price adjustment</span><span>₱{order.priceAdjustment.toLocaleString()}</span></div>
-                                    )}
-                                    <div className="flex justify-between text-lg font-bold text-white pt-2">
-                                        <span>Order total</span>
-                                        <span>₱{order.totalAmount.toLocaleString()}</span>
-                                    </div>
-                                    <div className="flex justify-between text-sm text-slate-400"><span>Paid</span><span>₱{order.paidAmount.toLocaleString()}</span></div>
-                                    <div className="flex justify-between text-sm text-slate-200"><span>Balance due</span><span>₱{Math.max(0, order.totalAmount - order.paidAmount).toLocaleString()}</span></div>
-                                </div>
-                            </div>
+                                </ul>
+                                <dl className="num mt-4 space-y-2 border-t border-line pt-4 text-sm">
+                                    <div className="flex justify-between"><dt className="text-ink-2">Subtotal</dt><dd>{peso(subtotal)}</dd></div>
+                                    {order.discountAmount > 0 && <div className="flex justify-between text-emerald-300"><dt>Discount</dt><dd>−{peso(order.discountAmount)}</dd></div>}
+                                    <div className="flex justify-between"><dt className="text-ink-2">Shipping</dt><dd>{peso(shipping.shippingFee || 0)}</dd></div>
+                                    {order.totalRushFee > 0 && <div className="flex justify-between"><dt className="text-ink-2">Rush processing</dt><dd>{peso(order.totalRushFee)}</dd></div>}
+                                    {order.priceAdjustment !== 0 && <div className="flex justify-between"><dt className="text-ink-2">Saved price adjustment</dt><dd>{peso(order.priceAdjustment)}</dd></div>}
+                                    <div className="flex justify-between border-t border-line pt-3 text-base font-semibold"><dt>Order total</dt><dd>{peso(order.totalAmount)}</dd></div>
+                                    <div className="flex justify-between"><dt className="text-ink-2">Paid</dt><dd>{peso(order.paidAmount)}</dd></div>
+                                    <div className={clsx('flex justify-between font-semibold', balance > 0 ? 'text-ink' : 'text-emerald-300')}><dt>Balance due</dt><dd>{peso(balance)}</dd></div>
+                                </dl>
+                            </section>
 
-                            {/* Shipping Details */}
-                            <div className="glass-panel p-6 space-y-6">
-                                <h3 className="text-sm font-bold text-slate-400 uppercase tracking-wider mb-4 flex items-center gap-2">
-                                    <MapPin size={14} className="text-primary" /> Delivery Info
-                                </h3>
-
-                                <div className="space-y-4">
-                                    <div className="flex gap-4">
-                                        <div className="w-10 h-10 rounded-xl bg-white/5 flex items-center justify-center shrink-0 border border-white/5">
-                                            <User size={18} className="text-slate-400" />
-                                        </div>
-                                        <div>
-                                            <p className="text-xs text-slate-500 uppercase font-bold tracking-widest">Customer</p>
-                                            <p className="text-white font-medium">{order.details.customerName}</p>
-                                            <p className="text-slate-400 text-sm">{order.details.contactNumber}</p>
-                                        </div>
+                            <section className="surface p-5 sm:p-6" aria-labelledby="delivery-title">
+                                <h2 id="delivery-title" className="section-title">Delivery info</h2>
+                                <dl className="mt-4 space-y-5 text-[15px]">
+                                    <div>
+                                        <dt className="text-sm text-ink-2">Customer</dt>
+                                        <dd className="mt-0.5 font-semibold">{order.details.customerName}</dd>
+                                        <dd className="text-ink-2">{order.details.contactNumber}</dd>
                                     </div>
-
-                                    <div className="flex gap-4">
-                                        <div className="w-10 h-10 rounded-xl bg-white/5 flex items-center justify-center shrink-0 border border-white/5">
-                                            <MapPin size={18} className="text-slate-400" />
-                                        </div>
-                                        <div className="flex-1">
-                                            <p className="text-xs text-slate-500 uppercase font-bold tracking-widest">Shipping Address</p>
-                                            <p className="text-white font-medium">{order.details.shippingDetails.address}</p>
-                                            <p className="text-slate-400 text-sm">
-                                                {order.details.shippingDetails.barangay}, {order.details.shippingDetails.city}
-                                                {order.details.shippingDetails.province ? `, ${order.details.shippingDetails.province}` : ''}
-                                            </p>
-                                        </div>
+                                    <div>
+                                        <dt className="text-sm text-ink-2">Shipping address</dt>
+                                        <dd className="mt-0.5 font-semibold">{shipping.address}</dd>
+                                        <dd className="text-ink-2">{shipping.barangay}, {shipping.city}{shipping.province ? `, ${shipping.province}` : ''}</dd>
                                     </div>
-
-                                    <div className="flex gap-4">
-                                        <div className="w-10 h-10 rounded-xl bg-white/5 flex items-center justify-center shrink-0 border border-white/5">
-                                            <Clock size={18} className="text-slate-400" />
-                                        </div>
-                                        <div>
-                                            <p className="text-xs text-slate-500 uppercase font-bold tracking-widest">Payment Mode</p>
-                                            <p className="text-white font-medium uppercase">{order.details.paymentMode}</p>
-                                            <p className="text-slate-400 text-sm">Cutoff: Every Thursday</p>
-                                        </div>
+                                    <div>
+                                        <dt className="text-sm text-ink-2">Payment mode</dt>
+                                        <dd className="mt-0.5 font-semibold">{order.details.paymentMode}</dd>
+                                        <dd className="text-ink-2">Cutoff: every Thursday</dd>
                                     </div>
-                                </div>
-
-                                <div className="p-4 rounded-xl bg-primary/10 border border-primary/20 flex items-start gap-3">
-                                    <ShieldCheck className="text-primary shrink-0 transition-transform mt-0.5" size={18} />
-                                    <p className="text-xs text-slate-300">
-                                        This order is tracked in real-time. You will see status updates automatically on this page as they happen.
-                                    </p>
-                                </div>
-                            </div>
+                                </dl>
+                                <p className="mt-6 border-t border-line pt-4 text-sm text-ink-2">
+                                    This order is tracked in real time. Status updates appear on this page automatically.
+                                </p>
+                            </section>
                         </div>
                     </>
                 ) : (
-                    /* Edit Mode UI */
-                    <motion.div
-                        initial={{ opacity: 0, scale: 0.98 }}
-                        animate={{ opacity: 1, scale: 1 }}
-                        className="space-y-6"
-                    >
-                        <div className="flex items-center justify-between">
-                            <h2 className="text-2xl font-bold text-white">Modify Order</h2>
-                            <div className="flex gap-3">
-                                <button
-                                    disabled={saving}
-                                    onClick={async () => {
-                                        setIsEditing(false);
-                                        setSaveError('');
-                                        await fetchOrder(orderId, contactVerify, { verifyContact: false, notify: false });
-                                    }}
-                                    className="px-4 py-2 rounded-xl text-slate-400 hover:text-white text-sm font-bold transition-colors"
-                                >
-                                    Cancel
-                                </button>
-                                <button
-                                    onClick={handleSave}
-                                    disabled={saving || !!editPricing?.error}
-                                    className="btn-primary px-6 py-2 flex items-center gap-2"
-                                >
-                                    {saving ? <Clock className="animate-spin" size={16} /> : 'Save Changes'}
+                    <>
+                        <div className="flex flex-col gap-4 sm:flex-row sm:items-end sm:justify-between">
+                            <h1 className="display text-4xl sm:text-5xl">Modify order</h1>
+                            <div className="flex gap-2">
+                                <button type="button" disabled={saving} onClick={cancelEditing} className="btn-secondary">Cancel</button>
+                                <button type="button" onClick={handleSave} disabled={saving || !!editPricing?.error} className="btn-primary">
+                                    {saving ? <><Loader2 size={16} className="animate-spin" aria-hidden="true" /> Saving…</> : 'Save changes'}
                                 </button>
                             </div>
                         </div>
 
-                        <div role={saveError || editPricing?.error ? 'alert' : 'status'} className="glass-panel p-4 text-sm text-slate-200">
-                            {saveError || editPricing?.error || `Updated order total: PHP ${editPricing?.total.toLocaleString(undefined, { maximumFractionDigits: 2 })}`}
-                            {editPricing?.options?.legacyDiscount && <p className="mt-2 text-slate-400">This older order keeps its original peso discount. Shipping is charged once; rush fees follow the shirt quantity.</p>}
+                        <div role={saveError || editPricing?.error ? 'alert' : 'status'}
+                            className={clsx('mt-5 rounded-xl border p-4 text-sm', saveError || editPricing?.error ? 'border-red-500/40 bg-red-500/10 text-red-200' : 'border-line bg-raised')}>
+                            {saveError || editPricing?.error || <>Updated order total: <span className="num font-semibold">₱{editPricing?.total.toLocaleString(undefined, { maximumFractionDigits: 2 })}</span></>}
+                            {editPricing?.options?.legacyDiscount && <p className="mt-2 text-ink-2">This older order keeps its original peso discount. Shipping is charged once; rush fees follow the shirt quantity.</p>}
                         </div>
 
-                        <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
-                            {/* Items Edit */}
-                            <div className="lg:col-span-2 glass-panel p-6 space-y-6">
-                                <h3 className="text-sm font-bold text-slate-400 uppercase tracking-wider">Order Items</h3>
-                                <div className="space-y-6">
+                        <div className="mt-6 grid gap-6 lg:grid-cols-[minmax(0,1.6fr)_minmax(0,1fr)]">
+                            <section className="surface p-5 sm:p-6" aria-labelledby="edit-items-title">
+                                <h2 id="edit-items-title" className="section-title">Order items</h2>
+                                <ul className="mt-4 divide-y divide-line">
                                     {editItems.map((item, idx) => (
-                                        <div key={item.id} className="flex gap-4 p-4 rounded-2xl bg-white/5 border border-white/5 group">
-                                            <div className="w-20 h-24 bg-black/40 rounded-xl overflow-hidden shrink-0 border border-white/5 relative">
-                                                {item.imageUrl ? (
-                                                    <img src={item.imageUrl} className="w-full h-full object-cover" />
-                                                ) : (
-                                                    <div className="w-full h-full flex items-center justify-center text-slate-700">
-                                                        <Package size={32} />
-                                                    </div>
-                                                )}
-                                            </div>
-                                            <div className="flex-1 space-y-3">
-                                                <div className="flex justify-between items-start">
-                                                    <h4 className="font-bold text-white text-lg">{item.name}</h4>
-                                                    <button
-                                                        onClick={() => setEditItems(prev => prev.filter((_, i) => i !== idx))}
-                                                        className="p-2 text-slate-500 hover:text-red-400 transition-colors"
-                                                        title="Remove Item"
-                                                    >
+                                        <li key={item.id} className="flex gap-4 py-4 first:pt-0">
+                                            <Thumb src={item.imageUrl} />
+                                            <div className="min-w-0 flex-1">
+                                                <div className="flex items-start justify-between gap-2">
+                                                    <p className="font-semibold leading-snug">{item.name}</p>
+                                                    <button type="button" onClick={() => setEditItems(prev => prev.filter((_, i) => i !== idx))}
+                                                        className="icon-btn -mt-2 -mr-2 size-10 hover:text-red-400" aria-label={`Remove ${item.name}`}>
                                                         <X size={18} />
                                                     </button>
                                                 </div>
-                                                <div className="flex flex-wrap gap-4">
-                                                    <div className="space-y-1">
-                                                        <label className="text-[10px] font-bold text-slate-500 uppercase ml-1">Size</label>
-                                                        <select
-                                                            aria-label={`Size for ${item.name}`}
-                                                            disabled={item.category !== 'shirts'}
-                                                            value={item.size}
-                                                            onChange={e => {
-                                                                const newItems = [...editItems];
-                                                                newItems[idx].size = e.target.value;
-                                                                setEditItems(newItems);
-                                                            }}
-                                                            className="glass-input py-1.5 px-3 text-sm min-w-[80px]"
-                                                        >
+                                                <div className="mt-2 flex flex-wrap items-end gap-4">
+                                                    <div>
+                                                        <label htmlFor={`edit-size-${item.id}`} className="field-label text-xs">Size</label>
+                                                        <select id={`edit-size-${item.id}`} disabled={item.category !== 'shirts'} value={item.size}
+                                                            onChange={e => updateEditItem(idx, { size: e.target.value })} className="field w-28">
                                                             {!SIZES.includes(item.size) && <option value={item.size}>{item.size || 'N/A'}</option>}
                                                             {SIZES.map(s => <option key={s} value={s}>{s}</option>)}
                                                         </select>
                                                     </div>
-                                                    <div className="space-y-1">
-                                                        <label className="text-[10px] font-bold text-slate-500 uppercase ml-1">Quantity</label>
-                                                        <div className="flex items-center gap-2">
-                                                            <button
-                                                                aria-label={`Decrease quantity for ${item.name}`}
-                                                                onClick={() => {
-                                                                    const newItems = [...editItems];
-                                                                    if (newItems[idx].quantity > 1) {
-                                                                        newItems[idx].quantity--;
-                                                                        setEditItems(newItems);
-                                                                    }
-                                                                }}
-                                                                className="w-8 h-8 rounded-lg bg-white/5 flex items-center justify-center hover:bg-white/10 text-slate-300"
-                                                            >
-                                                                <Minus size={14} />
+                                                    <div>
+                                                        <p className="field-label text-xs">Quantity</p>
+                                                        <div className="flex items-center rounded-full border border-line">
+                                                            <button type="button" className="icon-btn" aria-label={`Decrease quantity for ${item.name}`}
+                                                                onClick={() => { if (item.quantity > 1) updateEditItem(idx, { quantity: item.quantity - 1 }); }}>
+                                                                <Minus size={16} />
                                                             </button>
-                                                            <span className="w-8 text-center font-bold text-white">{item.quantity}</span>
-                                                            <button
-                                                                aria-label={`Increase quantity for ${item.name}`}
-                                                                onClick={() => {
-                                                                    const newItems = [...editItems];
-                                                                    newItems[idx].quantity++;
-                                                                    setEditItems(newItems);
-                                                                }}
-                                                                className="w-8 h-8 rounded-lg bg-white/5 flex items-center justify-center hover:bg-white/10 text-slate-300"
-                                                            >
-                                                                <Plus size={14} />
+                                                            <span className="num w-8 text-center font-semibold">{item.quantity}</span>
+                                                            <button type="button" className="icon-btn" aria-label={`Increase quantity for ${item.name}`}
+                                                                onClick={() => updateEditItem(idx, { quantity: item.quantity + 1 })}>
+                                                                <Plus size={16} />
                                                             </button>
                                                         </div>
                                                     </div>
                                                 </div>
                                             </div>
-                                        </div>
+                                        </li>
                                     ))}
-                                </div>
-                            </div>
+                                </ul>
+                            </section>
 
-                            {/* Details Edit */}
-                            <div className="glass-panel p-6 space-y-6">
-                                <h3 className="text-sm font-bold text-slate-400 uppercase tracking-wider">Shipping Details</h3>
-                                <div className="space-y-4">
-                                    <div className="space-y-1">
-                                        <label className="text-[10px] font-bold text-slate-500 uppercase ml-1">Full Name</label>
-                                        <input
-                                            type="text"
-                                            value={editDetails.customerName}
-                                            onChange={e => setEditDetails({ ...editDetails, customerName: e.target.value })}
-                                            className="glass-input w-full py-2.5"
-                                        />
-                                    </div>
-                                    <div className="space-y-1">
-                                        <label className="text-[10px] font-bold text-slate-500 uppercase ml-1">Contact Number</label>
-                                        <input
-                                            type="tel"
-                                            value={editDetails.contactNumber}
-                                            onChange={e => setEditDetails({ ...editDetails, contactNumber: e.target.value })}
-                                            className="glass-input w-full py-2.5"
-                                        />
-                                    </div>
-                                    <div className="space-y-1">
-                                        <label className="text-[10px] font-bold text-slate-500 uppercase ml-1">Street Address</label>
-                                        <input
-                                            type="text"
-                                            value={editDetails.address}
-                                            onChange={e => setEditDetails({ ...editDetails, address: e.target.value })}
-                                            className="glass-input w-full py-2.5"
-                                        />
-                                    </div>
-                                    <div className="grid grid-cols-2 gap-4">
-                                        <div className="space-y-1">
-                                            <label className="text-[10px] font-bold text-slate-500 uppercase ml-1">City</label>
-                                            <input
-                                                type="text"
-                                                value={editDetails.city}
-                                                className="glass-input w-full py-2.5 opacity-50 cursor-not-allowed"
-                                                disabled
-                                            />
-                                        </div>
-                                        <div className="space-y-1">
-                                            <label className="text-[10px] font-bold text-slate-500 uppercase ml-1">Barangay</label>
-                                            <input
-                                                type="text"
-                                                value={editDetails.barangay}
-                                                className="glass-input w-full py-2.5 opacity-50 cursor-not-allowed"
-                                                disabled
-                                            />
-                                        </div>
-                                    </div>
-                                    <p className="text-[10px] text-slate-500 italic mt-2">* City/Barangay cannot be changed once order is calculation for shipping is done.</p>
+                            <section className="surface space-y-4 p-5 sm:p-6" aria-labelledby="edit-details-title">
+                                <h2 id="edit-details-title" className="section-title">Shipping details</h2>
+                                <div>
+                                    <label htmlFor="edit-name" className="field-label">Full name</label>
+                                    <input id="edit-name" type="text" autoComplete="name" value={editDetails.customerName}
+                                        onChange={e => setEditDetails({ ...editDetails, customerName: e.target.value })} className="field" />
                                 </div>
-                            </div>
+                                <div>
+                                    <label htmlFor="edit-phone" className="field-label">Contact number</label>
+                                    <input id="edit-phone" type="tel" inputMode="tel" autoComplete="tel" value={editDetails.contactNumber}
+                                        onChange={e => setEditDetails({ ...editDetails, contactNumber: e.target.value })} className="field" />
+                                </div>
+                                <div>
+                                    <label htmlFor="edit-street" className="field-label">Street address</label>
+                                    <input id="edit-street" type="text" autoComplete="street-address" value={editDetails.address}
+                                        onChange={e => setEditDetails({ ...editDetails, address: e.target.value })} className="field" />
+                                </div>
+                                <div className="grid grid-cols-2 gap-3">
+                                    <div>
+                                        <label htmlFor="edit-city" className="field-label">City</label>
+                                        <input id="edit-city" type="text" value={editDetails.city} className="field" disabled />
+                                    </div>
+                                    <div>
+                                        <label htmlFor="edit-barangay" className="field-label">Barangay</label>
+                                        <input id="edit-barangay" type="text" value={editDetails.barangay} className="field" disabled />
+                                    </div>
+                                </div>
+                                <p className="text-xs text-ink-2">City and barangay can't be changed after shipping has been calculated.</p>
+                            </section>
                         </div>
-                    </motion.div>
+                    </>
                 )}
 
-                <div className="text-center py-8">
-                    <p className="text-slate-500 text-xs italic">
-                        Questions about your order? Message us on
-                        <a href="https://facebook.com/sportstech.fb" target="_blank" className="text-primary hover:underline ml-1">Facebook</a> or
-                        <a href="https://instagram.com/sportstech.ig" target="_blank" className="text-primary hover:underline ml-1">Instagram</a>.
-                    </p>
-                </div>
+                <ContactLine />
             </main>
         </div>
     );

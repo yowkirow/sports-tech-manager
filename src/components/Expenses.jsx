@@ -1,16 +1,26 @@
 import React, { useState, useMemo } from 'react';
-import { Search, Trash2, Calendar, DollarSign, Filter, Plus, User, Edit2, Check } from 'lucide-react';
+import { Search, Trash2, Calendar, Plus, User, Edit2, Check } from 'lucide-react';
 import clsx from 'clsx';
 import { createPortal } from 'react-dom';
 import AddExpenseForm from './Expenses/AddExpenseForm';
+import { useReadOnly, READ_ONLY_HINT } from './ui/ReadOnly';
 
 const CLUB_SLUG = 'downtown-dinks';
+
+const FILTERS = [
+    { value: 'all', label: 'All Types' },
+    { value: 'blanks', label: 'Blanks' },
+    { value: 'accessories', label: 'Accessories' },
+    { value: 'general', label: 'General' },
+    { value: 'downtown_dinks', label: 'Downtown Dinks' }
+];
 
 const Expenses = ({ transactions, onDeleteTransaction, onAddTransaction, onUpdateTransaction }) => {
     const [searchTerm, setSearchTerm] = useState('');
     const [filterCategory, setFilterCategory] = useState('all');
     const [showAddModal, setShowAddModal] = useState(false);
     const [editingTransaction, setEditingTransaction] = useState(null);
+    const readOnly = useReadOnly();
 
     // Filter only expense transactions
     const expenses = useMemo(() => {
@@ -59,213 +69,231 @@ const Expenses = ({ transactions, onDeleteTransaction, onAddTransaction, onUpdat
         if (rAmt !== undefined) {
             if (rAmt >= amount) {
                 return (
-                    <span className="px-2 py-1 rounded-md text-[10px] bg-emerald-500/20 text-emerald-400 font-bold uppercase tracking-wider">
+                    <span className="badge border-emerald-500/40 text-emerald-300">
                         Reimbursed
                     </span>
                 );
             } else if (rAmt > 0) {
                 return (
-                    <span className="px-2 py-1 rounded-md text-[10px] bg-amber-500/20 text-amber-400 font-bold uppercase tracking-wider">
+                    <span className="badge border-amber-500/40 text-amber-300 num">
                         Partial (₱{rAmt.toLocaleString()})
                     </span>
                 );
             }
         } else if (transaction.details?.reimbursed) {
             return (
-                <span className="px-2 py-1 rounded-md text-[10px] bg-emerald-500/20 text-emerald-400 font-bold uppercase tracking-wider">
+                <span className="badge border-emerald-500/40 text-emerald-300">
                     Reimbursed
                 </span>
             );
         }
 
         return (
-            <span className="px-2 py-1 rounded-md text-[10px] bg-slate-500/20 text-slate-500 font-bold uppercase tracking-wider">
+            <span className="badge border-slate-600 text-ink-2">
                 Pending
             </span>
         );
     };
 
+    const renderCategory = (transaction) => {
+        const label = transaction.details?.club === CLUB_SLUG ? 'Downtown Dinks' : transaction.category;
+        const tone = transaction.details?.club === CLUB_SLUG
+            ? 'border-emerald-500/40 text-emerald-300'
+            : transaction.category === 'general'
+                ? 'border-amber-500/40 text-amber-300'
+                : 'border-slate-600 text-ink-2';
+
+        return <span className={clsx('badge capitalize', tone)}>{label}</span>;
+    };
+
     const renderActions = (transaction, className = '') => (
-        <div className={clsx("flex min-w-[120px] gap-2 justify-center", className)}>
+        <div className={clsx("flex min-w-[132px] justify-center gap-1", className)}>
             <button
+                type="button"
                 onClick={() => toggleReimbursed(transaction)}
+                disabled={readOnly}
                 className={clsx(
-                    "p-2 rounded-lg transition-colors",
-                    isFullyReimbursed(transaction) ? "text-emerald-400 hover:bg-emerald-500/10" : "text-slate-400 hover:text-white hover:bg-white/10"
+                    "icon-btn",
+                    isFullyReimbursed(transaction) ? "text-emerald-300" : "text-ink-2"
                 )}
-                title={isFullyReimbursed(transaction) ? "Unmark Reimbursed" : "Mark as Fully Reimbursed"}
+                title={readOnly ? READ_ONLY_HINT : (isFullyReimbursed(transaction) ? "Unmark Reimbursed" : "Mark as Fully Reimbursed")}
+                aria-label={isFullyReimbursed(transaction) ? "Unmark Reimbursed" : "Mark as Fully Reimbursed"}
             >
-                <Check size={16} />
+                <Check size={16} aria-hidden="true" />
             </button>
             <button
+                type="button"
                 onClick={() => {
                     setEditingTransaction(transaction);
                     setShowAddModal(true);
                 }}
-                className="p-2 text-slate-400 hover:text-white hover:bg-white/10 rounded-lg transition-colors"
-                title="Edit"
+                disabled={readOnly}
+                className="icon-btn"
+                title={readOnly ? READ_ONLY_HINT : 'Edit'}
+                aria-label="Edit"
             >
-                <Edit2 size={16} />
+                <Edit2 size={16} aria-hidden="true" />
             </button>
             <button
+                type="button"
                 onClick={() => onDeleteTransaction(transaction.id)}
-                className="p-2 text-slate-400 hover:text-rose-400 hover:bg-rose-500/10 rounded-lg transition-colors"
-                title="Delete"
+                disabled={readOnly}
+                className="icon-btn hover:text-red-300"
+                title={readOnly ? READ_ONLY_HINT : 'Delete'}
+                aria-label="Delete"
             >
-                <Trash2 size={16} />
+                <Trash2 size={16} aria-hidden="true" />
             </button>
         </div>
     );
 
     return (
-        <div className="space-y-6">
-            {/* Stats Card */}
-            <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
-                <div className="glass-panel p-6 rounded-2xl flex items-center gap-4">
-                    <div className="p-4 rounded-xl bg-orange-500/10 text-orange-400">
-                        <DollarSign size={32} />
-                    </div>
-                    <div>
-                        <p className="text-sm text-slate-400">Total Expenses</p>
-                        <h3 className="text-2xl font-bold text-white">₱{totalExpenses.toLocaleString()}</h3>
-                    </div>
+        <div className="space-y-5">
+            <div className="surface grid grid-cols-1 divide-y divide-line overflow-hidden sm:grid-cols-3 sm:divide-x sm:divide-y-0">
+                <div className="p-4 sm:p-5">
+                    <p className="text-sm text-ink-2">Total Expenses</p>
+                    <p className="display mt-2 text-3xl text-red-400 num">₱{totalExpenses.toLocaleString()}</p>
+                </div>
+                <div className="p-4 sm:p-5">
+                    <p className="text-sm text-ink-2">Records</p>
+                    <p className="display mt-2 text-3xl num">{expenses.length}</p>
+                </div>
+                <div className="p-4 sm:p-5">
+                    <p className="text-sm text-ink-2">Reimbursed</p>
+                    <p className="display mt-2 text-3xl num">{expenses.filter(isFullyReimbursed).length}</p>
                 </div>
             </div>
 
-            {/* List */}
-            <div className="glass-panel rounded-2xl p-6">
-                <div className="flex flex-col sm:flex-row justify-between items-center gap-4 mb-6">
-                    <h2 className="text-xl font-bold text-white flex items-center gap-2">
-                        <Calendar className="text-primary" /> Expense History
-                    </h2>
+            <section className="surface overflow-hidden">
+                <div className="flex flex-col gap-4 border-b border-line p-4 sm:p-5">
+                    <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
+                        <h2 className="section-title flex items-center gap-2">
+                            <Calendar size={20} className="text-ink-3" aria-hidden="true" /> Expense History
+                        </h2>
 
-                    <div className="flex flex-col gap-2 w-full sm:w-auto sm:flex-row">
-                        <div className="relative flex-1 sm:flex-none">
-                            <Search className="absolute left-3 top-1/2 -translate-y-1/2 text-slate-400" size={16} />
+                        <button
+                            type="button"
+                            onClick={() => { setEditingTransaction(null); setShowAddModal(true); }}
+                            disabled={readOnly}
+                            title={readOnly ? READ_ONLY_HINT : undefined}
+                            className="btn-primary w-full whitespace-nowrap sm:w-auto"
+                        >
+                            <Plus size={16} aria-hidden="true" /> Add Expense
+                        </button>
+                    </div>
+
+                    <div className="flex flex-col gap-3 lg:flex-row lg:items-center lg:justify-between">
+                        <div className="relative min-w-0 lg:w-72">
+                            <Search className="absolute left-3 top-1/2 -translate-y-1/2 text-ink-3" size={16} aria-hidden="true" />
                             <input
                                 type="text"
+                                aria-label="Search expenses"
                                 placeholder="Search expenses..."
                                 value={searchTerm}
                                 onChange={e => setSearchTerm(e.target.value)}
-                                className="glass-input pl-9 py-2 text-sm"
+                                className="field pl-9 text-sm"
                             />
                         </div>
-                        <select
-                            value={filterCategory}
-                            onChange={e => setFilterCategory(e.target.value)}
-                            className="glass-input py-2 text-sm w-32"
-                        >
-                            <option value="all" className="bg-slate-900">All Types</option>
-                            <option value="blanks" className="bg-slate-900">Blanks</option>
-                            <option value="accessories" className="bg-slate-900">Accessories</option>
-                            <option value="general" className="bg-slate-900">General</option>
-                            <option value="downtown_dinks" className="bg-slate-900">Downtown Dinks</option>
-                        </select>
-                        <button
-                            onClick={() => { setEditingTransaction(null); setShowAddModal(true); }}
-                            className="btn-primary py-2 px-4 text-sm whitespace-nowrap flex items-center gap-2"
-                        >
-                            <Plus size={16} /> Add Expense
-                        </button>
+                        <div className="flex gap-2 overflow-x-auto pb-1 scrollbar-hide" aria-label="Expense filters">
+                            {FILTERS.map(filter => (
+                                <button
+                                    key={filter.value}
+                                    type="button"
+                                    onClick={() => setFilterCategory(filter.value)}
+                                    className="chip"
+                                    aria-pressed={filterCategory === filter.value}
+                                >
+                                    {filter.label}
+                                </button>
+                            ))}
+                        </div>
                     </div>
                 </div>
 
-                <div className="space-y-3 sm:hidden">
+                <div className="sm:hidden">
                     {expenses.length === 0 ? (
-                        <div className="p-8 text-center text-slate-500">
+                        <div className="m-4 rounded-2xl border border-dashed border-line px-4 py-12 text-center text-ink-2">
                             No expenses found.
                         </div>
                     ) : (
-                        expenses.map(t => (
-                            <div key={t.id} className="rounded-xl border border-white/10 bg-white/5 p-4">
-                                <div className="flex items-start justify-between gap-3">
-                                    <div className="min-w-0">
-                                        <p className="break-words font-medium text-slate-100">{t.description}</p>
-                                        <div className="mt-2 flex flex-wrap items-center gap-2">
-                                            <span className={clsx(
-                                                "px-2 py-1 rounded-md text-xs capitalize",
-                                                t.details?.club === CLUB_SLUG ? "bg-emerald-500/20 text-emerald-300" :
-                                                    t.category === 'blanks' ? "bg-indigo-500/20 text-indigo-300" :
-                                                    t.category === 'general' ? "bg-rose-500/20 text-rose-300" : "bg-orange-500/20 text-orange-300"
-                                            )}>
-                                                {t.details?.club === CLUB_SLUG ? 'Downtown Dinks' : t.category}
-                                            </span>
-                                            {renderStatus(t)}
+                        <div className="divide-y divide-line">
+                            {expenses.map(t => (
+                                <div key={t.id} className="p-4">
+                                    <div className="flex items-start justify-between gap-3">
+                                        <div className="min-w-0">
+                                            <p className="break-words font-medium text-ink">{t.description}</p>
+                                            <div className="mt-2 flex flex-wrap items-center gap-2">
+                                                {renderCategory(t)}
+                                                {renderStatus(t)}
+                                            </div>
                                         </div>
+                                        <p className="shrink-0 text-right font-semibold text-red-400 num">₱{t.amount?.toLocaleString()}</p>
                                     </div>
-                                    <p className="shrink-0 text-right font-bold text-rose-400">₱{t.amount?.toLocaleString()}</p>
-                                </div>
 
-                                <div className="mt-3 flex flex-wrap items-center gap-2 text-xs text-slate-500">
-                                    <span>{formatDate(t.date)}</span>
-                                    {t.details?.quantity && <span>QTY: {t.details.quantity}</span>}
-                                    {t.details?.createdBy && (
-                                        <span className="flex items-center gap-1 rounded bg-white/10 px-1.5 py-0.5 text-[10px] text-slate-400">
-                                            <User size={10} /> {t.details.createdBy.split('@')[0]}
-                                        </span>
-                                    )}
-                                </div>
+                                    <div className="mt-3 flex flex-wrap items-center gap-2 text-xs text-ink-2">
+                                        <span>{formatDate(t.date)}</span>
+                                        {t.details?.quantity && <span className="num">QTY: {t.details.quantity}</span>}
+                                        {t.details?.createdBy && (
+                                            <span className="badge border-line text-ink-2">
+                                                <User size={12} aria-hidden="true" /> {t.details.createdBy.split('@')[0]}
+                                            </span>
+                                        )}
+                                    </div>
 
-                                <div className="mt-4 flex justify-end border-t border-white/5 pt-3">
-                                    {renderActions(t)}
+                                    <div className="mt-4 flex justify-end border-t border-line pt-3">
+                                        {renderActions(t, 'justify-end')}
+                                    </div>
                                 </div>
-                            </div>
-                        ))
+                            ))}
+                        </div>
                     )}
                 </div>
 
                 <div className="hidden overflow-x-auto sm:block">
-                    <table className="w-full min-w-[780px] text-left border-collapse">
+                    <table className="w-full min-w-[780px] text-sm">
                         <thead>
-                            <tr className="text-slate-400 text-sm border-b border-white/5">
-                                <th className="p-4 font-medium">Description</th>
-                                <th className="p-4 font-medium">Category</th>
-                                <th className="p-4 font-medium">Date</th>
-                                <th className="p-4 font-medium text-center">Status</th>
-                                <th className="p-4 font-medium text-right">Amount</th>
-                                <th className="sticky right-0 z-10 bg-slate-900/95 p-4 font-medium text-center backdrop-blur">Action</th>
+                            <tr className="border-b border-line text-left text-ink-2">
+                                <th className="px-3 py-3 font-medium">Description</th>
+                                <th className="px-3 py-3 font-medium">Category</th>
+                                <th className="px-3 py-3 font-medium">Date</th>
+                                <th className="px-3 py-3 text-center font-medium">Status</th>
+                                <th className="px-3 py-3 text-right font-medium">Amount</th>
+                                <th className="sticky right-0 z-10 bg-surface px-3 py-3 text-center font-medium">Action</th>
                             </tr>
                         </thead>
-                        <tbody className="text-sm">
+                        <tbody>
                             {expenses.length === 0 ? (
                                 <tr>
-                                    <td colSpan="6" className="p-8 text-center text-slate-500">
+                                    <td colSpan="6" className="px-3 py-12 text-center text-ink-2">
                                         No expenses found.
                                     </td>
                                 </tr>
                             ) : (
                                 expenses.map(t => (
-                                    <tr key={t.id} className="border-b border-white/5 hover:bg-white/5 transition-colors group">
-                                        <td className="p-4 text-slate-200 font-medium">
+                                    <tr key={t.id} className="group border-b border-line transition-colors last:border-0 hover:bg-white/[0.04]">
+                                        <td className="px-3 py-3 font-medium text-ink">
                                             {t.description}
-                                            <div className="flex items-center gap-2 mt-1">
-                                                {t.details?.quantity && <span className="text-xs text-slate-500">QTY: {t.details.quantity}</span>}
+                                            <div className="mt-1 flex items-center gap-2">
+                                                {t.details?.quantity && <span className="text-xs text-ink-2 num">QTY: {t.details.quantity}</span>}
                                                 {t.details?.createdBy && (
-                                                    <span className="text-[10px] bg-white/10 px-1.5 py-0.5 rounded text-slate-400 flex items-center gap-1">
-                                                        <User size={10} /> {t.details.createdBy.split('@')[0]}
+                                                    <span className="badge border-line text-ink-2">
+                                                        <User size={12} aria-hidden="true" /> {t.details.createdBy.split('@')[0]}
                                                     </span>
                                                 )}
                                             </div>
                                         </td>
-                                        <td className="p-4">
-                                            <span className={clsx(
-                                                "px-2 py-1 rounded-md text-xs capitalize",
-                                                t.details?.club === CLUB_SLUG ? "bg-emerald-500/20 text-emerald-300" :
-                                                    t.category === 'blanks' ? "bg-indigo-500/20 text-indigo-300" :
-                                                    t.category === 'general' ? "bg-rose-500/20 text-rose-300" : "bg-orange-500/20 text-orange-300"
-                                            )}>
-                                                {t.details?.club === CLUB_SLUG ? 'Downtown Dinks' : t.category}
-                                            </span>
+                                        <td className="px-3 py-3">
+                                            {renderCategory(t)}
                                         </td>
-                                        <td className="p-4 text-slate-400">{formatDate(t.date)}</td>
-                                        <td className="p-4 text-center">
+                                        <td className="px-3 py-3 text-ink-2">{formatDate(t.date)}</td>
+                                        <td className="px-3 py-3 text-center">
                                             {renderStatus(t)}
                                         </td>
-                                        <td className="p-4 text-right text-rose-400 font-bold">
+                                        <td className="px-3 py-3 text-right font-semibold text-red-400 num">
                                             ₱{t.amount?.toLocaleString()}
                                         </td>
-                                        <td className="sticky right-0 z-10 bg-slate-900/95 p-4 text-center backdrop-blur group-hover:bg-slate-800/95">
-                                            {renderActions(t, "opacity-0 transition-opacity group-hover:opacity-100 focus-within:opacity-100")}
+                                        <td className="sticky right-0 z-10 bg-surface px-3 py-3 text-center group-hover:bg-[#171719]">
+                                            {renderActions(t, "opacity-100")}
                                         </td>
                                     </tr>
                                 ))
@@ -273,17 +301,19 @@ const Expenses = ({ transactions, onDeleteTransaction, onAddTransaction, onUpdat
                         </tbody>
                     </table>
                 </div>
-            </div>
+            </section>
 
             {/* Add/Edit Expense Modal */}
             {showAddModal && createPortal(
-                <div className="fixed inset-0 z-[9999] flex items-center justify-center bg-black/80 backdrop-blur-sm p-4">
-                    <AddExpenseForm
-                        onAddTransaction={onAddTransaction}
-                        onUpdateTransaction={onUpdateTransaction}
-                        initialData={editingTransaction}
-                        onClose={() => { setShowAddModal(false); setEditingTransaction(null); }}
-                    />
+                <div className="fixed inset-0 z-[9999] flex items-end justify-center bg-black/75 sm:items-center sm:p-6">
+                    <div className="max-h-[92dvh] w-full max-w-lg overflow-y-auto rounded-t-2xl sm:rounded-2xl">
+                        <AddExpenseForm
+                            onAddTransaction={onAddTransaction}
+                            onUpdateTransaction={onUpdateTransaction}
+                            initialData={editingTransaction}
+                            onClose={() => { setShowAddModal(false); setEditingTransaction(null); }}
+                        />
+                    </div>
                 </div>,
                 document.body
             )}

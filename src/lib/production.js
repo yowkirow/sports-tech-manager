@@ -27,6 +27,22 @@ export function productionCandidates(transactions, sources, jobs) {
 }
 
 export const newProductionRequest = (body) => ({ ...body, requestId: crypto.randomUUID() });
+
+// Wallet money arrives as integer centavos from the Worker; format without floating-point math.
+export function walletPeso(centavos) {
+    if (!Number.isSafeInteger(centavos)) return '₱—';
+    const sign = centavos < 0 ? '−' : '';
+    const absolute = Math.abs(centavos);
+    const cents = absolute % 100;
+    return `${sign}₱${Math.floor(absolute / 100).toLocaleString('en-PH')}${cents ? `.${String(cents).padStart(2, '0')}` : ''}`;
+}
+// Payout choices: every whole pay step up to the balance due, largest (the full balance) first.
+export function payoutSteps(balanceCentavos, rateCentavos) {
+    if (!Number.isSafeInteger(balanceCentavos) || !Number.isSafeInteger(rateCentavos) || rateCentavos <= 0) return [];
+    const steps = [];
+    for (let amount = Math.floor(balanceCentavos / rateCentavos) * rateCentavos; amount >= rateCentavos; amount -= rateCentavos) steps.push(amount);
+    return steps;
+}
 export const productionError = (error) => error?.status === 409
     ? 'This job or shirt line changed. Latest data has been requested. Check the counts, then retry; your input is still here.'
     : error?.status === 403

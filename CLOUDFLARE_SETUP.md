@@ -254,6 +254,33 @@ owner packing confirmation when printing is enabled. Historical already-ready
 orders are not given retroactive jobs for a payment-only change. Employees cannot
 release work, approve QA, change quantities on orders, mark payments or ship orders.
 
+### Print wallet (migration 0007)
+
+The employee's `/print` dashboard shows a shirt counter and wallet; the owner sees each
+print operator's counts and records payouts under Production > Employee accounts.
+
+- **Pay rule:** PHP 1,000 for every complete 30 shirts the owner accepts in QA. Partial
+  batches carry over as a count and are never paid in fractions. Self-reported
+  "printed" quantities and rejected shirts never count; a reprinted shirt counts once,
+  when its reprint is accepted. The rate lives in the Worker (`PRINT_RATE_SHIRTS`,
+  `PRINT_RATE_CENTAVOS`) and is returned by the API.
+- **Attribution:** each QA acceptance is credited to the member who certainly printed it:
+  every `printed` event since the job's pending count was last zero has that actor. Mixed
+  printers, or prints recorded by the owner, stay unattributed and are shown to the owner
+  as a count to settle outside the app; they are never credited by assignee.
+- **Money:** integer centavos only. Payouts are owner-only, whole PHP 1,000 steps,
+  idempotent by request ID, capped at the balance due inside the atomic D1 batch, and
+  append-only (no update or delete).
+- **API:** `GET /api/production/wallet` returns `{ wallet }` for a print operator (own
+  counts only; another `memberId` is 403) or `{ wallets, unattributed }` for the owner
+  (`?memberId=` returns one `{ wallet }`). `POST /api/production/payouts` takes
+  `{ operatorId, amountCentavos, note?, requestId }` and returns `{ payout, wallet }`.
+  Read-only environments refuse the POST like every other write.
+
+Apply `0007_print_wallet.sql` with `npm run db:staging`, then `npm run db:production`,
+**before** deploying code that reads it. The cutover `load-target` preflight requires the
+target's applied migration count to match this repository, so land 0007 only after cutover.
+
 ## Protected import and production cutover
 
 Every cutover command writes customer data, keys and file bytes only to a private

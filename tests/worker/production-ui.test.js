@@ -1,6 +1,6 @@
 import assert from 'node:assert/strict';
 import { test } from 'node:test';
-import { productionCandidates, productionLineKey, productionQuantity, productionError } from '../../src/lib/production.js';
+import { payoutSteps, productionCandidates, productionLineKey, productionQuantity, productionError, walletPeso } from '../../src/lib/production.js';
 
 test('production UI sends only normalized shirt source references and server snapshot tokens', () => {
     const transactions = [
@@ -32,4 +32,19 @@ test('production UI whole quantities never round decimals, negatives, overflow o
     assert.equal(productionQuantity('3', 10), 3);
     assert.match(productionError({ status: 409 }), /input is still here/);
     assert.match(productionError({ status: 403 }), /assignment changed/);
+});
+
+test('wallet money formats exact integer centavos and offers only whole pay steps up to the balance', () => {
+    assert.equal(walletPeso(0), '₱0');
+    assert.equal(walletPeso(100000), '₱1,000');
+    assert.equal(walletPeso(1234500), '₱12,345');
+    assert.equal(walletPeso(100050), '₱1,000.50');
+    assert.equal(walletPeso(-200000), '−₱2,000');
+    assert.equal(walletPeso(1000.5), '₱—');
+    assert.equal(walletPeso('100000'), '₱—');
+    assert.deepEqual(payoutSteps(300000, 100000), [300000, 200000, 100000]);
+    assert.deepEqual(payoutSteps(99999, 100000), []);
+    assert.deepEqual(payoutSteps(0, 100000), []);
+    assert.deepEqual(payoutSteps(-100000, 100000), []);
+    assert.deepEqual(payoutSteps(100000, 0), []);
 });

@@ -2,23 +2,22 @@ import React, { useState, useEffect } from 'react';
 import { api, apiRequest } from '../../lib/apiClient';
 import { useToast } from '../ui/Toast';
 import { User, Lock, Save, LogOut, Shield, MessageSquare, Send } from 'lucide-react';
-import { motion } from 'framer-motion';
 import ActivityLogViewer from './ActivityLogViewer';
 import ColorSettings from './ColorSettings';
 import BrandSettings from './BrandSettings';
 import ExpenseCategorySettings from './ExpenseCategorySettings';
+import { useReadOnly, READ_ONLY_HINT } from '../ui/ReadOnly';
 
 export default function ProfileSettings({ user, onLogout, onProfileChange, transactions = [], onAddTransaction }) {
     const { showToast } = useToast();
+    const readOnly = useReadOnly();
     const [loading, setLoading] = useState(false);
 
     const userRole = user?.user_metadata?.role;
     const isAdmin = userRole === 'owner';
 
-    // Profile State
     const [fullName, setFullName] = useState(user?.user_metadata?.full_name || '');
 
-    // TextBee State
     const [textbeeApiKey, setTextbeeApiKey] = useState('');
     const [textbeeDeviceId, setTextbeeDeviceId] = useState('');
     const [smsConfigured, setSmsConfigured] = useState(false);
@@ -111,105 +110,79 @@ export default function ProfileSettings({ user, onLogout, onProfileChange, trans
     };
 
     return (
-        <div className="max-w-4xl mx-auto space-y-8 pb-20">
-            <div className="flex justify-between items-center mb-6">
+        <div className="mx-auto max-w-4xl space-y-6 pb-20">
+            <div className="flex flex-col gap-4 sm:flex-row sm:items-end sm:justify-between">
                 <div>
-                    <h2 className="text-3xl font-bold text-white mb-1">Settings</h2>
-                    <p className="text-slate-400">Manage your account preferences</p>
+                    <h2 className="section-title">Settings</h2>
+                    <p className="mt-1 text-sm text-ink-2">Manage your account preferences</p>
                 </div>
-                <button
-                    onClick={onLogout}
-                    className="flex items-center gap-2 px-4 py-2 bg-red-500/10 text-red-400 border border-red-500/20 rounded-xl hover:bg-red-500/20 transition-colors"
-                >
-                    <LogOut size={18} /> Sign Out
+                <button type="button" onClick={onLogout} className="btn-danger">
+                    <LogOut size={18} aria-hidden="true" /> Sign Out
                 </button>
             </div>
 
-            <div className="grid md:grid-cols-2 gap-6">
-                {/* Profile Section */}
-                <motion.div
-                    initial={{ opacity: 0, y: 20 }}
-                    animate={{ opacity: 1, y: 0 }}
-                    className="glass-card space-y-6"
-                >
-                    <div className="flex items-center gap-3 border-b border-white/5 pb-4">
-                        <div className="p-2 bg-blue-500/20 text-blue-400 rounded-lg">
-                            <User size={24} />
-                        </div>
-                        <h3 className="text-xl font-bold text-white">Profile Information</h3>
+            <div className="grid gap-6 md:grid-cols-2">
+                <section className="surface space-y-5 p-5 sm:p-6" aria-labelledby="profile-info-title">
+                    <div className="flex items-start gap-3 border-b border-line pb-4">
+                        <User size={22} aria-hidden="true" className="mt-0.5 text-ink-3" />
+                        <h3 id="profile-info-title" className="section-title">Profile Information</h3>
                     </div>
 
                     <form onSubmit={handleUpdateProfile} className="space-y-4">
                         <div>
-                            <label className="text-xs font-bold text-slate-500 uppercase block mb-2">Display Name</label>
+                            <label htmlFor="settings-display-name" className="field-label">Display Name</label>
                             <input
+                                id="settings-display-name"
                                 type="text"
                                 value={fullName}
                                 onChange={(e) => setFullName(e.target.value)}
                                 placeholder="e.g. Juan Dela Cruz"
-                                className="glass-input w-full"
+                                disabled={readOnly}
+                                className="field"
                             />
-                            <p className="text-xs text-slate-500 mt-2">This name will be displayed in the sidebar.</p>
+                            <p className="mt-2 text-xs text-ink-2">This name will be displayed in the sidebar.</p>
                         </div>
-                        <div className="pt-2">
-                            <button type="submit" disabled={loading} className="btn-primary w-full">
-                                <Save size={18} /> Save Changes
-                            </button>
-                        </div>
+                        <button type="submit" disabled={readOnly || loading} title={readOnly ? READ_ONLY_HINT : undefined} className="btn-primary w-full">
+                            <Save size={18} aria-hidden="true" /> Save Changes
+                        </button>
                     </form>
-                </motion.div>
+                </section>
 
-                {/* Access session */}
-                <motion.div
-                    initial={{ opacity: 0, y: 20 }}
-                    animate={{ opacity: 1, y: 0 }}
-                    transition={{ delay: 0.1 }}
-                    className="glass-card space-y-6"
-                >
-                    <div className="flex items-center gap-3 border-b border-white/5 pb-4">
-                        <div className="p-2 bg-purple-500/20 text-purple-400 rounded-lg">
-                            <Shield size={24} />
-                        </div>
+                <section className="surface space-y-5 p-5 sm:p-6" aria-labelledby="secure-access-title">
+                    <div className="flex items-start gap-3 border-b border-line pb-4">
+                        <Shield size={22} aria-hidden="true" className="mt-0.5 text-ink-3" />
                         <div>
-                            <h3 className="text-xl font-bold text-white">Secure Access</h3>
-                            <p className="text-xs text-slate-400">Managed by Cloudflare Access</p>
+                            <h3 id="secure-access-title" className="section-title">Secure Access</h3>
+                            <p className="mt-1 text-xs text-ink-2">Managed by Cloudflare Access</p>
                         </div>
                     </div>
 
                     <div className="space-y-4">
-                        <p className="text-sm text-slate-400">Sign-in and verification are handled outside this app. Local passwords and quick PINs are no longer used.</p>
-                        <button onClick={onLogout} className="btn-primary w-full">
-                            <Lock size={18} /> Lock and sign out
+                        <p className="text-sm text-ink-2">Sign-in and verification are handled outside this app. Local passwords and quick PINs are no longer used.</p>
+                        <button type="button" onClick={onLogout} className="btn-danger w-full">
+                            <Lock size={18} aria-hidden="true" /> Lock and sign out
                         </button>
                     </div>
-                </motion.div>
+                </section>
 
-                {/* TextBee Gateway Section */}
                 {isAdmin && (
-                    <motion.div
-                        initial={{ opacity: 0, y: 20 }}
-                        animate={{ opacity: 1, y: 0 }}
-                        transition={{ delay: 0.3 }}
-                        className="glass-card md:col-span-2 space-y-6"
-                    >
-                        <div className="flex items-center gap-3 border-b border-white/5 pb-4">
-                            <div className="p-2 bg-orange-500/20 text-orange-400 rounded-lg">
-                                <MessageSquare size={24} />
-                            </div>
+                    <section className="surface space-y-5 p-5 sm:p-6 md:col-span-2" aria-labelledby="textbee-title">
+                        <div className="flex items-start gap-3 border-b border-line pb-4">
+                            <MessageSquare size={22} aria-hidden="true" className="mt-0.5 text-ink-3" />
                             <div>
-                                <h3 className="text-xl font-bold text-white">TextBee SMS Gateway</h3>
-                                <p className="text-xs text-slate-400">Send automated notifications via textbee.dev</p>
+                                <h3 id="textbee-title" className="section-title">TextBee SMS Gateway</h3>
+                                <p className="mt-1 text-xs text-ink-2">Send automated notifications via textbee.dev</p>
                             </div>
                         </div>
 
-                        {smsError && <div role="alert" className="text-sm text-red-300">
+                        {smsError && <div role="alert" className="rounded-xl border border-red-500/40 bg-red-500/10 p-4 text-sm text-red-200">
                             {smsError}
-                            <button type="button" onClick={() => setSmsAttempt(value => value + 1)} className="btn-secondary ml-3">Retry</button>
+                            <button type="button" onClick={() => setSmsAttempt(value => value + 1)} className="btn-secondary ml-3 min-h-10 px-4 py-2">Retry</button>
                         </div>}
-                        <div className="grid md:grid-cols-2 gap-6">
+                        <div className="grid gap-6 md:grid-cols-2">
                             <div className="space-y-4">
                                 <div>
-                                    <label htmlFor="sms-api-key" className="text-xs font-bold text-slate-500 uppercase block mb-2">Replacement API Key</label>
+                                    <label htmlFor="sms-api-key" className="field-label">Replacement API Key</label>
                                     <input
                                         id="sms-api-key"
                                         type="password"
@@ -217,60 +190,63 @@ export default function ProfileSettings({ user, onLogout, onProfileChange, trans
                                         value={textbeeApiKey}
                                         onChange={(e) => setTextbeeApiKey(e.target.value)}
                                         placeholder={smsConfigured ? 'Configured — leave blank to keep' : 'Enter a new API key'}
-                                        className="glass-input w-full"
+                                        disabled={readOnly}
+                                        className="field"
                                     />
-                                    <p className="text-xs text-slate-400 mt-2">The saved key is never returned to this browser. Save changes before sending a test.</p>
+                                    <p className="mt-2 text-xs text-ink-2">The saved key is never returned to this browser. Save changes before sending a test.</p>
                                 </div>
                                 <div>
-                                    <label className="text-xs font-bold text-slate-500 uppercase block mb-2">Device ID</label>
+                                    <label htmlFor="sms-device-id" className="field-label">Device ID</label>
                                     <input
+                                        id="sms-device-id"
                                         type="text"
                                         value={textbeeDeviceId}
                                         onChange={(e) => setTextbeeDeviceId(e.target.value)}
                                         placeholder="your-android-device-id"
-                                        className="glass-input w-full"
+                                        disabled={readOnly}
+                                        className="field"
                                     />
                                 </div>
-                                <div className="flex items-center gap-2 py-2">
+                                <div className="flex min-h-11 items-center gap-3">
                                     <input
                                         type="checkbox"
                                         id="enableSms"
                                         checked={enableSmsNotifications}
                                         onChange={(e) => setEnableSmsNotifications(e.target.checked)}
-                                        className="w-4 h-4 rounded border-white/10 bg-white/5 text-primary"
+                                        disabled={readOnly}
+                                        className="size-5 rounded border-line bg-raised text-primary"
                                     />
-                                    <label htmlFor="enableSms" className="text-sm text-slate-300 cursor-pointer">
+                                    <label htmlFor="enableSms" className="cursor-pointer text-sm text-ink-2">
                                         Enable SMS Notifications for Sales
                                     </label>
                                 </div>
 
-                                <div className="space-y-4 pt-2 border-t border-white/5">
-                                    <div className="flex items-center gap-2">
+                                <div className="space-y-4 border-t border-line pt-4">
+                                    <div className="flex min-h-11 items-center gap-3">
                                         <input
                                             type="checkbox"
                                             id="enableTrackingSms"
                                             checked={enableTrackingSms}
                                             onChange={(e) => setEnableTrackingSms(e.target.checked)}
-                                            className="w-4 h-4 rounded border-white/10 bg-white/5 text-primary"
+                                            disabled={readOnly}
+                                            className="size-5 rounded border-line bg-raised text-primary"
                                         />
-                                        <label htmlFor="enableTrackingSms" className="text-sm text-slate-300 cursor-pointer">
+                                        <label htmlFor="enableTrackingSms" className="cursor-pointer text-sm text-ink-2">
                                             Enable Tracking SMS for Orders
                                         </label>
                                     </div>
 
                                     {enableTrackingSms && (
-                                        <motion.div
-                                            initial={{ opacity: 0, height: 0 }}
-                                            animate={{ opacity: 1, height: 'auto' }}
-                                            className="space-y-2"
-                                        >
-                                            <label className="text-[10px] font-bold text-slate-500 uppercase block">Tracking SMS Template</label>
+                                        <div className="space-y-2">
+                                            <label htmlFor="tracking-sms-template" className="field-label">Tracking SMS Template</label>
                                             <textarea
+                                                id="tracking-sms-template"
                                                 value={trackingSmsTemplate}
                                                 onChange={(e) => setTrackingSmsTemplate(e.target.value)}
                                                 rows={3}
                                                 placeholder="Hi {customerName}, your order has been shipped! Tracking: {trackingNumber}"
-                                                className="glass-input w-full text-sm resize-none"
+                                                disabled={readOnly}
+                                                className="field resize-none text-sm"
                                             />
                                             <div className="flex flex-wrap gap-2">
                                                 {['{customerName}', '{trackingNumber}', '{trackingLink}', '{orderId}'].map(tag => (
@@ -278,101 +254,80 @@ export default function ProfileSettings({ user, onLogout, onProfileChange, trans
                                                         key={tag}
                                                         type="button"
                                                         onClick={() => setTrackingSmsTemplate(prev => prev + tag)}
-                                                        className="text-[10px] px-2 py-1 rounded bg-white/5 text-slate-400 hover:text-white hover:bg-white/10"
+                                                        disabled={readOnly}
+                                                        title={readOnly ? READ_ONLY_HINT : undefined}
+                                                        className="chip h-9 px-3 font-mono text-xs"
                                                     >
                                                         {tag}
                                                     </button>
                                                 ))}
                                             </div>
-                                        </motion.div>
+                                        </div>
                                     )}
                                 </div>
 
                                 <button
+                                    type="button"
                                     onClick={handleSaveTextBeeSettings}
-                                    disabled={loading || !smsLoaded}
-                                    className="btn-primary w-full bg-orange-600 hover:bg-orange-500"
+                                    disabled={readOnly || loading || !smsLoaded}
+                                    title={readOnly ? READ_ONLY_HINT : undefined}
+                                    className="btn-primary w-full"
                                 >
-                                    <Save size={18} /> Save Settings
+                                    <Save size={18} aria-hidden="true" /> Save Settings
                                 </button>
                             </div>
 
-                            <div className="space-y-4 p-4 rounded-xl bg-white/5 border border-white/5">
-                                <h4 className="text-sm font-bold text-white">Verification</h4>
-                                <p className="text-xs text-slate-400">Send a test SMS to verify your connection.</p>
+                            <div className="space-y-4 rounded-xl border border-line bg-raised p-4">
+                                <h4 className="font-semibold text-ink">Verification</h4>
+                                <p className="text-xs text-ink-2">Send a test SMS to verify your connection.</p>
                                 <div>
-                                    <label className="text-xs font-bold text-slate-500 uppercase block mb-2">Test Recipient Number</label>
+                                    <label htmlFor="test-recipient-number" className="field-label">Test Recipient Number</label>
                                     <input
+                                        id="test-recipient-number"
                                         type="text"
                                         value={testRecipient}
                                         onChange={(e) => setTestRecipient(e.target.value)}
                                         placeholder="+639123456789"
-                                        className="glass-input w-full"
+                                        disabled={readOnly}
+                                        className="field"
                                     />
                                 </div>
                                 <button
+                                    type="button"
                                     onClick={handleSendTestSms}
-                                    disabled={loading || !smsLoaded || !smsConfigured || !textbeeDeviceId}
-                                    className="w-full flex items-center justify-center gap-2 px-4 py-2 bg-blue-500/10 text-blue-400 border border-blue-500/20 rounded-xl hover:bg-blue-500/20 transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
+                                    disabled={readOnly || loading || !smsLoaded || !smsConfigured || !textbeeDeviceId}
+                                    title={readOnly ? READ_ONLY_HINT : undefined}
+                                    className="btn-secondary w-full"
                                 >
-                                    <Send size={18} /> Send Test SMS
+                                    <Send size={18} aria-hidden="true" /> Send Test SMS
                                 </button>
                             </div>
                         </div>
-                    </motion.div>
+                    </section>
                 )}
-
             </div>
 
-
-
-            {/* AUDIT & DATA MANAGEMENT */}
             {isAdmin && (
-                <div className="space-y-8 pt-8 border-t border-white/5">
-                    <motion.div
-                        initial={{ opacity: 0, y: 20 }}
-                        animate={{ opacity: 1, y: 0 }}
-                        transition={{ delay: 0.1 }}
-                    >
-                        <ColorSettings
-                            transactions={transactions}
-                            onAddTransaction={onAddTransaction}
-                        />
-                    </motion.div>
+                <div className="space-y-6 border-t border-line pt-6">
+                    <ColorSettings
+                        transactions={transactions}
+                        onAddTransaction={onAddTransaction}
+                    />
 
-                    <motion.div
-                        initial={{ opacity: 0, y: 20 }}
-                        animate={{ opacity: 1, y: 0 }}
-                        transition={{ delay: 0.2 }}
-                    >
-                        <BrandSettings
-                            transactions={transactions}
-                            onAddTransaction={onAddTransaction}
-                        />
-                    </motion.div>
+                    <BrandSettings
+                        transactions={transactions}
+                        onAddTransaction={onAddTransaction}
+                    />
 
-                    <motion.div
-                        initial={{ opacity: 0, y: 20 }}
-                        animate={{ opacity: 1, y: 0 }}
-                        transition={{ delay: 0.3 }}
-                    >
-                        <ExpenseCategorySettings />
-                    </motion.div>
+                    <ExpenseCategorySettings />
 
-                    {/* Audit Logs Section */}
-                    <motion.div
-                        initial={{ opacity: 0, y: 20 }}
-                        animate={{ opacity: 1, y: 0 }}
-                        transition={{ delay: 0.4 }}
-                    >
-                        <ActivityLogViewer user={user} userRole={userRole} />
-                    </motion.div>
+                    <ActivityLogViewer user={user} userRole={userRole} />
                 </div>
             )}
 
-            <div className="text-center text-slate-500 text-sm mt-8">
-                <p>Logged in as: <span className="text-white font-mono">{user?.email}</span></p>
+            <div className="text-center text-sm text-ink-2">
+                <p>Logged in as: <span className="num font-semibold text-ink">{user?.email}</span></p>
             </div>
-        </div >
+        </div>
     );
 }
