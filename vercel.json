@@ -1,6 +1,12 @@
 {
     "redirects": [
         {
+            "source": "/",
+            "has": [{ "type": "host", "value": "sports-tech-manager.vercel.app" }],
+            "destination": "https://www.sportstechph.store/",
+            "permanent": true
+        },
+        {
             "source": "/:path*",
             "has": [{ "type": "host", "value": "sports-tech-manager.vercel.app" }],
             "destination": "https://www.sportstechph.store/:path*",

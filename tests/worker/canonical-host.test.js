@@ -27,11 +27,13 @@ test('the canonical host and unlisted hosts are served normally', async () => {
     assert.equal(canonicalRedirect(new Request('https://www.sportstechph.store/'), 'www.sportstechph.store', 'www.sportstechph.store'), null);
 });
 
-test('the retired Vercel hostname redirects without affecting previews or the live domain before cutover', () => {
+test('the retired Vercel hostname redirects every path, including the root, to the canonical storefront', () => {
     const config = JSON.parse(readFileSync(new URL('../../vercel.json', import.meta.url), 'utf8'));
-    assert.deepEqual(config.redirects, [{
-        source: '/:path*', has: [{ type: 'host', value: 'sports-tech-manager.vercel.app' }],
-        destination: 'https://www.sportstechph.store/:path*', permanent: true
-    }]);
+    const host = [{ type: 'host', value: 'sports-tech-manager.vercel.app' }];
+    // Vercel serves the static index for "/" before a "/:path*" redirect matches it.
+    assert.deepEqual(config.redirects, [
+        { source: '/', has: host, destination: 'https://www.sportstechph.store/', permanent: true },
+        { source: '/:path*', has: host, destination: 'https://www.sportstechph.store/:path*', permanent: true }
+    ]);
     assert.deepEqual(config.rewrites, [{ source: '/(.*)', destination: '/index.html' }]);
 });
