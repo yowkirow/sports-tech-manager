@@ -17,39 +17,48 @@ Failure to use the `@git-pushing` or `@supabase-automation` workflows for their 
 
 ## Automatic Deployment
 
-After each completed code change set, run the relevant checks and production build, commit the changes, and push the working branch so the connected Vercel integration deploys them. Deploy completed change sets, not intermediate edits.
+After each completed code change set, run the relevant checks and production build, commit the changes, push, and deploy it as described below. Deploy completed change sets, not intermediate edits.
 
-Verify the deployment status for the exact pushed commit and report its URL and environment. A successful Git push alone does not confirm a successful deployment.
+Verify the deployment for the exact pushed commit and report its URL/version and environment. A successful Git push alone does not confirm a successful deployment.
 
-Working branches use Vercel preview deployments. Production remains tied to `main`; do not merge or push to `main` solely to deploy unless the user explicitly requests a production release. Report deployment failures or missing Vercel integration instead of claiming the changes are live.
+## Production on Cloudflare (since October 7, 2026)
 
-## Cloudflare Migration Staging
+`www.sportstechph.store` and the bare domain are served by the `sportstech-production`
+Worker (`wrangler.production.jsonc`): D1 `sportstech-production`, R2
+`sportstech-production-media`, Access app **SportsTech production** on `/admin` and
+`/print`. A production release is: tests + `npm run check:worker` + `npm run build`,
+commit, push, apply any new migration with `npm run db:production` **before** the code
+that needs it, then `npm run deploy:production`, and verify `/health` reports the new
+version. Release to production only when the user requests or approves it; merging to
+`main` alone does not deploy the Worker.
 
-Until the separately verified production cutover, Vercel and Supabase remain the
-live application. Owner review uses `wrangler.staging.jsonc` and the isolated
-`sportstech-staging` resources.
+Vercel now only redirects `sports-tech-manager.vercel.app` to `www` (from `vercel.json`
+on `main`). Working branches still get Vercel previews, but they are not wired to the
+APIs. The old Supabase project is frozen (browser writes revoked) and kept as the
+rollback copy; do not unfreeze, cancel or delete Supabase or Vercel without explicit
+approval.
+
+## Cloudflare staging
+
+Owner review uses `wrangler.staging.jsonc` and the isolated `sportstech-staging`
+resources (read-only snapshot).
 
 For a completed staging change set, run `npm run check:worker`, the relevant tests
 and the frontend build; apply required staging migrations, commit/push the working
 branch, and run `npm run deploy:staging`. Verify the exact Worker version and the
-expected authentication-denial behavior as well as the branch's Vercel preview.
-Do not interpret a successful staging deploy as permission to change Hostinger
-nameservers, redirect the live domain, grant employee access, or retire Supabase.
+expected authentication-denial behavior.
+Do not interpret a successful staging deploy as permission to deploy production or
+grant employee access.
 
 The owner approved Workers Paid on September 22, 2026. Keep the explicit
 1,000 ms per-request CPU ceiling; it is not a monthly spending cap or permission
 to upgrade other services.
 
-Production preparation uses `wrangler.production.jsonc` with separate D1/R2
-resources, writes and printing disabled, no public routes, `workers.dev` disabled,
-and preview URLs disabled. Run `npm run deploy:production` to build fresh
-non-staging assets before upload. Do not build/deploy staging and production
-concurrently because they share `dist`. Preparing an unrouted production Worker
-does not authorize a live cutover; production Access, account approval, the
-write-frozen final import, reconciliation and rollback gates still apply.
+Production runs the Worker first for every request (`run_worker_first: true`) so the
+bare domain redirects to `www`. Do not build/deploy staging and production
+concurrently because they share `dist`.
 
 The cutover tools in `scripts\cutover` write only to private directories outside
 the repository. `freeze`, `unfreeze` and `load-target` require explicit `--confirm`
-values. Freeze the live source only inside a cutover window where production Access,
-the final import and DNS routing can follow immediately; a freeze makes the old
-store read-only. Rehearsals must stay rollback-only or use temporary resources.
+values. `load-target` refuses a database that already holds data; never re-run it
+against live production.

@@ -1,10 +1,10 @@
-# Cloudflare migration and staging
+# Cloudflare production and staging
 
-Production remains on Vercel and Supabase until the cutover below is completed.
-The integrated React app, business APIs and print workflow run in isolated,
-owner-protected staging. Its imported source snapshot is read-only by default.
-Do not redirect live traffic or retire the source database merely because staging
-has deployed successfully.
+**Production moved to Cloudflare on October 7, 2026.** `www.sportstechph.store` and the
+bare domain are served by the `sportstech-production` Worker with its own D1 database
+and R2 bucket. The old Vercel/Supabase app is frozen and kept as the rollback copy;
+Vercel only redirects `sports-tech-manager.vercel.app` to `www`. Owner-protected,
+read-only staging remains available for reviewing changes before release.
 
 ## Prerequisites
 
@@ -14,12 +14,13 @@ authenticated Wrangler profile or your secret manager; never commit tokens,
 
 `wrangler.staging.jsonc` targets only `sportstech-staging`. The D1 binding is a
 separate database, not a link to any existing app's database.
-`wrangler.production.jsonc` prepares a separate production Worker, D1 database
-and R2 bucket. Until cutover it has no committed routes, no `workers.dev`
-endpoint, no preview URLs, no writes and no enabled printing; it does carry the
-production Access audience. Deploying it is preparation only and cannot replace the
-current live store. (Before cutover, only the probe routes `/health` and
-`/api/session` on `www` reach it; see the cutover checklist.)
+`wrangler.production.jsonc` is the live production Worker: routes for
+`www.sportstechph.store/*` and `sportstechph.store/*`, writes enabled, printing not
+yet enabled, no `workers.dev` endpoint or preview URLs, and the production Access
+audience. It runs the Worker first for every request (`run_worker_first: true`) so
+the bare domain always redirects to `www`; with path-limited Worker-first routing,
+static pages on the bare domain would bypass the redirect and their API calls would
+fail. **`npm run deploy:production` changes the live store.**
 
 ```powershell
 npm run check:worker
@@ -342,15 +343,30 @@ Then route traffic to the Worker:
    `www.sportstechph.store`. Merging earlier would serve the new frontend on Vercel
    without its APIs.
 
+**Executed October 7, 2026.** The source was frozen at 12:48 PHT (12 revokes,
+browser writes 10 → 0, reads intact; grant snapshot saved in the private cutover
+directory). The frozen export (1,643 transactions, 132 files) loaded into production
+and reconciled exactly: 1,643 transactions, 364 orders, 5 customers, 2 referrers,
+132 media, 1,658 archive rows and 2 SMS settings, owner only. The one new file was
+uploaded and SHA-256 verified. Before routing, a probe showed the bare-domain route
+would bypass the redirect for static pages, so production now runs the Worker first
+for every request (verified on probe paths first). Worker version
+`64fc1334-ad65-45bc-b326-399751f5be34` went live with writes enabled at about
+13:00 PHT, roughly 12 minutes after the freeze. Storefront, catalog (51 products,
+94 stock keys), migrated images, tracking, `/admin` and `/print` Access redirects,
+private-API 401s and 301 redirects were verified. `main` was fast-forwarded to
+`de065c8`; Vercel production now 308-redirects `sports-tech-manager.vercel.app`
+to `www`.
+
 ### 3. Rollback
 
 - **Before production accepts writes:** redeploy with no routes (traffic returns
   to Vercel through the proxy) and reopen the old database exactly with
   `source-freeze.mjs --mode=unfreeze --snapshot=<saved snapshot> --confirm=unfreeze-sportstech-source`.
-- **After production accepts writes:** switch `MUTATIONS_ENABLED` back to `"false"`
-  first. Orders taken on Cloudflare must be copied back into Supabase and
-  reconciled before unfreezing it; changing DNS alone would lose them. This
-  reverse copy is manual and not automated.
+- **After production accepts writes (current state):** switch `MUTATIONS_ENABLED`
+  back to `"false"` first. Orders taken on Cloudflare must be copied back into
+  Supabase and reconciled before unfreezing it; changing routes or DNS alone would
+  lose them. This reverse copy is manual and not automated.
 
 Only one backend may accept live financial writes. Keep the frozen Supabase
 project, the Vercel project and every private export. Do not cancel paid source
