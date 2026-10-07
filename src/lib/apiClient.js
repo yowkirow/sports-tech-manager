@@ -1,11 +1,15 @@
 export class ApiError extends Error {
-    constructor(message, status, code) {
+    constructor(message, status, code, details = {}) {
         super(message);
         this.name = 'ApiError';
         this.status = status;
         this.code = code;
+        this.details = details;
     }
 }
+
+export const PIN_REQUIRED_EVENT = 'sportstech:pin-required';
+export const PIN_UNLOCKED_EVENT = 'sportstech:pin-unlocked';
 
 async function decodeResponse(response) {
     const contentType = response.headers.get('content-type') || '';
@@ -19,7 +23,12 @@ async function decodeResponse(response) {
         throw new ApiError('The response could not be verified. Reload before retrying.', response.status, 'invalid_response');
     }
     if (!response.ok) {
-        throw new ApiError(data?.error?.message || 'The request failed. Please try again.', response.status, data?.error?.code);
+        const code = data?.error?.code;
+        // The server enforces the daily PIN; let the workspace show the PIN screen.
+        if ((code === 'pin_required' || code === 'pin_setup_required') && typeof window !== 'undefined') {
+            window.dispatchEvent(new Event(PIN_REQUIRED_EVENT));
+        }
+        throw new ApiError(data?.error?.message || 'The request failed. Please try again.', response.status, code, data?.error || {});
     }
     return data;
 }
@@ -52,6 +61,13 @@ export const api = {
     getProfile: () => apiRequest('/api/profile'),
     updateProfile: updates => apiRequest('/api/profile', { method: 'PATCH', body: updates }),
     logout: () => { window.location.assign('/cdn-cgi/access/logout'); },
+    pin: {
+        setup: pin => apiRequest('/api/pin/setup', { method: 'POST', body: { pin } }),
+        unlock: pin => apiRequest('/api/pin/unlock', { method: 'POST', body: { pin } }),
+        change: (currentPin, pin) => apiRequest('/api/pin/change', { method: 'POST', body: { currentPin, pin } }),
+        reset: pin => apiRequest('/api/pin/reset', { method: 'POST', body: { pin } }),
+        lock: () => apiRequest('/api/pin/lock', { method: 'POST', body: {} })
+    },
     uploadProductImage: async file => {
         return requestJson('/api/media/products', {
             method: 'POST',

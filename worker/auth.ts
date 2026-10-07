@@ -10,6 +10,8 @@ export interface AccessConfiguration {
 export interface AccessIdentity {
     subject: string;
     email: string;
+    /** Seconds since epoch when Access issued this application token. */
+    issuedAt: number;
 }
 
 export interface Member {
@@ -73,7 +75,7 @@ export async function verifyAccessIdentity(
             || typeof payload.iat !== 'number' || payload.iat > Math.floor(Date.now() / 1000) + 30) {
             throw new HttpError(401, 'invalid_identity', 'A valid individual account is required.');
         }
-        return { subject: payload.sub, email: payload.email.toLowerCase() };
+        return { subject: payload.sub, email: payload.email.toLowerCase(), issuedAt: payload.iat };
     } catch (error) {
         if (error instanceof HttpError) throw error;
         if (error instanceof errors.JWTExpired || error instanceof errors.JWTClaimValidationFailed

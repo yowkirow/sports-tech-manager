@@ -1,7 +1,7 @@
 import type { AppEnv } from './env.ts';
 import { HttpError } from './errors.ts';
 import { isObject, json, readJson } from './http.ts';
-import { findMember, verifyAccessIdentity } from './auth.ts';
+import { authorizedMember } from './pin.ts';
 import { saveGuestOrder } from './public-order-store.ts';
 import { canonical } from './order-store.ts';
 import { buildPublicCatalog } from '../src/lib/publicCatalog.js';
@@ -682,7 +682,7 @@ async function receiptDownload(request: Request, env: AppEnv, id: string) {
         if (!receipt.order_id) throw new HttpError(403, 'receipt_unavailable', 'This receipt is not attached to an order.');
         await authorizedOrder(request, env, receipt.order_id);
     } else {
-        const member = await findMember(env.DB, await verifyAccessIdentity(request, env));
+        const member = await authorizedMember(request, env);
         if (member.role !== 'owner') throw new HttpError(403, 'receipt_unavailable', 'Only the owner can review this receipt.');
     }
     const object = await env.MEDIA.get(receipt.object_key);

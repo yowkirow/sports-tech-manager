@@ -120,6 +120,36 @@ come from D1, not browser storage, editable user metadata or Access headers alon
 Inactive/unrecognized members are denied. Key-service/database failures produce
 explicit service errors, not successful anonymous fallbacks.
 
+### Daily PIN (owner request, October 7, 2026)
+
+Access (an emailed code) identifies the member for the Access application session;
+a 4–6 digit PIN then opens the app on that device. The PIN is enforced by the Worker
+(`worker/pin.ts`, migration `0008_member_pins.sql`), not only hidden in the UI: every
+private API except `/api/session` and `/api/pin/*`, plus private media and owner receipt
+downloads, returns `428 pin_setup_required` or `423 pin_required` until the device holds
+a current unlock. `/api/session` returns the PIN state and withholds the profile while
+locked.
+
+- PINs are stored as PBKDF2-SHA256 hashes (100,000 iterations, per-member salt);
+  repeated or sequential PINs such as `1111` or `1234` are rejected.
+- An unlock is an HttpOnly, Secure, `SameSite=Strict` cookie (`st_pin`), HMAC-signed with
+  a key derived from `GUEST_TOKEN_SECRET`, valid 12 hours and bound to the member, the
+  Access subject and the PIN version. Changing or resetting the PIN invalidates every
+  other device's unlock.
+- Five wrong PINs lock unlocking for 15 minutes; each later miss re-locks it, and ten
+  misses lock it for 24 hours. The correct PIN does not bypass an active lock.
+- A forgotten PIN is reset only within 10 minutes after Access issues a new token
+  (sign out, then sign in with a new emailed code). Access can renew a token from its
+  global session without a new code, so this is a convenience check, not a second
+  factor; keep Access as the identity boundary.
+- PIN endpoints stay available during read-only maintenance; they store no business data.
+- The old app's shared PIN login (a short PIN tried as a password for each admin) is
+  not restored.
+
+To make the emailed code a roughly monthly step, set the **SportsTech production**
+Access application's session duration to 1 month in the Cloudflare dashboard (the
+CLI token cannot edit Access applications).
+
 Resellers can edit only their own unpaid, pending orders. The server rebuilds
 quantity/removal pricing using the existing reseller policy, verifies complete
 source snapshots and ownership inside the write batch, and rechecks membership

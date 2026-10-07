@@ -8,6 +8,50 @@ import BrandSettings from './BrandSettings';
 import ExpenseCategorySettings from './ExpenseCategorySettings';
 import { useReadOnly, READ_ONLY_HINT } from '../ui/ReadOnly';
 
+function ChangePinForm() {
+    const { showToast } = useToast();
+    const [form, setForm] = useState({ current: '', next: '', confirm: '' });
+    const [busy, setBusy] = useState(false);
+    const [message, setMessage] = useState(null);
+    const set = key => event => setForm(current => ({ ...current, [key]: event.target.value.replace(/\D/g, '').slice(0, 6) }));
+    const submit = async event => {
+        event.preventDefault();
+        if (form.next !== form.confirm) { setMessage('The new PINs do not match.'); return; }
+        setBusy(true);
+        setMessage(null);
+        try {
+            await api.pin.change(form.current, form.next);
+            setForm({ current: '', next: '', confirm: '' });
+            showToast('PIN changed. Other devices will ask for the new PIN.', 'success');
+        } catch (error) {
+            setMessage(error.code === 'pin_incorrect' ? 'Your current PIN is incorrect.'
+                : error.code === 'pin_locked' ? 'Too many incorrect PINs. Try again later.' : error.message);
+        } finally {
+            setBusy(false);
+        }
+    };
+    const field = (key, label) => (
+        <div>
+            <label htmlFor={`pin-${key}`} className="field-label">{label}</label>
+            <input id={`pin-${key}`} type="password" inputMode="numeric" autoComplete="off" pattern="[0-9]*" maxLength={6}
+                value={form[key]} onChange={set(key)} className="field tracking-[0.4em]" />
+        </div>
+    );
+    return (
+        <form onSubmit={submit} className="space-y-3 rounded-xl border border-line p-4" aria-labelledby="change-pin-title">
+            <h4 id="change-pin-title" className="text-sm font-semibold text-ink">Change PIN</h4>
+            {field('current', 'Current PIN')}
+            {field('next', 'New PIN (4–6 digits)')}
+            {field('confirm', 'New PIN again')}
+            {message && <p role="alert" className="text-sm text-red-300">{message}</p>}
+            <button type="submit" className="btn-secondary w-full"
+                disabled={busy || form.current.length < 4 || form.next.length < 4 || form.confirm.length < 4}>
+                {busy ? 'Saving…' : 'Change PIN'}
+            </button>
+        </form>
+    );
+}
+
 export default function ProfileSettings({ user, onLogout, onProfileChange, transactions = [], onAddTransaction }) {
     const { showToast } = useToast();
     const readOnly = useReadOnly();
@@ -158,9 +202,13 @@ export default function ProfileSettings({ user, onLogout, onProfileChange, trans
                     </div>
 
                     <div className="space-y-4">
-                        <p className="text-sm text-ink-2">Sign-in and verification are handled outside this app. Local passwords and quick PINs are no longer used.</p>
+                        <p className="text-sm text-ink-2">
+                            Each device stays signed in after you enter an emailed code. Your PIN opens the app,
+                            and the app locks again after 12 hours or when you choose Lock.
+                        </p>
+                        <ChangePinForm />
                         <button type="button" onClick={onLogout} className="btn-danger w-full">
-                            <Lock size={18} aria-hidden="true" /> Lock and sign out
+                            <Lock size={18} aria-hidden="true" /> Sign out of this device
                         </button>
                     </div>
                 </section>

@@ -1,10 +1,10 @@
 import React, { lazy, Suspense, useState } from 'react';
 import useTransactions from './hooks/useTransactions';
 import { createPortal } from 'react-dom';
-import { LayoutDashboard, Store, ShoppingBag, Package, LogOut, Wallet, Banknote, Menu, Link2, Ticket, Settings as SettingsIcon, ClipboardList, TrendingUp, Trophy, Printer, RefreshCw } from 'lucide-react';
+import { LayoutDashboard, Store, ShoppingBag, Package, LogOut, Lock, Wallet, Banknote, Menu, Link2, Ticket, Settings as SettingsIcon, ClipboardList, TrendingUp, Trophy, Printer, RefreshCw } from 'lucide-react';
 import clsx from 'clsx';
 import { useToast } from './components/ui/Toast';
-import { api, apiRequest } from './lib/apiClient';
+import { api, apiRequest, PIN_REQUIRED_EVENT, PIN_UNLOCKED_EVENT } from './lib/apiClient';
 import LoadingState from './components/ui/LoadingState';
 import Dialog from './components/ui/Dialog';
 import Logo from './components/ui/Logo';
@@ -24,6 +24,7 @@ const SupplierManager = lazy(() => import('./components/Supplier/SupplierManager
 const AdsReporting = lazy(() => import('./components/Reports/AdsReporting'));
 const Storefront = lazy(() => import('./components/Shop/Storefront'));
 const Login = lazy(() => import('./components/Auth/Login'));
+const PinGate = lazy(() => import('./components/Auth/PinGate'));
 const ProfileSettings = lazy(() => import('./components/Settings/ProfileSettings'));
 const OrderTracking = lazy(() => import('./components/Shop/OrderTracking'));
 const PrintQueue = lazy(() => import('./components/Production/PrintQueue'));
@@ -119,15 +120,23 @@ function ProtectedWorkspace({ printPath }) {
     const [authLoading, setAuthLoading] = useState(true);
     const [authError, setAuthError] = useState(null);
     const [attempt, setAttempt] = useState(0);
+    // Once the workspace has opened, a later lock covers it instead of unmounting it,
+    // so unsaved work survives a PIN re-entry.
+    const [opened, setOpened] = useState(false);
     React.useEffect(() => {
         let active = true;
         const load = async () => {
             if (document.visibilityState !== 'visible') return;
             try {
-                const { member, profile = {}, mutationsEnabled, environment } = await api.getSession();
+                const { member, profile = {}, mutationsEnabled, environment, pin = null } = await api.getSession();
                 if (!member?.id || !member.email) throw new Error('Your account could not be verified. Sign in again.');
                 if (active) {
-                    setSession({ user: { ...member, user_metadata: { ...profile, role: member.role } }, readOnly: mutationsEnabled === false, environment });
+                    setSession(current => {
+                        if (current && !pin?.unlocked && current.user.id === member.id && current.user.role === member.role) {
+                            return { ...current, pin };
+                        }
+                        return { user: { ...member, user_metadata: { ...profile, role: member.role } }, readOnly: mutationsEnabled === false, environment, pin };
+                    });
                     setAuthError(null);
                 }
             } catch (err) {
@@ -143,33 +152,51 @@ function ProtectedWorkspace({ printPath }) {
         const timer = window.setInterval(load, 30_000);
         window.addEventListener('focus', load);
         window.addEventListener('online', load);
+        window.addEventListener(PIN_REQUIRED_EVENT, load);
         document.addEventListener('visibilitychange', load);
         return () => {
             active = false;
             window.clearInterval(timer);
             window.removeEventListener('focus', load);
             window.removeEventListener('online', load);
+            window.removeEventListener(PIN_REQUIRED_EVENT, load);
             document.removeEventListener('visibilitychange', load);
         };
     }, [attempt]);
     const role = session?.user?.role;
+    const pinUnlocked = session?.pin?.unlocked === true;
+    React.useEffect(() => { if (pinUnlocked) setOpened(true); }, [pinUnlocked]);
     React.useEffect(() => {
         if (role === 'print_operator' && !printPath) window.location.replace('/print');
     }, [role, printPath]);
+    const reload = () => setAttempt(value => value + 1);
+    const lock = async () => {
+        try { await api.pin.lock(); } finally { reload(); }
+    };
     if (authLoading) return <LoadingState label="Loading account..." />;
-    if (!session) return <Login error={authError} onRetry={() => setAttempt(value => value + 1)} />;
+    if (!session) return <Login error={authError} onRetry={reload} />;
     if (!['owner', 'reseller', 'print_operator'].includes(role)) return <Login denied />;
     if (role === 'print_operator' && !printPath) return <LoadingState label="Opening print queue..." />;
+    const pinGate = !pinUnlocked && (
+        <Suspense fallback={<LoadingState label="Loading..." />}>
+            <PinGate key={session.pin?.configured ? 'unlock' : 'setup'} member={session.user} pin={session.pin}
+                onUnlocked={() => { window.dispatchEvent(new Event(PIN_UNLOCKED_EVENT)); reload(); }} overlay={opened} />
+        </Suspense>
+    );
+    if (pinGate && !opened) return pinGate;
     if (printPath) {
         if (!['owner', 'print_operator'].includes(role)) return <Login denied />;
         if (!printQueueEnabled) return <LoadingState error="The print queue is not enabled yet." />;
         return (
             <div className="print-shell min-h-dvh bg-ground text-ink">
+                {pinGate}
+                <div inert={pinGate ? true : undefined}>
                 <header className="sticky top-0 z-30 border-b border-line bg-ground">
                     <div className="mx-auto flex h-14 max-w-3xl items-center justify-between gap-3 px-4">
                         <Logo className="h-8" />
                         <div className="flex min-w-0 items-center gap-1">
                             <span className="truncate text-sm text-ink-2">{session.user.user_metadata?.full_name || session.user.email}</span>
+                            <button type="button" onClick={lock} className="icon-btn" aria-label="Lock with PIN" title="Lock with PIN"><Lock size={18} /></button>
                             <button type="button" onClick={api.logout} className="icon-btn" aria-label="Sign out" title="Sign out"><LogOut size={18} /></button>
                         </div>
                     </div>
@@ -182,15 +209,23 @@ function ProtectedWorkspace({ printPath }) {
                     </div>}
                     <ReadOnlyContext.Provider value={session.readOnly === true}><PrintQueue user={session.user} userRole={role} /></ReadOnlyContext.Provider>
                 </main>
+                </div>
             </div>
         );
     }
-    return <ManagementApp key={`${session.user.id}:${role}`} session={session} onProfileChange={profile => {
-        setSession(current => ({ ...current, user: { ...current.user, user_metadata: { ...current.user.user_metadata, ...profile, role } } }));
-    }} />;
+    return (
+        <>
+            {pinGate}
+            <div inert={pinGate ? true : undefined}>
+                <ManagementApp key={`${session.user.id}:${role}`} session={session} onLock={lock} onProfileChange={profile => {
+                    setSession(current => ({ ...current, user: { ...current.user, user_metadata: { ...current.user.user_metadata, ...profile, role } } }));
+                }} />
+            </div>
+        </>
+    );
 }
 
-function ManagementApp({ session, onProfileChange }) {
+function ManagementApp({ session, onProfileChange, onLock }) {
     const {
         transactions,
         loading,
@@ -214,6 +249,12 @@ function ManagementApp({ session, onProfileChange }) {
 
     const { showToast } = useToast();
 
+    // Data requests made while the PIN was locked failed; reload once the device is unlocked.
+    React.useEffect(() => {
+        const reload = () => { void refetch(); };
+        window.addEventListener(PIN_UNLOCKED_EVENT, reload);
+        return () => window.removeEventListener(PIN_UNLOCKED_EVENT, reload);
+    }, [refetch]);
     const addTransaction = async (transaction) => {
         try {
             const saved = await addToServer(transaction);
@@ -285,6 +326,9 @@ function ManagementApp({ session, onProfileChange }) {
                 </div>
                 <button type="button" onClick={copyStoreLink} className="icon-btn size-10" aria-label="Copy store link" title="Copy store link">
                     <Link2 size={18} />
+                </button>
+                <button type="button" onClick={() => { setIsSidebarOpen(false); onLock(); }} className="icon-btn size-10" aria-label="Lock with PIN" title="Lock with PIN">
+                    <Lock size={18} />
                 </button>
                 <button type="button" onClick={api.logout} className="icon-btn size-10" aria-label="Sign out" title="Sign out">
                     <LogOut size={18} />

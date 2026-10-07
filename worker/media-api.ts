@@ -1,6 +1,6 @@
 import type { AppEnv } from './env.ts';
 import type { Member } from './auth.ts';
-import { findMember, verifyAccessIdentity } from './auth.ts';
+import { authorizedMember } from './pin.ts';
 import { HttpError } from './errors.ts';
 import { isObject, json, readBytes, readJson } from './http.ts';
 
@@ -103,7 +103,7 @@ export async function handleMediaRequest(request: Request, env: AppEnv, member: 
             .bind(match[1]).first<MediaRow>();
         if (!row) throw new HttpError(404, 'not_found', 'File not found.');
         if (row.visibility === 'private') {
-            const requester = member || await findMember(env.DB, await verifyAccessIdentity(request, env));
+            const requester = member || await authorizedMember(request, env);
             await owner(env, requester);
         }
         const object = await env.MEDIA.get(row.object_key);

@@ -38,8 +38,9 @@ function request(jwt) {
 }
 
 test('Access verifies the expected audience, issuer, signature and human identity', async () => {
-    const identity = await verifyAccessIdentity(request(await token({ email: 'Owner@Example.test' })), config, localKeys);
-    assert.deepEqual(identity, { subject: 'verified-human-id', email: 'owner@example.test' });
+    const issued = Math.floor(Date.now() / 1000);
+    const identity = await verifyAccessIdentity(request(await token({ email: 'Owner@Example.test', iat: issued })), config, localKeys);
+    assert.deepEqual(identity, { subject: 'verified-human-id', email: 'owner@example.test', issuedAt: issued });
 });
 
 test('signed Access cookies support private APIs without trusting unsigned browser identity', async () => {

@@ -7,6 +7,7 @@ import { handleBusinessRequest } from './business-api.ts';
 import { handlePublicRequest } from './public-api.ts';
 import { handleProductionRequest } from './production-api.ts';
 import { handleMediaRequest, handleSmsRequest } from './media-api.ts';
+import { handlePinRequest, PIN_PATHS, pinStatus, requirePinUnlocked } from './pin.ts';
 
 export type Env = AppEnv;
 
@@ -21,7 +22,9 @@ export default {
             if (redirect) return redirect;
             const path = new URL(request.url).pathname;
             sameOriginMutation(request);
-            const readOnlyPost = request.method === 'POST' && path === '/api/public/track';
+            // Contact-verified tracking and PIN unlocks store no business data, so they stay
+            // available while financial writes are paused.
+            const readOnlyPost = request.method === 'POST' && (path === '/api/public/track' || PIN_PATHS.includes(path));
             if (!['GET', 'HEAD', 'OPTIONS'].includes(request.method) && !readOnlyPost && env.MUTATIONS_ENABLED !== 'true') {
                 throw new HttpError(503, 'maintenance_read_only', 'This environment is temporarily read-only. Your changes have not been saved.');
             }
@@ -40,7 +43,8 @@ export default {
             }
             const privatePage = /^\/(?:admin|print)(?:\/|$)/.test(path);
             if (path.startsWith('/api/') || privatePage) {
-                const member = await findMember(env.DB, await verifyAccessIdentity(request, env));
+                const identity = await verifyAccessIdentity(request, env);
+                const member = await findMember(env.DB, identity);
                 if (privatePage) {
                     if (member.role === 'print_operator' && path.startsWith('/admin')) {
                         return Response.redirect(new URL('/print', request.url).href, 302);
@@ -50,11 +54,16 @@ export default {
                     }
                 } else {
                     if (path === '/api/session' && request.method === 'GET') {
-                        const row = await env.DB.prepare('SELECT profile FROM member_profiles WHERE member_id=?')
-                            .bind(member.id).first<{ profile: string }>();
-                        return json({ member, profile: row ? JSON.parse(row.profile) : {},
+                        const pin = await pinStatus(request, env, member, identity);
+                        const row = pin.unlocked ? await env.DB.prepare('SELECT profile FROM member_profiles WHERE member_id=?')
+                            .bind(member.id).first<{ profile: string }>() : null;
+                        return json({ member, profile: row ? JSON.parse(row.profile) : {}, pin,
                             environment: env.ENVIRONMENT, mutationsEnabled: env.MUTATIONS_ENABLED === 'true' });
                     }
+                    const pinResponse = await handlePinRequest(request, env, member, identity);
+                    if (pinResponse) return pinResponse;
+                    // Every other private API needs a current PIN unlock as well as Access.
+                    await requirePinUnlocked(request, env, member, identity);
                     const response = await handleMediaRequest(request, env, member)
                         || await handleSmsRequest(request, env, member)
                         || await handleProductionRequest(request, env, member)
