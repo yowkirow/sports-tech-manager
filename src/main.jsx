@@ -2,6 +2,10 @@ import React from 'react'
 import ReactDOM from 'react-dom/client'
 import { MotionConfig } from 'framer-motion'
 import App from './App.jsx'
+import '@fontsource/barlow-condensed/latin-600.css'
+import '@fontsource/barlow-condensed/latin-700.css'
+import '@fontsource/barlow-condensed/latin-800.css'
+import '@fontsource/barlow-condensed/latin-800-italic.css'
 import './index.css'
 
 import { ToastProvider } from './components/ui/Toast';

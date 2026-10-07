@@ -1,8 +1,6 @@
 @import "tailwindcss";
-@import "@fontsource/barlow-condensed/latin-600.css";
-@import "@fontsource/barlow-condensed/latin-700.css";
-@import "@fontsource/barlow-condensed/latin-800.css";
-@import "@fontsource/barlow-condensed/latin-800-italic.css";
+/* Barlow Condensed is imported from main.jsx: Tailwind inlines package CSS here
+   without rebasing its relative font URLs, so the font files were never bundled. */
 
 /*
  * SportsTech: the category standard, dark athletic commerce.
