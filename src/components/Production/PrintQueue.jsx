@@ -3,7 +3,7 @@ import { AlertCircle, Check, Printer } from 'lucide-react';
 import LoadingState from '../ui/LoadingState.jsx';
 import { productionQuantity } from '../../lib/production.js';
 import { useProductionData, useProductionMutation, useProductionWallet } from './productionHooks.js';
-import { JobActivity, JobCounts, JobHeading, JobInstructions, JobPhoto, MutationNotice, ProductionHeader, ProductionNotice } from './ProductionParts.jsx';
+import { JobActivity, JobCounts, JobCustomer, JobHeading, JobInstructions, JobPhoto, MutationNotice, ProductionHeader, ProductionNotice } from './ProductionParts.jsx';
 import { MyShirts } from './PrintWallet.jsx';
 import { useReadOnly, READ_ONLY_HINT } from '../ui/ReadOnly';
 import './Production.css';
@@ -32,6 +32,7 @@ function PrintJob({ job, reload, online, stale }) {
     };
     return <li className="production-job">
         <JobHeading job={job} />
+        <JobCustomer job={job} />
         <JobPhoto job={job} large />
         <JobCounts job={job} />
         {job.status !== 'completed' && <>

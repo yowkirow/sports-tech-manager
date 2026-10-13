@@ -174,7 +174,7 @@ function PrepareJobs({ candidates, transactions, employees, reload, online, stal
                         <textarea rows="2" maxLength={2000} value={instructions} onChange={event => setInstructions(event.target.value)}
                             aria-describedby="production-instructions-help" />
                     </label>
-                    <p id="production-instructions-help" className="production-help">Visible to the employee with each job's design photo. Print details only. No customer names, contacts, addresses or payment details.</p>
+                    <p id="production-instructions-help" className="production-help">Visible to the employee with each job's design photo and the customer's name for the package. Don't add contacts, addresses or payment details.</p>
                     <label className="production-checkbox"><input type="checkbox" checked={releaseNow} onChange={event => setReleaseNow(event.target.checked)} />
                         Release now so they can start printing</label>
                     {releaseNow && <div className="production-release">
@@ -304,7 +304,7 @@ function OwnerJob({ job, customer, sources, employees, reload, online, stale }) 
             </div>}
             <label className="production-field">QA, rework or hold note
                 <textarea rows="2" maxLength={1000} value={note} onChange={event => setNote(event.target.value)}
-                    placeholder="Print details only — no customer or payment information" />
+                    placeholder="Print details only. No contact or payment information" />
             </label>
             {job.status === 'held' && <div className="production-release">
                 <h4>Replace or retire this job</h4>

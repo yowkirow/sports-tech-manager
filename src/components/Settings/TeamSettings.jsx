@@ -13,7 +13,7 @@ export const ROLES = {
     print_operator: {
         label: 'Print staff',
         detail: printQueueEnabled
-            ? 'Only the print jobs you release. No customer or money details.'
+            ? 'Only the print jobs you release, with the customer’s name for the package. No contacts, addresses or money details.'
             : 'Only the print jobs you release. The print queue is off, so they cannot start yet.'
     }
 };

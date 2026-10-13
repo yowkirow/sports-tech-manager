@@ -34,7 +34,7 @@ export function JobHeading({ job, owner = false, customer = '' }) {
             <p>{[job.brand, job.color || 'Color not specified', job.size].join(' · ')}</p>
             <p className="production-reference">{job.jobCode}</p>
             {owner && <p className="production-owner-reference">
-                {customer && <strong className="production-owner-customer">{customer}</strong>}
+                {(customer || job.customerName) && <strong className="production-owner-customer">{customer || job.customerName}</strong>}
                 {[job.orderId, job.assignee.name].join(' · ')}
             </p>}
         </div>
@@ -42,6 +42,15 @@ export function JobHeading({ job, owner = false, customer = '' }) {
             {job.status === 'completed' && <CheckCircle2 size={16} aria-hidden="true" />}
             {productionStatus[job.status] || job.status}
         </span>
+    </div>;
+}
+// The customer's name for the package label (owner decision 2026-10-13). Name only.
+export function JobCustomer({ job }) {
+    return <div className="production-customer">
+        <span>Write on package</span>
+        {job.customerName
+            ? <strong>{job.customerName}</strong>
+            : <strong className="production-customer-missing">No name on this order. Ask the owner before packing.</strong>}
     </div>;
 }
 // Small product photo for the owner's line picker. Decorative: the label names the design.

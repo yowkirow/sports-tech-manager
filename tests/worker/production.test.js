@@ -139,12 +139,19 @@ test('employees see only their released jobs, safe explicit fields and safe acto
     assert.equal(response.jobs.length, 1);
     assert.equal(response.jobs[0].assignee.name, 'Sam');
     assert.equal(response.jobs[0].jobCode, job.jobCode);
+    // Owner decision 2026-10-13: the customer's name is shown for package labels; nothing else.
+    assert.equal(response.jobs[0].customerName, 'PRIVATE CUSTOMER');
     const encoded = JSON.stringify(response);
+    for (const forbidden of ['PRIVATE CONTACT', 'PRIVATE ADDRESS', 'PRIVATE RECEIPT', 'PRIVATE COMMENT', 'PRIVATE COST', 'PRIVATE PROFILE', 'ST-PRINT']) {
+        assert.ok(!encoded.includes(forbidden), forbidden);
+    }
+    const { customerName, ...rest } = response.jobs[0];
+    const others = JSON.stringify({ ...response, jobs: [rest] });
     for (const forbidden of ['PRIVATE', 'email', 'sourceId', 'orderId', 'amount', 'customer', 'receipt', 'cost', 'contact', 'shipping']) {
-        assert.ok(!encoded.toLowerCase().includes(forbidden.toLowerCase()), forbidden);
+        assert.ok(!others.toLowerCase().includes(forbidden.toLowerCase()), forbidden);
     }
     assert.deepEqual(Object.keys(response.jobs[0]).sort(), [
-        'accepted', 'assignee', 'awaitingQA', 'brand', 'color', 'designImageUrl', 'designName', 'events', 'id', 'instructions',
+        'accepted', 'assignee', 'awaitingQA', 'brand', 'color', 'customerName', 'designImageUrl', 'designName', 'events', 'id', 'instructions',
         'jobCode', 'rejected', 'releasedAt', 'remainingToPrint', 'required', 'reworkRemaining', 'size', 'status', 'updatedAt', 'version'
     ].sort());
 });
@@ -654,8 +661,26 @@ test('batch prepare and release moves every chosen order to in progress in one s
     assert.equal(f.db.sqlite.prepare('SELECT count(*) AS n FROM production_jobs WHERE source_changed=1').get().n, 0, 'release must not self-hold');
     const staff = (await call(f, '/jobs', undefined, printer)).jobs;
     assert.equal(staff.length, 2);
-    const encoded = JSON.stringify(staff).toLowerCase();
-    for (const forbidden of ['private', 'customer', 'orderid', 'sourceid']) assert.ok(!encoded.includes(forbidden), forbidden);
+    assert.deepEqual(staff.map(job => job.customerName), ['PRIVATE CUSTOMER', 'PRIVATE CUSTOMER']);
+    const encoded = JSON.stringify(staff.map(({ customerName, ...job }) => job)).toLowerCase();
+    for (const forbidden of ['private', 'customer', 'orderid', 'sourceid', 'st-print', 'st-other']) assert.ok(!encoded.includes(forbidden), forbidden);
+});
+
+test('staff see the current customer name, legacy customer field, or null, and nothing else about the buyer', async t => {
+    const f = fixture(t, { customerName: '  Juan Dela Cruz  ' });
+    const THIRD = '00000000-0000-4000-8000-000000000003';
+    const FOURTH = '00000000-0000-4000-8000-000000000004';
+    shirtOrder(f, THIRD, 'ST-LEGACY', { customerName: undefined, customer: 'Maria Santos' });
+    shirtOrder(f, FOURTH, 'ST-NONAME', { customerName: '' });
+    const lines = (await call(f, '/sources')).sources.map(lineOf);
+    await call(f, '/jobs/batch', { lines, assigneeId: printer.id, release: true, artworkReady: true, blanksReady: true, requestId: requestId() });
+    const jobs = (await call(f, '/jobs', undefined, printer)).jobs;
+    assert.equal(jobs.find(job => job.designName === 'Court shirt').customerName, 'Juan Dela Cruz');
+    assert.deepEqual(jobs.filter(job => job.designName === 'Club shirt').map(job => job.customerName ?? '').sort(), ['', 'Maria Santos']);
+    // A corrected name on the order reaches the printer without re-preparing the job.
+    changeSource(f, { customerName: 'Juan P. Dela Cruz' });
+    const updated = (await call(f, '/jobs', undefined, printer)).jobs.find(job => job.designName === 'Court shirt');
+    assert.equal(updated.customerName, 'Juan P. Dela Cruz');
 });
 
 test('batch prepare is limited to a reviewable number of lines', async t => {

@@ -12,7 +12,8 @@ Scope: `/admin` (App shell plus every tab) and `/print`. Visitor mode: **Operate
 Audience and job: the owner runs the day on a phone and on a desktop, covering POS, orders,
 payments, stock, expenses, vouchers, suppliers, ads, the Downtown Dinks ledger and print releases.
 Resellers sell at ₱400 and edit only their own unpaid pending orders. The print employee works
-`/print` on a phone at the press and sees only released jobs, with no customer or money data.
+`/print` on a phone at the press and sees only released jobs, each with its design photo and the
+customer's name to write on the package; no contacts, addresses, order numbers or money data.
 Frequency: all day, repeatedly, often one-handed.
 Important states: loading or syncing, sync error with retry, the read-only staging and maintenance
 banner, empty lists, saving, and destructive confirms.

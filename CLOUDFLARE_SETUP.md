@@ -290,9 +290,12 @@ that exact email in the production `/print` Access application. The employee
 must not receive Cloudflare dashboard privileges or an owner role.
 
 Only assigned, explicitly released shirt jobs are visible. Product/design names,
-variants, required quantities, progress and the design photo are allowlisted; customer
-names, contacts, addresses, receipts, pricing, stock costs and management comments are
-not returned. Customer names and order numbers appear only on the owner's screens.
+variants, required quantities, progress, the design photo and the customer's name are
+allowlisted. The name is shown so the printer can write it on the package (owner
+decision, October 13, 2026, migration `0010_production_customer_name.sql`); it is read
+live from the order line, so a corrected name reaches the printer. Customer contacts,
+addresses, order numbers, receipts, pricing, stock costs and management comments are
+not returned. Order numbers appear only on the owner's screens.
 
 The owner prepares jobs under Production > Prepare shirt jobs: waiting shirt lines are
 grouped by the customer who ordered (A–Z, with the order number), can be ticked one by
