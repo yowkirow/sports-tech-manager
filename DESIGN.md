@@ -273,6 +273,8 @@ The form language is blunt athletic retail: rounded enough to be touchable, neve
 - **Style:** Large Barlow Condensed job references lead each card. Counts sit in divided cells with tabular figures.
 - **Targets:** Print actions use at least 48px height, and mobile production actions expand to a two-column grid with the final action spanning full width.
 - **Wallet:** The employee's compact "My shirts" panel sits above the job list: a condensed `progress/30` figure (denominator in Quiet Ink) with Balance due set beside it, a 10px Main Ink progress bar on Raised Charcoal (`role="progressbar"`, never red), then a label-over-value stats grid. Owner rows repeat the counts in the same grid; payouts use the shared dialog with an explicit "I have paid" confirmation.
+- **Design photo:** Each job shows its product photo in a Raised Charcoal media well (`object-fit: contain`, card corners) with an "Open full size" footer link. It is full-width on the employee's phone and 240px on owner cards; a muted "No design photo" line replaces it when missing.
+- **Owner line picker:** Waiting shirt lines are grouped by customer (name, then order number, date and shirt count) in Raised Charcoal cards with hairline rows: checkbox, 56px media thumbnail, design and variant, quantity. Selected rows get a subtle white wash, never red. A divided summary bar ("3 lines · 4 shirts selected") holds Clear and the single red primary action.
 
 ## Do's and Don'ts
 

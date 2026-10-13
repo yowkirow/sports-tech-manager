@@ -1,9 +1,12 @@
 import React, { useCallback, useMemo, useState } from 'react';
 import { CheckCircle2, Pause, Send, UserPlus, UserX } from 'lucide-react';
 import LoadingState from '../ui/LoadingState.jsx';
-import { productionCandidates, productionLineKey, productionQuantity, walletPeso } from '../../lib/production.js';
+import {
+    MAX_BATCH_JOBS, productionBatchLines, productionCandidates, productionCustomerOf, productionGroupMatches,
+    productionLineKey, productionOrderGroups, productionQuantity, walletPeso
+} from '../../lib/production.js';
 import { useProductionData, useProductionMutation, useProductionWallet } from './productionHooks.js';
-import { JobActivity, JobCounts, JobHeading, JobInstructions, MutationNotice, ProductionHeader, ProductionNotice } from './ProductionParts.jsx';
+import { DesignThumb, JobActivity, JobCounts, JobHeading, JobInstructions, JobPhoto, MutationNotice, ProductionHeader, ProductionNotice } from './ProductionParts.jsx';
 import { OperatorPayout, OperatorWallet, UnattributedShirts } from './PrintWallet.jsx';
 import { useReadOnly, READ_ONLY_HINT } from '../ui/ReadOnly';
 import './Production.css';
@@ -72,68 +75,138 @@ function EmployeeAccounts({ members, wallets, reload, online, stale }) {
     </details>;
 }
 
-function PrepareJob({ candidates, employees, reload, online, stale }) {
+function PrepareJobs({ candidates, transactions, employees, reload, online, stale }) {
     const readOnly = useReadOnly();
-    const [selected, setSelected] = useState('');
+    const [selected, setSelected] = useState(() => new Set());
+    const [search, setSearch] = useState('');
     const [assignee, setAssignee] = useState('');
     const [instructions, setInstructions] = useState('');
+    const [releaseNow, setReleaseNow] = useState(false);
+    const [artwork, setArtwork] = useState(false);
+    const [blanks, setBlanks] = useState(false);
     const [validation, setValidation] = useState('');
     const mutation = useProductionMutation(reload);
-    const source = candidates.find(candidate => productionLineKey(candidate) === selected);
     const blocked = readOnly || !online || stale || mutation.busy || mutation.uncertain;
+    const groups = useMemo(() => productionOrderGroups(candidates, transactions), [candidates, transactions]);
+    const visibleGroups = groups.filter(group => productionGroupMatches(group, search));
+    // Lines that were prepared elsewhere or changed drop out of the selection automatically.
+    const chosen = candidates.filter(candidate => selected.has(productionLineKey(candidate)));
+    const shirts = chosen.reduce((total, line) => total + line.required, 0);
+    const tooMany = chosen.length > MAX_BATCH_JOBS;
+    const employee = employees.find(item => item.id === assignee);
+    const toggle = (keys, on) => setSelected(current => {
+        const next = new Set(current);
+        for (const key of keys) { if (on) next.add(key); else next.delete(key); }
+        return next;
+    });
     const submit = event => {
         event.preventDefault();
-        if (!source || !employees.some(employee => employee.id === assignee)) {
-            setValidation('Choose a current shirt line and an active print operator.'); return;
+        if (!chosen.length || tooMany || !employee) {
+            setValidation(tooMany ? `Choose up to ${MAX_BATCH_JOBS} shirt lines at a time.` : 'Choose at least one shirt line and an active print operator.');
+            return;
         }
+        if (releaseNow && (!artwork || !blanks)) { setValidation('Confirm the artwork and blank shirts before releasing.'); return; }
         setValidation('');
-        mutation.run('/api/production/jobs', {
-            sourceId: source.sourceId, itemIndex: source.itemIndex, expectedSourceToken: source.sourceToken,
-            assigneeId: assignee, instructions: instructions.trim()
-        }, 'Job prepared. It is hidden from the employee until you release it.',
-        () => { setSelected(''); setInstructions(''); });
+        const count = `${chosen.length} job${chosen.length === 1 ? '' : 's'}`;
+        mutation.run('/api/production/jobs/batch', {
+            lines: productionBatchLines(chosen), assigneeId: assignee, instructions: instructions.trim(),
+            ...(releaseNow ? { release: true, artworkReady: true, blanksReady: true } : {})
+        }, releaseNow ? `${count} released to ${employeeName(employee)}. They can start printing.`
+            : `${count} prepared for ${employeeName(employee)}. Release them when artwork and blanks are ready.`,
+        () => { setSelected(new Set()); setInstructions(''); setArtwork(false); setBlanks(false); });
     };
-    return <details className="production-section">
-        <summary>Prepare a shirt job</summary>
-        <p className="production-help">One job per shirt variant, for the full order quantity. No past orders are released automatically.</p>
-        {!employees.length && <ProductionNotice>Prepare an active print-operator account first, then choose a shirt line.</ProductionNotice>}
+    return <details className="production-section" open={candidates.length > 0 || undefined}>
+        <summary>Prepare shirt jobs{candidates.length ? ` (${candidates.length} lines waiting)` : ''}</summary>
+        <p className="production-help">Tick the shirt lines to print, grouped by the customer who ordered. Each line becomes one job for its full quantity.</p>
+        {!employees.length && <ProductionNotice>Add an active print-operator account first, then choose shirt lines.</ProductionNotice>}
         <form onSubmit={submit}>
             <fieldset disabled={blocked || !employees.length}>
                 <legend className="production-sr-only">Shirt job preparation</legend>
-                <div className="production-form-grid">
-                    <label className="production-field">Unprepared shirt line
-                        <select value={selected} required onChange={event => setSelected(event.target.value)}>
-                            <option value="">Choose a shirt line</option>
-                            {candidates.map(candidate => <option key={productionLineKey(candidate)} value={productionLineKey(candidate)}>
-                                {candidate.orderId} · {candidate.designName} · {candidate.brand} / {candidate.color || 'No color'} / {candidate.size} · {candidate.required} shirts
-                            </option>)}
-                        </select>
+                {candidates.length > 0 && <label className="production-field">Find customer, order or design
+                    <input type="search" value={search} onChange={event => setSearch(event.target.value)} />
+                </label>}
+                {candidates.length > 0 && !visibleGroups.length && <p className="production-help">No waiting shirt lines match “{search.trim()}”.</p>}
+                <ul className="production-picker">
+                    {visibleGroups.map(group => {
+                        const keys = group.lines.map(productionLineKey);
+                        const picked = keys.filter(key => selected.has(key)).length;
+                        return <li key={group.orderId} className="production-order-group">
+                            <label className="production-order-check">
+                                <input type="checkbox" checked={picked === keys.length}
+                                    ref={element => { if (element) element.indeterminate = picked > 0 && picked < keys.length; }}
+                                    onChange={event => toggle(keys, event.target.checked)} />
+                                <span className="production-order-name">{group.customerName}</span>
+                                <span className="production-order-meta">
+                                    <span className="production-order-ref">{group.orderId}</span>
+                                    {group.date && <span>{new Date(group.date).toLocaleDateString('en-PH', { month: 'short', day: 'numeric' })}</span>}
+                                    <span>{group.shirts} shirt{group.shirts === 1 ? '' : 's'}</span>
+                                </span>
+                            </label>
+                            <ul className="production-lines">
+                                {group.lines.map(line => {
+                                    const key = productionLineKey(line);
+                                    return <li key={key}>
+                                        <label className="production-line">
+                                            <input type="checkbox" checked={selected.has(key)} onChange={event => toggle([key], event.target.checked)} />
+                                            <DesignThumb src={line.designImageUrl} />
+                                            <span className="production-line-text">
+                                                <strong>{line.designName}</strong>
+                                                <span>{[line.brand, line.color || 'No color', line.size].join(' · ')}</span>
+                                            </span>
+                                            <span className="production-line-qty"><strong>{line.required}</strong> shirt{line.required === 1 ? '' : 's'}</span>
+                                        </label>
+                                    </li>;
+                                })}
+                            </ul>
+                        </li>;
+                    })}
+                </ul>
+                {candidates.length > 0 && <>
+                    <div className="production-form-grid">
+                        <label className="production-field">Assign to
+                            <select value={assignee} required onChange={event => setAssignee(event.target.value)}>
+                                <option value="">Choose employee</option>
+                                {employees.map(item => <option key={item.id} value={item.id}>{employeeName(item)}</option>)}
+                            </select>
+                        </label>
+                    </div>
+                    <label className="production-field">Print instructions for these jobs
+                        <textarea rows="2" maxLength={2000} value={instructions} onChange={event => setInstructions(event.target.value)}
+                            aria-describedby="production-instructions-help" />
                     </label>
-                    <label className="production-field">Assign to
-                        <select value={assignee} required onChange={event => setAssignee(event.target.value)}>
-                            <option value="">Choose employee</option>
-                            {employees.map(employee => <option key={employee.id} value={employee.id}>{employeeName(employee)}</option>)}
-                        </select>
-                    </label>
-                </div>
-                <label className="production-field">Owner print instructions
-                    <textarea rows="3" maxLength={2000} value={instructions} onChange={event => setInstructions(event.target.value)}
-                        aria-describedby="production-instructions-help" />
-                </label>
-                <p id="production-instructions-help" className="production-help">Visible to the assigned employee. Include only print instructions — no customer names, contacts, addresses, payment details or private comments. Provide artwork separately.</p>
-                {source && <p>Prepare <strong>{source.required} shirts</strong>. This does not release the job or change payment or inventory.</p>}
-                <button type="submit" className="production-button production-primary" disabled={readOnly || !source || !assignee} title={readOnly ? READ_ONLY_HINT : undefined}>
-                    Prepare job
-                </button>
+                    <p id="production-instructions-help" className="production-help">Visible to the employee with each job's design photo. Print details only. No customer names, contacts, addresses or payment details.</p>
+                    <label className="production-checkbox"><input type="checkbox" checked={releaseNow} onChange={event => setReleaseNow(event.target.checked)} />
+                        Release now so they can start printing</label>
+                    {releaseNow && <div className="production-release">
+                        <label className="production-checkbox"><input type="checkbox" checked={artwork} onChange={event => setArtwork(event.target.checked)} />
+                            I have supplied the correct artwork for every chosen line.</label>
+                        <label className="production-checkbox"><input type="checkbox" checked={blanks} onChange={event => setBlanks(event.target.checked)} />
+                            I have checked the blanks, colors, sizes and quantities.</label>
+                        <p className="production-help">Releasing moves each chosen order to In progress and stops customer self-edits. Payment does not release print jobs.</p>
+                    </div>}
+                    <div className="production-batch-bar" role="status">
+                        <p><strong>{chosen.length}</strong> line{chosen.length === 1 ? '' : 's'} · <strong>{shirts}</strong> shirt{shirts === 1 ? '' : 's'} selected
+                            {tooMany && <span className="production-validation"> Choose up to {MAX_BATCH_JOBS} at a time.</span>}</p>
+                        <div className="production-actions">
+                            {chosen.length > 0 && <button type="button" className="production-button" onClick={() => setSelected(new Set())}>Clear</button>}
+                            <button type="submit" className="production-button production-primary"
+                                disabled={readOnly || !chosen.length || tooMany || !assignee || (releaseNow && (!artwork || !blanks))}
+                                title={readOnly ? READ_ONLY_HINT : undefined}>
+                                {releaseNow ? <Send size={18} aria-hidden="true" /> : null}
+                                {releaseNow ? 'Prepare and release' : 'Prepare'} {chosen.length || ''} job{chosen.length === 1 ? '' : 's'}
+                            </button>
+                        </div>
+                    </div>
+                </>}
             </fieldset>
         </form>
-        {!candidates.length && <p className="production-help">No unprepared active shirt lines are available. Reload after adding an order.</p>}
+        {!candidates.length && <p className="production-help">No unprepared active shirt lines are waiting. Reload after adding an order.</p>}
         {validation && <p className="production-validation" role="alert">{validation}</p>}
         <MutationNotice mutation={mutation} online={online} />
     </details>;
 }
 
-function OwnerJob({ job, sources, employees, reload, online, stale }) {
+function OwnerJob({ job, customer, sources, employees, reload, online, stale }) {
     const readOnly = useReadOnly();
     const [artwork, setArtwork] = useState(false);
     const [blanks, setBlanks] = useState(false);
@@ -184,7 +257,8 @@ function OwnerJob({ job, sources, employees, reload, online, stale }) {
             () => { setArtwork(false); setBlanks(false); setAccepted(''); setRejected(''); setNote(''); });
     };
     return <li className="production-job">
-        <JobHeading job={job} owner />
+        <JobHeading job={job} owner customer={customer} />
+        <JobPhoto job={job} />
         <JobCounts job={job} />
         <JobInstructions job={job} />
         {job.sourceChanged && <ProductionNotice error>
@@ -274,9 +348,10 @@ export default function ProductionManager({ transactions = [], refetch }) {
         catch { setOrderRefreshError(true); }
     }, [data.load, loadWallets, refetch]);
     const candidates = useMemo(() => productionCandidates(transactions, data.sources, data.jobs), [transactions, data.sources, data.jobs]);
+    const customerOf = useMemo(() => productionCustomerOf(transactions), [transactions]);
     const employees = data.members.filter(member => member.role === 'print_operator' && isActive(member));
     const jobs = data.jobs.filter(job => (filter === 'all' || (filter === 'completed' ? job.status === 'completed' : !['completed', 'superseded'].includes(job.status)))
-        && `${job.jobCode} ${job.orderId} ${job.designName}`.toLowerCase().includes(search.toLowerCase().trim()));
+        && `${job.jobCode} ${job.orderId} ${job.designName} ${customerOf(job)}`.toLowerCase().includes(search.toLowerCase().trim()));
     return <section className="production" aria-label="Owner print production">
         <ProductionHeader title="Print production" subtitle="Prepare, release and quality-check shirt jobs. Artwork is provided separately."
             loading={data.loading} onReload={reload} />
@@ -287,22 +362,22 @@ export default function ProductionManager({ transactions = [], refetch }) {
                 {orderRefreshError && <ProductionNotice error>The print save was confirmed, but Orders could not refresh. Reload before preparing another job.</ProductionNotice>}
                 {data.loading && !data.jobs.length && !data.members.length ? <LoadingState label="Loading print production…" /> : <>
                     <EmployeeAccounts members={data.members} wallets={wallets} reload={reload} online={data.online} stale={!!data.error} />
-                    <PrepareJob candidates={candidates} employees={employees} reload={reload} online={data.online} stale={!!data.error || orderRefreshError} />
+                    <PrepareJobs candidates={candidates} transactions={transactions} employees={employees} reload={reload} online={data.online} stale={!!data.error || orderRefreshError} />
                     <div className="production-toolbar">
                         <label className="production-field production-filter">Show jobs
                             <select value={filter} onChange={event => setFilter(event.target.value)}>
                                 <option value="active">Not yet accepted</option><option value="completed">Accepted</option><option value="all">All recent jobs</option>
                             </select>
                         </label>
-                        <label className="production-field">Find order or job
+                        <label className="production-field">Find customer, order or job
                             <input type="search" value={search} onChange={event => setSearch(event.target.value)} />
                         </label>
                     </div>
                     {!jobs.length && !data.error && <div className="production-empty">
                         <h3>{search ? 'No matching print jobs' : 'No print jobs in this view'}</h3>
-                        <p>{search ? 'Try another order reference or job code.' : 'Prepare an active shirt line above. Employees see nothing until you release a job.'}</p>
+                        <p>{search ? 'Try another customer name, order reference or job code.' : 'Prepare shirt lines above. Employees see nothing until you release a job.'}</p>
                     </div>}
-                    <ul className="production-jobs">{jobs.map(job => <OwnerJob key={job.id} job={job} sources={data.sources} employees={employees}
+                    <ul className="production-jobs">{jobs.map(job => <OwnerJob key={job.id} job={job} customer={customerOf(job)} sources={data.sources} employees={employees}
                         reload={reload} online={data.online} stale={!!data.error} />)}</ul>
                 </>}
             </>}

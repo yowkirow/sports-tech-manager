@@ -1,5 +1,5 @@
 import React from 'react';
-import { AlertCircle, CheckCircle2, RefreshCw } from 'lucide-react';
+import { AlertCircle, CheckCircle2, ImageOff, Maximize2, RefreshCw } from 'lucide-react';
 import { productionStatus } from '../../lib/production.js';
 import { useReadOnly, READ_ONLY_HINT } from '../ui/ReadOnly';
 
@@ -27,19 +27,38 @@ export function MutationNotice({ mutation, online }) {
         </button>}
     </ProductionNotice>;
 }
-export function JobHeading({ job, owner = false }) {
+export function JobHeading({ job, owner = false, customer = '' }) {
     return <div className="production-job-heading">
         <div>
             <h3>{job.designName}</h3>
             <p>{[job.brand, job.color || 'Color not specified', job.size].join(' · ')}</p>
             <p className="production-reference">{job.jobCode}</p>
-            {owner && <p className="production-owner-reference">{job.orderId} · {job.assignee.name}</p>}
+            {owner && <p className="production-owner-reference">
+                {customer && <strong className="production-owner-customer">{customer}</strong>}
+                {[job.orderId, job.assignee.name].join(' · ')}
+            </p>}
         </div>
         <span className={`production-status production-status-${job.status}`}>
             {job.status === 'completed' && <CheckCircle2 size={16} aria-hidden="true" />}
             {productionStatus[job.status] || job.status}
         </span>
     </div>;
+}
+// Small product photo for the owner's line picker. Decorative: the label names the design.
+export function DesignThumb({ src }) {
+    return src
+        ? <img className="production-thumb" src={src} alt="" loading="lazy" decoding="async" width="56" height="56" />
+        : <span className="production-thumb production-thumb-empty" aria-hidden="true"><ImageOff size={18} /></span>;
+}
+// The design photo the employee copies. Opens full size in a new tab for close checking.
+export function JobPhoto({ job, large = false }) {
+    if (!job.designImageUrl) {
+        return <p className="production-photo-missing"><ImageOff size={18} aria-hidden="true" />No design photo on this order. Use the artwork the owner supplied.</p>;
+    }
+    return <a className={`production-photo${large ? ' production-photo-large' : ''}`} href={job.designImageUrl} target="_blank" rel="noopener noreferrer">
+        <img src={job.designImageUrl} alt={`Design photo: ${job.designName}, ${job.color || 'color not specified'}`} loading="lazy" decoding="async" />
+        <span><Maximize2 size={16} aria-hidden="true" />Open full size</span>
+    </a>;
 }
 export function JobCounts({ job }) {
     return <>

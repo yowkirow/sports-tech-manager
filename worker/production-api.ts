@@ -10,8 +10,11 @@ type Source = {
     id: string; type: string; category: string; details: string | null;
     fingerprint: string; order_id: string;
 };
-type Shirt = { designName: string; brand: string; color: string; size: string; required: number };
+type Shirt = { designName: string; brand: string; color: string; size: string; required: number; imageId: string | null };
 const UUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
+// Product photos stored in this app's media table. Anything else (external URLs) is not attached.
+const MEDIA_URL = /^(?:https:\/\/(?:www\.)?sportstechph\.store)?\/api\/media\/objects\/([0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12})$/i;
+export const MAX_BATCH_JOBS = 30;
 const now = "strftime('%Y-%m-%dT%H:%M:%fZ','now')";
 const visible = "j.assignee_id = ? AND j.released_at IS NOT NULL AND j.status IN ('released','printing','awaiting_qa','problem','completed')";
 const sourceQuery = `SELECT t.id,t.type,t.category,t.details,s.fingerprint,s.order_id
@@ -34,6 +37,14 @@ function fields(body: Row, required: string[], optional: string[] = []): void {
         || Object.keys(body).some(key => !required.includes(key) && !optional.includes(key))) fail('Unexpected or missing request fields.');
 }
 const removed = (value: unknown) => value === true || value === 'true' || value === 1;
+// The first photo set on the line decides: the item's own photo, never a different product's.
+function photoId(...values: unknown[]): string | null {
+    for (const value of values) {
+        if (typeof value !== 'string' || !value.trim()) continue;
+        return MEDIA_URL.exec(value.trim())?.[1]?.toLowerCase() ?? null;
+    }
+    return null;
+}
 function detailsOf(source: Source): Row {
     const value: unknown = JSON.parse(source.details || '{}');
     return isObject(value) ? value : {};
@@ -61,7 +72,8 @@ function shirt(source: Source, itemIndex: number): Shirt {
         designName: text(item.itemName || item.name || 'Shirt', 'Design name', 200, false),
         brand: text(item.brand || parent.brand || 'Sypik', 'Brand', 100, false),
         color: text(item.linkedColor || item.color || parent.linkedColor || parent.color || '', 'Color', 100),
-        size: text(size, 'Size', 80, false), required
+        size: text(size, 'Size', 80, false), required,
+        imageId: photoId(item.imageUrl, raw.imageUrl, parent.imageUrl)
     };
 }
 async function digest(value: string): Promise<string> {
@@ -136,14 +148,25 @@ async function mutation(
         throw error;
     }
 }
+const ownerPayload = `json_set(p.payload,'$.sourceId',j.source_id,'$.itemIndex',
+    CASE WHEN j.item_index=-1 THEN NULL ELSE j.item_index END,'$.orderId',j.order_id,
+    '$.sourceChanged',json(CASE WHEN j.source_changed=1 THEN 'true' ELSE 'false' END))`;
 function jobResponse(owner: boolean): string {
     return owner
-        ? `SELECT json_object('job',json(json_set(p.payload,'$.sourceId',j.source_id,'$.itemIndex',
-            CASE WHEN j.item_index=-1 THEN NULL ELSE j.item_index END,'$.orderId',j.order_id,
-            '$.sourceChanged',json(CASE WHEN j.source_changed=1 THEN 'true' ELSE 'false' END))))
+        ? `SELECT json_object('job',json(${ownerPayload}))
             FROM production_job_public p JOIN production_jobs j ON j.id=p.id WHERE j.id=?`
         : "SELECT json_object('job',json(payload)) FROM production_job_public WHERE id=?";
 }
+// Snapshot columns for a new job. The design photo resolves only through PUBLIC media.
+const JOB_COLUMNS = `id,job_code,source_id,item_index,legacy_item_key,order_id,source_fingerprint,
+    snapshot_id,design_name,brand,color,size,required,instructions,assignee_id,design_image_id`;
+const PUBLIC_PHOTO = "(SELECT m.id FROM media_objects m WHERE m.id=? AND m.visibility='public')";
+const jobCode = (id: string) => `PJ-${id.replaceAll('-', '').slice(0, 10).toUpperCase()}`;
+// A draft or held job may be released only while its source still matches and the order is open.
+const RELEASABLE = `status IN ('draft','held') AND EXISTS(SELECT 1 FROM production_source_state s JOIN transactions t ON t.id=s.source_id
+    WHERE s.source_id=production_jobs.source_id AND s.fingerprint=production_jobs.source_fingerprint
+    AND coalesce(json_extract(t.details,'$.fulfillmentStatus'),
+        CASE WHEN coalesce(json_extract(t.details,'$.status'),'paid')='paid' THEN 'pending' ELSE json_extract(t.details,'$.status') END) IN ('pending','in_progress'))`;
 // The member who certainly printed every shirt now awaiting QA: each `printed` event since the
 // job's pending count was last zero has that same actor. Otherwise NULL, and nobody is credited.
 // Must stay identical to the rule in the print_wallet_credits view (migration 0007).
@@ -153,13 +176,20 @@ const pendingPrinter = `(SELECT CASE WHEN count(*)>0 AND count(p.actor_id)=count
         AND p.id>coalesce((SELECT max(z.id) FROM production_events z WHERE z.job_id=production_jobs.id
             AND (SELECT sum(CASE y.action WHEN 'printed' THEN y.quantity WHEN 'qa' THEN -y.quantity ELSE 0 END)
                 FROM production_events y WHERE y.job_id=z.job_id AND y.id<=z.id)=0),0))`;
-function event(db: D1Database, member: Member, id: string, action: string, quantity = 0, accepted = 0, rejected = 0, note = ''): D1PreparedStatement {
-    return statement(db, `INSERT INTO production_events(job_id,actor_id,actor_name,action,quantity,accepted,rejected,note,version,operator_id)
-        SELECT id,?,CASE WHEN ?='owner' THEN 'Owner' ELSE coalesce(
+const actorName = `CASE WHEN ?='owner' THEN 'Owner' ELSE coalesce(
             (SELECT nullif(trim(CASE WHEN json_type(profile,'$.full_name')='text'
                 THEN json_extract(profile,'$.full_name') END),'') FROM member_profiles WHERE member_id=?),
-            'Print operator') END,?,?,?,?,?,version,${action === 'qa' ? pendingPrinter : 'NULL'}
+            'Print operator') END`;
+function event(db: D1Database, member: Member, id: string, action: string, quantity = 0, accepted = 0, rejected = 0, note = ''): D1PreparedStatement {
+    return statement(db, `INSERT INTO production_events(job_id,actor_id,actor_name,action,quantity,accepted,rejected,note,version,operator_id)
+        SELECT id,?,${actorName},?,?,?,?,?,version,${action === 'qa' ? pendingPrinter : 'NULL'}
         FROM production_jobs WHERE id=?`, [member.id, member.role, member.id, action, quantity, accepted, rejected, note, id]);
+}
+// One zero-quantity event per job in a JSON array of ids (batch prepare and release only).
+function events(db: D1Database, member: Member, ids: string, action: 'prepared' | 'release'): D1PreparedStatement {
+    return statement(db, `INSERT INTO production_events(job_id,actor_id,actor_name,action,quantity,accepted,rejected,note,version,operator_id)
+        SELECT j.id,?,${actorName},?,0,0,0,'',j.version,NULL
+        FROM json_each(?) AS r JOIN production_jobs j ON j.id=r.value ORDER BY r.key`, [member.id, member.role, member.id, action, ids]);
 }
 async function getJobs(db: D1Database, member: Member, url: URL): Promise<Response> {
     const owner = member.role === 'owner';
@@ -169,10 +199,7 @@ async function getJobs(db: D1Database, member: Member, url: URL): Promise<Respon
     const offset = Number(offsetValue);
     const filter = owner ? (order ? 'j.order_id=?' : '1=1') : visible;
     const values = owner ? (order ? [order] : []) : [member.id];
-    const result = await rows<{ payload: string }>(db, `SELECT ${owner
-        ? `json_set(p.payload,'$.sourceId',j.source_id,'$.itemIndex',CASE WHEN j.item_index=-1 THEN NULL ELSE j.item_index END,
-            '$.orderId',j.order_id,'$.sourceChanged',json(CASE WHEN j.source_changed=1 THEN 'true' ELSE 'false' END))`
-        : 'p.payload'} AS payload
+    const result = await rows<{ payload: string }>(db, `SELECT ${owner ? ownerPayload : 'p.payload'} AS payload
         FROM production_jobs j JOIN production_job_public p ON p.id=j.id
         WHERE ${filter} AND EXISTS(SELECT 1 FROM members WHERE id=? AND role=? AND active=1)
         ORDER BY CASE WHEN j.status IN ('completed','superseded') THEN 1 ELSE 0 END,j.updated_at DESC,j.id LIMIT 26 OFFSET ?`,
@@ -198,13 +225,23 @@ async function getSources(db: D1Database, url: URL): Promise<Response> {
         const indices = Array.isArray(details.items) ? details.items.map((_, index) => index) : [-1];
         for (const itemIndex of indices) {
             try {
-                const line = shirt(source, itemIndex);
+                const { imageId, ...line } = shirt(source, itemIndex);
                 sources.push({ sourceId: source.id, itemIndex: itemIndex < 0 ? null : itemIndex,
-                    orderId: source.order_id, ...line, sourceToken: await sourceToken(source, itemIndex) });
+                    orderId: source.order_id, ...line, imageId, sourceToken: await sourceToken(source, itemIndex) });
             } catch (error) { if (!(error instanceof HttpError)) throw error; }
         }
     }
-    return json({ sources, nextOffset: more ? offset + 10 : null });
+    // Preview exactly what a prepared job would show: only public product photos attach.
+    const photos = [...new Set(sources.flatMap(source => source.imageId ? [source.imageId] : []))];
+    const publicPhotos = new Set(photos.length ? (await rows<{ id: string }>(db,
+        "SELECT id FROM media_objects WHERE visibility='public' AND id IN (SELECT value FROM json_each(?))",
+        [JSON.stringify(photos)])).map(row => row.id) : []);
+    return json({
+        sources: sources.map(({ imageId, ...source }) => ({
+            ...source, designImageUrl: imageId && publicPhotos.has(imageId) ? `/api/media/objects/${imageId}` : null
+        })),
+        nextOffset: more ? offset + 10 : null
+    });
 }
 async function createJob(db: D1Database, member: Member, body: Row, requestId: string, hash: string): Promise<Response> {
     fields(body, ['sourceId', 'assigneeId', 'requestId', 'expectedSourceToken'], ['itemIndex', 'quantity', 'instructions']);
@@ -224,15 +261,103 @@ async function createJob(db: D1Database, member: Member, body: Row, requestId: s
             WHERE t.id=? AND t.details IS ? AND t.type=? AND t.category=? AND s.fingerprint=?)
             AND NOT EXISTS(SELECT 1 FROM production_jobs WHERE source_id=? AND item_index=? AND status<>'superseded')`,
         [source.id, source.details, source.type, source.category, source.fingerprint, source.id, index]),
-        statement(db, `INSERT INTO production_jobs(id,job_code,source_id,item_index,legacy_item_key,order_id,source_fingerprint,
-            snapshot_id,design_name,brand,color,size,required,instructions,assignee_id)
-            VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)`, [id, `PJ-${id.replaceAll('-', '').slice(0, 10).toUpperCase()}`, source.id, index,
+        statement(db, `INSERT INTO production_jobs(${JOB_COLUMNS})
+            VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,${PUBLIC_PHOTO})`, [id, jobCode(id), source.id, index,
             `${source.id}:${index}:${id}`, source.order_id, source.fingerprint, crypto.randomUUID(), line.designName,
-            line.brand, line.color, line.size, line.required, instructions, assignee]),
+            line.brand, line.color, line.size, line.required, instructions, assignee, line.imageId]),
         guard(db, 'write', 'changes()=1'),
         event(db, member, id, 'prepared')
     ];
     return mutation(db, member, requestId, hash, writes, jobResponse(true), [id]);
+}
+// Prepares several shirt jobs for one employee in a single atomic, idempotent batch, and
+// optionally releases them. Every line is checked exactly like a single prepare; any stale
+// line, existing job or inactive employee rejects the whole batch with nothing written.
+async function createJobs(db: D1Database, member: Member, body: Row, requestId: string, hash: string): Promise<Response> {
+    fields(body, ['lines', 'assigneeId', 'requestId'], ['instructions', 'release', 'artworkReady', 'blanksReady']);
+    if (!Array.isArray(body.lines) || !body.lines.length || body.lines.length > MAX_BATCH_JOBS) {
+        fail(`Choose from 1 to ${MAX_BATCH_JOBS} shirt lines at a time.`);
+    }
+    const assignee = text(body.assigneeId, 'Employee', 256, false);
+    const instructions = text(body.instructions ?? '', 'Instructions', 2000);
+    if (body.release !== undefined && typeof body.release !== 'boolean') fail('Release must be true or false.');
+    const releasing = body.release === true;
+    if (releasing && (body.artworkReady !== true || body.blanksReady !== true)) fail('Confirm artwork and blanks are ready before release.');
+    if (!releasing && (body.artworkReady !== undefined || body.blanksReady !== undefined)) fail('Unexpected or missing request fields.');
+    const requested = (body.lines as unknown[]).map(value => {
+        if (!isObject(value)) fail('Each shirt line must be an object.');
+        fields(value, ['sourceId', 'expectedSourceToken'], ['itemIndex']);
+        if (typeof value.sourceId !== 'string' || !UUID.test(value.sourceId)) fail('Choose the source transaction UUID, not a display item ID.');
+        const index = value.itemIndex === undefined || value.itemIndex === null ? -1 : integer(value.itemIndex, 'Item index', 10000);
+        return { sourceId: value.sourceId.toLowerCase(), index, token: value.expectedSourceToken };
+    });
+    if (new Set(requested.map(line => `${line.sourceId}:${line.index}`)).size !== requested.length) fail('Choose each shirt line only once.');
+    const sourceIds = [...new Set(requested.map(line => line.sourceId))];
+    const sources = new Map((await rows<Source>(db, `${sourceQuery} WHERE t.id IN (SELECT value FROM json_each(?))`,
+        [JSON.stringify(sourceIds)])).map(source => [source.id, source]));
+    const jobs = [];
+    for (const line of requested) {
+        const source = sources.get(line.sourceId);
+        if (!source) fail('A chosen shirt line no longer exists. Reload and choose again.', 'production_conflict', 409);
+        const shirtLine = shirt(source, line.index);
+        if (line.token !== await sourceToken(source, line.index)) {
+            fail('A chosen shirt line changed. Reload before preparing these jobs.', 'production_conflict', 409);
+        }
+        const id = crypto.randomUUID();
+        jobs.push({
+            id, jobCode: jobCode(id), sourceId: source.id, itemIndex: line.index, legacyKey: `${source.id}:${line.index}:${id}`,
+            orderId: source.order_id, fingerprint: source.fingerprint, snapshotId: crypto.randomUUID(),
+            designName: shirtLine.designName, brand: shirtLine.brand, color: shirtLine.color, size: shirtLine.size,
+            required: shirtLine.required, imageId: shirtLine.imageId
+        });
+    }
+    const ids = JSON.stringify(jobs.map(job => job.id));
+    const snapshots = JSON.stringify([...sources.values()].map(source => ({
+        id: source.id, details: source.details, type: source.type, category: source.category, fingerprint: source.fingerprint
+    })));
+    const lines = JSON.stringify(jobs.map(job => ({ sourceId: job.sourceId, itemIndex: job.itemIndex })));
+    const field = (name: string) => `json_extract(r.value,'$.${name}')`;
+    const writes = [
+        guard(db, 'forbidden', "EXISTS(SELECT 1 FROM members WHERE id=? AND role='print_operator' AND active=1)", [assignee]),
+        guard(db, 'conflict', `NOT EXISTS(SELECT 1 FROM json_each(?) AS r WHERE NOT EXISTS(
+                SELECT 1 FROM transactions t JOIN production_source_state s ON s.source_id=t.id
+                WHERE t.id=${field('id')} AND t.details IS ${field('details')} AND t.type=${field('type')}
+                    AND t.category=${field('category')} AND s.fingerprint=${field('fingerprint')}))
+            AND NOT EXISTS(SELECT 1 FROM json_each(?) AS r JOIN production_jobs j
+                ON j.source_id=${field('sourceId')} AND j.item_index=${field('itemIndex')} WHERE j.status<>'superseded')`,
+        [snapshots, lines]),
+        statement(db, `INSERT INTO production_jobs(${JOB_COLUMNS})
+            SELECT ${['id', 'jobCode', 'sourceId', 'itemIndex', 'legacyKey', 'orderId', 'fingerprint', 'snapshotId',
+                'designName', 'brand', 'color', 'size', 'required'].map(field).join(',')},?,?,
+                (SELECT m.id FROM media_objects m WHERE m.id=${field('imageId')} AND m.visibility='public')
+            FROM json_each(?) AS r ORDER BY r.key`, [instructions, assignee, JSON.stringify(jobs)]),
+        guard(db, 'write', 'changes()=?', [jobs.length]),
+        events(db, member, ids, 'prepared'),
+        guard(db, 'write', 'changes()=?', [jobs.length])
+    ];
+    if (releasing) {
+        const orders = new Set(jobs.map(job => job.orderId)).size;
+        const jobOrders = 'SELECT order_id FROM production_jobs WHERE id IN (SELECT value FROM json_each(?))';
+        writes.push(
+            statement(db, `UPDATE production_jobs SET status='released',source_changed=0,released_at=coalesce(released_at,${now}),
+                version=version+1,updated_at=${now} WHERE id IN (SELECT value FROM json_each(?)) AND ${RELEASABLE}`, [ids]),
+            guard(db, 'conflict', 'changes()=?', [jobs.length]),
+            // Same fulfillment-only change as a single release: the source trigger ignores it.
+            statement(db, `INSERT INTO orders(id) SELECT DISTINCT order_id FROM production_jobs
+                WHERE id IN (SELECT value FROM json_each(?)) ON CONFLICT(id) DO NOTHING`, [ids]),
+            statement(db, `UPDATE transactions SET details=json_set(coalesce(details,'{}'),'$.fulfillmentStatus','in_progress')
+                WHERE type='sale' AND coalesce(nullif(json_extract(details,'$.orderId'),''),id) IN (${jobOrders})
+                AND coalesce(json_extract(details,'$.removedFromOrder'),0) NOT IN (1,'true')`, [ids]),
+            statement(db, `UPDATE orders SET version=version+1 WHERE id IN (${jobOrders})`, [ids]),
+            guard(db, 'write', 'changes()=?', [orders]),
+            events(db, member, ids, 'release'),
+            guard(db, 'write', 'changes()=?', [jobs.length])
+        );
+    }
+    return mutation(db, member, requestId, hash, writes,
+        `SELECT json_object('jobs',json_group_array(json(payload))) FROM (SELECT ${ownerPayload} AS payload
+            FROM json_each(?) AS r JOIN production_jobs j ON j.id=r.value JOIN production_job_public p ON p.id=j.id ORDER BY r.key)`,
+        [ids]);
 }
 async function changeJob(db: D1Database, member: Member, id: string, action: string, body: Row, requestId: string, hash: string): Promise<Response> {
     const owner = member.role === 'owner';
@@ -257,10 +382,7 @@ async function changeJob(db: D1Database, member: Member, id: string, action: str
         set = `status=CASE WHEN accepted=required THEN 'completed' ELSE 'released' END,source_changed=0,
             assignee_id=coalesce(?,assignee_id),released_at=coalesce(released_at,${now})`;
         values = [assignee];
-        condition = `status IN ('draft','held') AND EXISTS(SELECT 1 FROM production_source_state s JOIN transactions t ON t.id=s.source_id
-            WHERE s.source_id=production_jobs.source_id AND s.fingerprint=production_jobs.source_fingerprint
-            AND coalesce(json_extract(t.details,'$.fulfillmentStatus'),
-                CASE WHEN coalesce(json_extract(t.details,'$.status'),'paid')='paid' THEN 'pending' ELSE json_extract(t.details,'$.status') END) IN ('pending','in_progress'))`;
+        condition = RELEASABLE;
     } else if (action === 'hold') {
         fields(body, ['expectedVersion', 'requestId', 'note']);
         if (!note) fail('Give the employee a reason for the hold.');
@@ -352,13 +474,12 @@ async function reviseJob(db: D1Database, member: Member, id: string, body: Row, 
             WHERE t.id=? AND t.details IS ? AND s.fingerprint=?)
             AND NOT EXISTS(SELECT 1 FROM production_jobs WHERE source_id=? AND item_index=? AND status<>'superseded')`,
         [source.id, source.details, source.fingerprint, source.id, index]),
-        statement(db, `INSERT INTO production_jobs(id,job_code,source_id,item_index,legacy_item_key,order_id,source_fingerprint,
-            snapshot_id,design_name,brand,color,size,required,instructions,assignee_id)
-            VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)`, [
-            replacementId, `PJ-${replacementId.replaceAll('-', '').slice(0, 10).toUpperCase()}`, source.id, index,
+        statement(db, `INSERT INTO production_jobs(${JOB_COLUMNS})
+            VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,${PUBLIC_PHOTO})`, [
+            replacementId, jobCode(replacementId), source.id, index,
             `${source.id}:${index}:${replacementId}`, source.order_id, source.fingerprint, crypto.randomUUID(),
             line.designName, line.brand, line.color, line.size, line.required,
-            text(body.instructions ?? '', 'Instructions', 2000), assignee
+            text(body.instructions ?? '', 'Instructions', 2000), assignee, line.imageId
         ]),
         guard(db, 'write', 'changes()=1'),
         statement(db, 'UPDATE production_jobs SET superseded_by=? WHERE id=?', [replacementId, id]),
@@ -536,6 +657,7 @@ export async function handleProductionRequest(request: Request, env: AppEnv, mem
     const saved = await receipt(env.DB, member, requestId, hash);
     if (saved) return json(saved);
     if (memberMutation) return changeMember(env.DB, member, memberPath?.[1], input, requestId, hash);
+    if (url.pathname === '/api/production/jobs/batch') return createJobs(env.DB, member, input, requestId, hash);
     if (url.pathname === '/api/production/jobs') return createJob(env.DB, member, input, requestId, hash);
     if (match?.[2] === 'revise') return reviseJob(env.DB, member, match[1]!, input, requestId, hash);
     if (match) return changeJob(env.DB, member, match[1]!, match[2]!, input, requestId, hash);

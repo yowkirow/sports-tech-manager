@@ -144,7 +144,7 @@ test('employees see only their released jobs, safe explicit fields and safe acto
         assert.ok(!encoded.toLowerCase().includes(forbidden.toLowerCase()), forbidden);
     }
     assert.deepEqual(Object.keys(response.jobs[0]).sort(), [
-        'accepted', 'assignee', 'awaitingQA', 'brand', 'color', 'designName', 'events', 'id', 'instructions',
+        'accepted', 'assignee', 'awaitingQA', 'brand', 'color', 'designImageUrl', 'designName', 'events', 'id', 'instructions',
         'jobCode', 'rejected', 'releasedAt', 'remainingToPrint', 'required', 'reworkRemaining', 'size', 'status', 'updatedAt', 'version'
     ].sort());
 });
@@ -538,4 +538,129 @@ test('shared member profiles supply queue names without exposing other fields or
     assert.equal(current.assignee.name, 'Sam Updated');
     assert.equal(current.events[0].actorName, 'Sam');
     assert.ok(!JSON.stringify(current).includes('PRIVATE PROFILE'));
+});
+
+const PUBLIC_PHOTO = 'aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa';
+const PRIVATE_PHOTO = 'bbbbbbbb-bbbb-4bbb-8bbb-bbbbbbbbbbbb';
+function media(f) {
+    for (const [id, visibility] of [[PUBLIC_PHOTO, 'public'], [PRIVATE_PHOTO, 'private']]) {
+        f.db.sqlite.prepare(`INSERT INTO media_objects(id,object_key,visibility,content_type,byte_size,sha256)
+            VALUES (?,?,?,'image/png',1,'hash')`).run(id, `${visibility}/${id}`, visibility);
+    }
+}
+function shirtOrder(f, id, orderId, details = {}) {
+    f.db.sqlite.prepare('INSERT OR IGNORE INTO orders(id) VALUES (?)').run(orderId);
+    f.db.sqlite.prepare(`INSERT INTO transactions(id,type,category,amount,date,details,order_id)
+        VALUES (?,'sale','Shirts','500','2026-09-17T00:00:00Z',?,?)`).run(id, JSON.stringify({
+        orderId, itemName: 'Club shirt', quantity: 2, brand: 'Sypik', size: 'L', color: 'White', status: 'paid',
+        customerName: 'PRIVATE CUSTOMER', ...details }), orderId);
+}
+const lineOf = source => ({ sourceId: source.sourceId, itemIndex: source.itemIndex, expectedSourceToken: source.sourceToken });
+
+test('jobs snapshot only public product photos, and staff see the photo but never a private file', async t => {
+    const f = fixture(t, { imageUrl: `/api/media/objects/${PUBLIC_PHOTO}` });
+    media(f);
+    const THIRD = '00000000-0000-4000-8000-000000000003';
+    shirtOrder(f, THIRD, 'ST-RECEIPT', { imageUrl: `/api/media/objects/${PRIVATE_PHOTO}` });
+    const { sources } = await call(f, '/sources');
+    assert.equal(sources.find(source => source.sourceId === SOURCE).designImageUrl, `/api/media/objects/${PUBLIC_PHOTO}`);
+    assert.equal(sources.find(source => source.sourceId === THIRD).designImageUrl, null);
+    const job = await release(f, await prepare(f));
+    assert.equal(job.designImageUrl, `/api/media/objects/${PUBLIC_PHOTO}`);
+    const staff = (await call(f, '/jobs', undefined, printer)).jobs[0];
+    assert.equal(staff.designImageUrl, `/api/media/objects/${PUBLIC_PHOTO}`);
+    const privateJob = await prepare(f, { sourceId: THIRD });
+    assert.equal(privateJob.designImageUrl, null);
+    assert.equal(f.db.sqlite.prepare('SELECT design_image_id FROM production_jobs WHERE id=?').get(privateJob.id).design_image_id, null);
+    // A changed photo on the order after preparing does not alter the job's snapshot.
+    changeSource(f, { imageUrl: '' });
+    assert.equal((await call(f, '/jobs', undefined, printer)).jobs[0].designImageUrl, `/api/media/objects/${PUBLIC_PHOTO}`);
+});
+
+test('nested lines use the item photo, never another product photo from the order', async t => {
+    const f = fixture(t, { imageUrl: `/api/media/objects/${PUBLIC_PHOTO}`, items: [
+        { name: 'Own photo', category: 'shirts', size: 'M', quantity: 1, imageUrl: `/api/media/objects/${PUBLIC_PHOTO}` },
+        { details: { name: 'External photo', category: 'shirts', size: 'L', quantity: 1, imageUrl: 'https://example.invalid/x.png' } },
+        { name: 'No photo', category: 'shirts', size: 'S', quantity: 1 }
+    ] });
+    media(f);
+    const { sources } = await call(f, '/sources');
+    const photos = sources.filter(source => source.sourceId === SOURCE).sort((a, b) => a.itemIndex - b.itemIndex).map(source => source.designImageUrl);
+    assert.deepEqual(photos, [`/api/media/objects/${PUBLIC_PHOTO}`, null, `/api/media/objects/${PUBLIC_PHOTO}`]);
+});
+
+test('batch prepare creates several jobs for one employee atomically, with order references for the owner', async t => {
+    const f = fixture(t);
+    media(f);
+    const THIRD = '00000000-0000-4000-8000-000000000003';
+    shirtOrder(f, THIRD, 'ST-OTHER', { imageUrl: `/api/media/objects/${PUBLIC_PHOTO}` });
+    const { sources } = await call(f, '/sources');
+    const lines = sources.map(lineOf);
+    assert.equal(lines.length, 2);
+    const body = { lines, assigneeId: printer.id, instructions: 'Front print only.', requestId: requestId() };
+    await assert.rejects(call(f, '/jobs/batch', body, printer), failure(403));
+    await assert.rejects(call(f, '/jobs/batch', { ...body, lines: [lines[0], lines[0]] }), failure(400));
+    await assert.rejects(call(f, '/jobs/batch', { ...body, lines: [] }), failure(400));
+    await assert.rejects(call(f, '/jobs/batch', { ...body, artworkReady: true }), failure(400));
+    const result = await call(f, '/jobs/batch', body);
+    assert.equal(result.jobs.length, 2);
+    assert.deepEqual(result.jobs.map(job => job.status), ['draft', 'draft']);
+    assert.deepEqual(new Set(result.jobs.map(job => job.orderId)), new Set(['ST-PRINT', 'ST-OTHER']));
+    assert.ok(result.jobs.every(job => job.assignee.id === printer.id && job.instructions === 'Front print only.'));
+    assert.equal(result.jobs.find(job => job.orderId === 'ST-OTHER').designImageUrl, `/api/media/objects/${PUBLIC_PHOTO}`);
+    assert.equal(f.db.sqlite.prepare("SELECT count(*) AS n FROM production_events WHERE action='prepared'").get().n, 2);
+    assert.deepEqual((await call(f, '/jobs', undefined, printer)).jobs, [], 'drafts stay hidden from staff');
+    const before = snapshot(f);
+    assert.deepEqual(await call(f, '/jobs/batch', body), result, 'replay returns the saved receipt');
+    assert.deepEqual(snapshot(f), before);
+    await assert.rejects(call(f, '/jobs/batch', { ...body, requestId: requestId() }), failure(409));
+    assert.deepEqual(snapshot(f), before);
+});
+
+test('batch prepare rejects the whole batch when any line is stale or the employee is inactive', async t => {
+    const f = fixture(t);
+    const THIRD = '00000000-0000-4000-8000-000000000003';
+    shirtOrder(f, THIRD, 'ST-OTHER');
+    const lines = (await call(f, '/sources')).sources.map(lineOf);
+    const before = snapshot(f);
+    const stale = lines.map((line, index) => index ? { ...line, expectedSourceToken: 'stale' } : line);
+    await assert.rejects(call(f, '/jobs/batch', { lines: stale, assigneeId: printer.id, requestId: requestId() }), failure(409));
+    f.db.beforeBatch = () => { changeSource(f, { size: 'XL' }, THIRD); };
+    await assert.rejects(call(f, '/jobs/batch', { lines, assigneeId: printer.id, requestId: requestId() }), failure(409));
+    changeSource(f, { size: 'L' }, THIRD);
+    f.db.sqlite.exec("UPDATE members SET active=0 WHERE id='printer'");
+    await assert.rejects(call(f, '/jobs/batch', { lines, assigneeId: printer.id, requestId: requestId() }), failure(403));
+    assert.equal(f.db.sqlite.prepare('SELECT count(*) AS n FROM production_jobs').get().n, 0);
+    assert.equal(f.db.sqlite.prepare('SELECT count(*) AS n FROM production_events').get().n, 0);
+    assert.deepEqual(snapshot(f).orders, before.orders);
+});
+
+test('batch prepare and release moves every chosen order to in progress in one save', async t => {
+    const f = fixture(t);
+    const THIRD = '00000000-0000-4000-8000-000000000003';
+    shirtOrder(f, THIRD, 'ST-OTHER');
+    const lines = (await call(f, '/sources')).sources.map(lineOf);
+    await assert.rejects(call(f, '/jobs/batch', { lines, assigneeId: printer.id, release: true, artworkReady: true, requestId: requestId() }), failure(400));
+    const result = await call(f, '/jobs/batch', { lines, assigneeId: printer.id, release: true, artworkReady: true, blanksReady: true, requestId: requestId() });
+    assert.deepEqual(result.jobs.map(job => job.status), ['released', 'released']);
+    assert.ok(result.jobs.every(job => job.releasedAt));
+    for (const id of [SOURCE, THIRD]) {
+        assert.equal(JSON.parse(f.db.sqlite.prepare('SELECT details FROM transactions WHERE id=?').get(id).details).fulfillmentStatus, 'in_progress');
+    }
+    assert.equal(JSON.parse(f.db.sqlite.prepare('SELECT details FROM transactions WHERE id=?').get(SECOND).details).fulfillmentStatus, 'in_progress');
+    assert.deepEqual(f.db.sqlite.prepare("SELECT id,version FROM orders WHERE id IN ('ST-PRINT','ST-OTHER') ORDER BY id").all().map(row => ({ ...row })),
+        [{ id: 'ST-OTHER', version: 1 }, { id: 'ST-PRINT', version: 1 }]);
+    assert.equal(f.db.sqlite.prepare("SELECT count(*) AS n FROM production_events WHERE action='release'").get().n, 2);
+    assert.equal(f.db.sqlite.prepare('SELECT count(*) AS n FROM production_jobs WHERE source_changed=1').get().n, 0, 'release must not self-hold');
+    const staff = (await call(f, '/jobs', undefined, printer)).jobs;
+    assert.equal(staff.length, 2);
+    const encoded = JSON.stringify(staff).toLowerCase();
+    for (const forbidden of ['private', 'customer', 'orderid', 'sourceid']) assert.ok(!encoded.includes(forbidden), forbidden);
+});
+
+test('batch prepare is limited to a reviewable number of lines', async t => {
+    const f = fixture(t);
+    const lines = Array.from({ length: 31 }, (_, index) => ({
+        sourceId: `00000000-0000-4000-8000-${String(index + 10).padStart(12, '0')}`, expectedSourceToken: 'x' }));
+    await assert.rejects(call(f, '/jobs/batch', { lines, assigneeId: printer.id, requestId: requestId() }), failure(400));
 });

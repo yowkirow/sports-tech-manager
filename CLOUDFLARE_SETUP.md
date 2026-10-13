@@ -290,8 +290,21 @@ that exact email in the production `/print` Access application. The employee
 must not receive Cloudflare dashboard privileges or an owner role.
 
 Only assigned, explicitly released shirt jobs are visible. Product/design names,
-variants, required quantities and progress are allowlisted; customer contacts,
-addresses, receipts, pricing, stock costs and management comments are not returned.
+variants, required quantities, progress and the design photo are allowlisted; customer
+names, contacts, addresses, receipts, pricing, stock costs and management comments are
+not returned. Customer names and order numbers appear only on the owner's screens.
+
+The owner prepares jobs under Production > Prepare shirt jobs: waiting shirt lines are
+grouped by the customer who ordered (A–Z, with the order number), can be ticked one by
+one or a whole order at a time, and up to 30 lines are prepared for one employee in a
+single atomic save (`POST /api/production/jobs/batch`), optionally released at once
+after the same artwork and blanks confirmations as a single release.
+
+Design photos (migration `0009_production_design_photos.sql`): each job snapshots its
+order line's product photo when prepared. Only public product media is attached; the
+Worker resolves the id through `media_objects.visibility = 'public'`, so private receipt
+files can never reach print staff. Lines without a stored product photo show "No design
+photo"; the employee then uses the artwork the owner supplied separately.
 The employee records whole partial quantities as Printing, Printed or Problem.
 Printed quantities await owner QA. Accepted and rejected quantities are recorded
 atomically with immutable events; rejected shirts return to the rework count.
