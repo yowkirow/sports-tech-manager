@@ -1,6 +1,6 @@
 import assert from 'node:assert/strict';
 import { test } from 'node:test';
-import { MAX_BATCH_JOBS, payoutSteps, productionBatchLines, productionCandidates, productionCustomerOf, productionGroupMatches, productionLineKey, productionOrderGroups, productionQuantity, productionError, walletPeso } from '../../src/lib/production.js';
+import { MAX_BATCH_JOBS, orderDateLabel, payoutSteps, productionBatchLines, productionCandidates, productionCustomerOf, productionGroupMatches, productionLineKey, productionOrderDateOf, productionOrderGroups, productionQuantity, productionError, walletPeso } from '../../src/lib/production.js';
 
 test('production UI sends only normalized shirt source references and server snapshot tokens', () => {
     const transactions = [
@@ -65,11 +65,11 @@ test('owner picker groups shirt lines by the customer who ordered, keeps order n
     assert.equal(candidates[0].designImageUrl, '/api/media/objects/x');
     const groups = productionOrderGroups(candidates, transactions);
     assert.deepEqual(groups.map(group => [group.customerName, group.orderId, group.shirts, group.lines.length]), [
-        ['Ana Reyes', 'ST-A0', 1, 1], ['Ana Reyes', 'ST-A1', 3, 2], ['zoe Cruz', 'ST-B2', 1, 1]
-    ]);
-    assert.equal(productionGroupMatches(groups[2], 'ZOE'), true);
-    assert.equal(productionGroupMatches(groups[2], 'st-b2'), true);
-    assert.equal(productionGroupMatches(groups[1], 'team'), true);
+        ['Ana Reyes', 'ST-A0', 1, 1], ['zoe Cruz', 'ST-B2', 1, 1], ['Ana Reyes', 'ST-A1', 3, 2]
+    ], 'first in, first out: oldest order date first');
+    assert.equal(productionGroupMatches(groups[1], 'ZOE'), true);
+    assert.equal(productionGroupMatches(groups[1], 'st-b2'), true);
+    assert.equal(productionGroupMatches(groups[2], 'team'), true);
     assert.equal(productionGroupMatches(groups[0], 'zoe'), false);
     const payload = productionBatchLines(groups.flatMap(group => group.lines));
     assert.deepEqual(Object.keys(payload[0]).sort(), ['expectedSourceToken', 'itemIndex', 'sourceId']);
@@ -77,4 +77,22 @@ test('owner picker groups shirt lines by the customer who ordered, keeps order n
     assert.equal(productionCustomerOf(transactions)({ sourceId: 't2' }), 'Ana Reyes');
     assert.equal(productionCustomerOf(transactions)({ sourceId: 'missing' }), '');
     assert.equal(MAX_BATCH_JOBS, 30);
+});
+
+test('picker puts orders without a date last and labels older orders with their year', () => {
+    const transactions = [
+        { id: 'dated', type: 'sale', category: 'Shirts', date: '2025-12-28T02:00:00Z', details: { orderId: 'ST-OLD', customerName: 'Old', size: 'M' } },
+        { id: 'undated', type: 'sale', category: 'Shirts', details: { orderId: 'ST-NODATE', customerName: 'Aaron', size: 'M' } }
+    ];
+    const source = (sourceId, orderId) => ({ sourceId, itemIndex: null, orderId, designName: 'Shirt', brand: 'Sypik', color: '', size: 'M', required: 1, sourceToken: sourceId });
+    const groups = productionOrderGroups(productionCandidates(transactions, [source('undated', 'ST-NODATE'), source('dated', 'ST-OLD')], []), transactions);
+    assert.deepEqual(groups.map(group => group.orderId), ['ST-OLD', 'ST-NODATE']);
+    const now = new Date('2026-10-13T05:00:00Z');
+    assert.equal(orderDateLabel('2026-10-05T02:00:00Z', now), 'Oct 5');
+    assert.equal(orderDateLabel('2025-12-28T02:00:00Z', now), 'Dec 28, 2025');
+    assert.equal(orderDateLabel('2025-12-31T17:00:00Z', now), 'Jan 1', 'Philippine time decides the day and year');
+    assert.equal(orderDateLabel('', now), '');
+    assert.equal(orderDateLabel('not a date', now), '');
+    assert.equal(productionOrderDateOf(transactions)({ sourceId: 'dated' }), '2025-12-28T02:00:00Z');
+    assert.equal(productionOrderDateOf(transactions)({ sourceId: 'undated' }), null);
 });

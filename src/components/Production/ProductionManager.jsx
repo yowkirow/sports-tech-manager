@@ -2,8 +2,8 @@ import React, { useCallback, useMemo, useState } from 'react';
 import { CheckCircle2, Pause, Send, UserPlus, UserX } from 'lucide-react';
 import LoadingState from '../ui/LoadingState.jsx';
 import {
-    MAX_BATCH_JOBS, productionBatchLines, productionCandidates, productionCustomerOf, productionGroupMatches,
-    productionLineKey, productionOrderGroups, productionQuantity, walletPeso
+    MAX_BATCH_JOBS, orderDateLabel, productionBatchLines, productionCandidates, productionCustomerOf, productionGroupMatches,
+    productionLineKey, productionOrderDateOf, productionOrderGroups, productionQuantity, walletPeso
 } from '../../lib/production.js';
 import { useProductionData, useProductionMutation, useProductionWallet } from './productionHooks.js';
 import { DesignThumb, JobActivity, JobCounts, JobHeading, JobInstructions, JobPhoto, MutationNotice, ProductionHeader, ProductionNotice } from './ProductionParts.jsx';
@@ -117,7 +117,7 @@ function PrepareJobs({ candidates, transactions, employees, reload, online, stal
     };
     return <details className="production-section" open={candidates.length > 0 || undefined}>
         <summary>Prepare shirt jobs{candidates.length ? ` (${candidates.length} lines waiting)` : ''}</summary>
-        <p className="production-help">Tick the shirt lines to print, grouped by the customer who ordered. Each line becomes one job for its full quantity.</p>
+        <p className="production-help">Oldest orders first. Tick the shirt lines to print, grouped by the customer who ordered. Each line becomes one job for its full quantity.</p>
         {!employees.length && <ProductionNotice>Add an active print-operator account first, then choose shirt lines.</ProductionNotice>}
         <form onSubmit={submit}>
             <fieldset disabled={blocked || !employees.length}>
@@ -138,7 +138,7 @@ function PrepareJobs({ candidates, transactions, employees, reload, online, stal
                                 <span className="production-order-name">{group.customerName}</span>
                                 <span className="production-order-meta">
                                     <span className="production-order-ref">{group.orderId}</span>
-                                    {group.date && <span>{new Date(group.date).toLocaleDateString('en-PH', { month: 'short', day: 'numeric' })}</span>}
+                                    {group.date && <span>{orderDateLabel(group.date)}</span>}
                                     <span>{group.shirts} shirt{group.shirts === 1 ? '' : 's'}</span>
                                 </span>
                             </label>
@@ -206,7 +206,7 @@ function PrepareJobs({ candidates, transactions, employees, reload, online, stal
     </details>;
 }
 
-function OwnerJob({ job, customer, sources, employees, reload, online, stale }) {
+function OwnerJob({ job, customer, orderDate, sources, employees, reload, online, stale }) {
     const readOnly = useReadOnly();
     const [artwork, setArtwork] = useState(false);
     const [blanks, setBlanks] = useState(false);
@@ -257,7 +257,7 @@ function OwnerJob({ job, customer, sources, employees, reload, online, stale }) 
             () => { setArtwork(false); setBlanks(false); setAccepted(''); setRejected(''); setNote(''); });
     };
     return <li className="production-job">
-        <JobHeading job={job} owner customer={customer} />
+        <JobHeading job={job} owner customer={customer} orderDate={orderDate ? orderDateLabel(orderDate) : ''} />
         <JobPhoto job={job} />
         <JobCounts job={job} />
         <JobInstructions job={job} />
@@ -349,6 +349,7 @@ export default function ProductionManager({ transactions = [], refetch }) {
     }, [data.load, loadWallets, refetch]);
     const candidates = useMemo(() => productionCandidates(transactions, data.sources, data.jobs), [transactions, data.sources, data.jobs]);
     const customerOf = useMemo(() => productionCustomerOf(transactions), [transactions]);
+    const orderDateOf = useMemo(() => productionOrderDateOf(transactions), [transactions]);
     const employees = data.members.filter(member => member.role === 'print_operator' && isActive(member));
     const jobs = data.jobs.filter(job => (filter === 'all' || (filter === 'completed' ? job.status === 'completed' : !['completed', 'superseded'].includes(job.status)))
         && `${job.jobCode} ${job.orderId} ${job.designName} ${customerOf(job)}`.toLowerCase().includes(search.toLowerCase().trim()));
@@ -377,7 +378,7 @@ export default function ProductionManager({ transactions = [], refetch }) {
                         <h3>{search ? 'No matching print jobs' : 'No print jobs in this view'}</h3>
                         <p>{search ? 'Try another customer name, order reference or job code.' : 'Prepare shirt lines above. Employees see nothing until you release a job.'}</p>
                     </div>}
-                    <ul className="production-jobs">{jobs.map(job => <OwnerJob key={job.id} job={job} customer={customerOf(job)} sources={data.sources} employees={employees}
+                    <ul className="production-jobs">{jobs.map(job => <OwnerJob key={job.id} job={job} customer={customerOf(job)} orderDate={orderDateOf(job)} sources={data.sources} employees={employees}
                         reload={reload} online={data.online} stale={!!data.error} />)}</ul>
                 </>}
             </>}

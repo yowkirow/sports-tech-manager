@@ -689,3 +689,34 @@ test('batch prepare is limited to a reviewable number of lines', async t => {
         sourceId: `00000000-0000-4000-8000-${String(index + 10).padStart(12, '0')}`, expectedSourceToken: 'x' }));
     await assert.rejects(call(f, '/jobs/batch', { lines, assigneeId: printer.id, requestId: requestId() }), failure(400));
 });
+
+test('jobs list first in, first out by order date for owner and staff, with accepted jobs last', async t => {
+    const f = fixture(t);
+    const order = (id, orderId, date) => {
+        f.db.sqlite.prepare('INSERT OR IGNORE INTO orders(id) VALUES (?)').run(orderId);
+        f.db.sqlite.prepare(`INSERT INTO transactions(id,type,category,amount,date,details,order_id)
+            VALUES (?,'sale','Shirts','500',?,?,?)`).run(id, date, JSON.stringify({ orderId, itemName: `Shirt ${orderId}`,
+            quantity: 1, size: 'M', status: 'paid', customerName: orderId }), orderId);
+    };
+    const NEWEST = '00000000-0000-4000-8000-000000000011';
+    const OLDEST = '00000000-0000-4000-8000-000000000012';
+    const MIDDLE = '00000000-0000-4000-8000-000000000013';
+    order(NEWEST, 'ST-NEW', '2026-10-12T00:00:00Z');
+    order(OLDEST, 'ST-OLD', '2026-08-01T00:00:00Z');
+    order(MIDDLE, 'ST-MID', '2026-10-01T00:00:00Z');
+    const sources = (await call(f, '/sources')).sources;
+    const prepareFor = async id => (await call(f, '/jobs/batch', { lines: sources.filter(source => source.sourceId === id).map(lineOf),
+        assigneeId: printer.id, release: true, artworkReady: true, blanksReady: true, requestId: requestId() })).jobs[0];
+    await prepareFor(NEWEST);
+    let oldest = await prepareFor(OLDEST);
+    await prepareFor(MIDDLE);
+    await prepareFor(SOURCE);
+    const ownerOrder = (await call(f)).jobs.map(job => job.orderId);
+    assert.deepEqual(ownerOrder, ['ST-OLD', 'ST-PRINT', 'ST-MID', 'ST-NEW']);
+    assert.deepEqual((await call(f, '/jobs', undefined, printer)).jobs.map(job => job.customerName), ['ST-OLD', 'PRIVATE CUSTOMER', 'ST-MID', 'ST-NEW']);
+    oldest = await progress(f, oldest, 'printed', { quantity: 1 });
+    await qa(f, oldest, 1, 0);
+    assert.deepEqual((await call(f)).jobs.map(job => job.orderId), ['ST-PRINT', 'ST-MID', 'ST-NEW', 'ST-OLD'], 'accepted jobs move below unfinished work');
+    const staffJobs = (await call(f, '/jobs', undefined, printer)).jobs;
+    assert.ok(staffJobs.every(job => !('date' in job) && !('orderDate' in job)), 'the order date is a sort key only');
+});

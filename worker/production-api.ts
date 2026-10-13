@@ -199,10 +199,13 @@ async function getJobs(db: D1Database, member: Member, url: URL): Promise<Respon
     const offset = Number(offsetValue);
     const filter = owner ? (order ? 'j.order_id=?' : '1=1') : visible;
     const values = owner ? (order ? [order] : []) : [member.id];
+    // First in, first out: unfinished work by the date the order came in (oldest first), then
+    // accepted or retired jobs. The order date is only a sort key; it is not returned to staff.
     const result = await rows<{ payload: string }>(db, `SELECT ${owner ? ownerPayload : 'p.payload'} AS payload
-        FROM production_jobs j JOIN production_job_public p ON p.id=j.id
+        FROM production_jobs j JOIN production_job_public p ON p.id=j.id LEFT JOIN transactions src ON src.id=j.source_id
         WHERE ${filter} AND EXISTS(SELECT 1 FROM members WHERE id=? AND role=? AND active=1)
-        ORDER BY CASE WHEN j.status IN ('completed','superseded') THEN 1 ELSE 0 END,j.updated_at DESC,j.id LIMIT 26 OFFSET ?`,
+        ORDER BY CASE WHEN j.status IN ('completed','superseded') THEN 1 ELSE 0 END,
+            coalesce(src.date,j.created_at),j.created_at,j.id LIMIT 26 OFFSET ?`,
     [...values, member.id, member.role, offset]);
     return json({ jobs: result.slice(0, 25).map(row => JSON.parse(row.payload)), nextOffset: result.length > 25 ? offset + 25 : null });
 }

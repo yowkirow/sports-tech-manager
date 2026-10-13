@@ -27,7 +27,8 @@ export function productionCandidates(transactions, sources, jobs) {
 }
 
 // Owner display only: groups candidate lines by order, labelled with the customer who
-// ordered, A–Z by name, then oldest order first. Customer names never enter a payload.
+// ordered. First in, first out: oldest order date first, then name and order number.
+// Customer names never enter a payload.
 export function productionOrderGroups(candidates, transactions) {
     const orders = new Map();
     for (const transaction of transactions) {
@@ -46,9 +47,10 @@ export function productionOrderGroups(candidates, transactions) {
         group.shirts += candidate.required;
         if (order.date && (!group.date || order.date < group.date)) group.date = order.date;
     }
-    return [...groups.values()].sort((left, right) =>
-        left.customerName.localeCompare(right.customerName, 'en', { sensitivity: 'base' })
-        || String(left.date || '').localeCompare(String(right.date || '')) || left.orderId.localeCompare(right.orderId));
+    const dated = group => group.date ? 0 : 1;
+    return [...groups.values()].sort((left, right) => dated(left) - dated(right)
+        || String(left.date || '').localeCompare(String(right.date || ''))
+        || left.customerName.localeCompare(right.customerName, 'en', { sensitivity: 'base' }) || left.orderId.localeCompare(right.orderId));
 }
 
 export const productionGroupMatches = (group, search) => {
@@ -64,6 +66,21 @@ export function productionCustomerOf(transactions) {
         return line ? [[transaction.id, line.details.customerName]] : [];
     }));
     return job => names.get(job.sourceId) || '';
+}
+
+// Order date for an owner job card, from the job's source transaction.
+export function productionOrderDateOf(transactions) {
+    const dates = new Map(transactions.flatMap(transaction => transaction.type === 'sale' && transaction.date ? [[transaction.id, transaction.date]] : []));
+    return job => dates.get(job.sourceId) || null;
+}
+
+// "Oct 5" this year, "Dec 28, 2025" for older orders, in Philippine time.
+export function orderDateLabel(value, now = new Date()) {
+    const date = new Date(value);
+    if (!value || Number.isNaN(date.getTime())) return '';
+    const year = part => new Intl.DateTimeFormat('en-PH', { year: 'numeric', timeZone: 'Asia/Manila' }).format(part);
+    return date.toLocaleDateString('en-PH', { month: 'short', day: 'numeric', timeZone: 'Asia/Manila',
+        ...(year(date) !== year(now) ? { year: 'numeric' } : {}) });
 }
 
 export const MAX_BATCH_JOBS = 30;

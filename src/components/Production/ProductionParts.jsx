@@ -27,7 +27,7 @@ export function MutationNotice({ mutation, online }) {
         </button>}
     </ProductionNotice>;
 }
-export function JobHeading({ job, owner = false, customer = '' }) {
+export function JobHeading({ job, owner = false, customer = '', orderDate = '' }) {
     return <div className="production-job-heading">
         <div>
             <h3>{job.designName}</h3>
@@ -35,7 +35,7 @@ export function JobHeading({ job, owner = false, customer = '' }) {
             <p className="production-reference">{job.jobCode}</p>
             {owner && <p className="production-owner-reference">
                 {(customer || job.customerName) && <strong className="production-owner-customer">{customer || job.customerName}</strong>}
-                {[job.orderId, job.assignee.name].join(' · ')}
+                {[job.orderId, orderDate && `Ordered ${orderDate}`, job.assignee.name].filter(Boolean).join(' · ')}
             </p>}
         </div>
         <span className={`production-status production-status-${job.status}`}>

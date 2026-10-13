@@ -298,10 +298,12 @@ addresses, order numbers, receipts, pricing, stock costs and management comments
 not returned. Order numbers appear only on the owner's screens.
 
 The owner prepares jobs under Production > Prepare shirt jobs: waiting shirt lines are
-grouped by the customer who ordered (A–Z, with the order number), can be ticked one by
+grouped by the customer who ordered (oldest order first, with the order number), can be ticked one by
 one or a whole order at a time, and up to 30 lines are prepared for one employee in a
 single atomic save (`POST /api/production/jobs/batch`), optionally released at once
-after the same artwork and blanks confirmations as a single release.
+after the same artwork and blanks confirmations as a single release. Job lists for the
+owner and print staff are first in, first out: unfinished jobs by order date, oldest first,
+then accepted jobs. The order date is a sort key only; it is not returned to staff.
 
 Design photos (migration `0009_production_design_photos.sql`): each job snapshots its
 order line's product photo when prepared. Only public product media is attached; the
