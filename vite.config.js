@@ -5,7 +5,8 @@ import { VitePWA } from 'vite-plugin-pwa'
 // https://vitejs.dev/config/
 export default defineConfig(({ mode }) => ({
     define: {
-        'import.meta.env.VITE_PRINT_QUEUE_ENABLED': JSON.stringify(mode === 'staging' ? 'true' : process.env.VITE_PRINT_QUEUE_ENABLED || 'false')
+        // Must match PRINT_QUEUE_ENABLED in wrangler.production.jsonc (enabled 2026-10-13).
+        'import.meta.env.VITE_PRINT_QUEUE_ENABLED': JSON.stringify(mode === 'staging' ? 'true' : process.env.VITE_PRINT_QUEUE_ENABLED || 'true')
     },
     plugins: [
         react(),

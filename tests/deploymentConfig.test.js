@@ -18,7 +18,7 @@ test('Workers Paid deployments use a bounded CPU budget', () => {
     assert.deepEqual(staging.assets.run_worker_first, ['/api/*', '/health', '/admin*', '/print*']);
 });
 
-test('production serves the live domain with isolated data and no employee rollout', () => {
+test('production serves the live domain with isolated data and the print queue enabled', () => {
     assert.equal(production.name, 'sportstech-production');
     assert.equal(production.vars.ENVIRONMENT, 'production');
     assert.equal(production.workers_dev, false);
@@ -30,7 +30,7 @@ test('production serves the live domain with isolated data and no employee rollo
     // domain redirects to www instead of serving a storefront whose API calls fail.
     assert.equal(production.assets.run_worker_first, true);
     assert.equal(production.vars.MUTATIONS_ENABLED, 'true');
-    assert.equal(production.vars.PRINT_QUEUE_ENABLED, 'false');
+    assert.equal(production.vars.PRINT_QUEUE_ENABLED, 'true');
     // The production Access application (/admin and /print) has its own audience.
     assert.match(production.vars.ACCESS_AUDIENCE, /^[a-f0-9]{64}$/);
     assert.equal(production.vars.ACCESS_TEAM_DOMAIN, staging.vars.ACCESS_TEAM_DOMAIN);

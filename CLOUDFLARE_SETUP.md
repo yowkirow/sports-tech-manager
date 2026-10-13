@@ -34,8 +34,9 @@ Database migrations must be applied before enabling authenticated endpoints.
 Changing the frontend build or pushing a Vercel branch does not deploy this Worker;
 use the explicit staging command and verify the returned Worker version ID.
 `deploy:staging` builds fresh staging assets with the print UI enabled; it never
-uploads an arbitrary older `dist`. Production builds keep printing off unless
-`VITE_PRINT_QUEUE_ENABLED=true` is explicitly set for the corresponding rollout.
+uploads an arbitrary older `dist`. Production builds enable printing by default
+(`vite.config.js`), matching `PRINT_QUEUE_ENABLED` in `wrangler.production.jsonc`;
+a test fails if the two disagree.
 
 Apply migrations in order. `0002_transaction_date_pattern.sql` corrects a D1
 50-byte GLOB-pattern limit in the original schema while preserving all data and
@@ -62,9 +63,8 @@ must be monitored separately; do not promise a fixed total bill or enable other
 paid services. See the official [pricing](https://developers.cloudflare.com/workers/platform/pricing/)
 and [limits](https://developers.cloudflare.com/workers/platform/limits/).
 
-The preparation commands below build production assets with printing off.
-Do not set frontend `VITE_PRINT_QUEUE_ENABLED=true` until the later employee
-rollout, and keep it consistent with the Worker's `PRINT_QUEUE_ENABLED` flag.
+The print queue was enabled in production on October 13, 2026. Keep the frontend
+`VITE_PRINT_QUEUE_ENABLED` build flag consistent with the Worker's `PRINT_QUEUE_ENABLED` flag.
 
 ```powershell
 npm run db:production
@@ -303,10 +303,14 @@ counts; it never transfers old accepted work to a changed design or shifted lega
 item index. Payment/comment changes and returned tags do not restock inventory or
 consume blanks again.
 
-Entering Ready or Shipped requires complete current shirt-job QA and an explicit
-owner packing confirmation when printing is enabled. Historical already-ready
-orders are not given retroactive jobs for a payment-only change. Employees cannot
-release work, approve QA, change quantities on orders, mark payments or ship orders.
+Ready rule (owner decision, October 13, 2026): only orders sent to the print queue
+are gated. If an order has an active (not retired) print job, it can enter Ready or
+Shipped only when every such job is completed, fully accepted in QA and still matches
+its order line, and the owner confirms packing. Orders without print jobs, such as
+counter sales and orders placed before the queue, keep the previous workflow with no
+extra prompt. Retiring a held job removes its gate. Historical already-ready orders
+are not given retroactive jobs for a payment-only change. Employees cannot release
+work, approve QA, change quantities on orders, mark payments or ship orders.
 
 ### Print wallet (migration 0007)
 
@@ -454,9 +458,10 @@ project, the Vercel project and every private export. Do not cancel paid source
 services, delete projects, or destroy backups without explicit approval after a
 verified cutover.
 
-### 4. Employee printing (after a stable cutover)
+### 4. Employee printing (enabled October 13, 2026)
 
-Add the employee's exact email as a second policy on the same Access application,
-prepare their account under Production > Employee accounts, then set `PRINT_QUEUE_ENABLED` to
-`"true"` and build with `VITE_PRINT_QUEUE_ENABLED=true` in the same release. Start
-with a practice job before releasing real work.
+`PRINT_QUEUE_ENABLED` is `"true"` in production and the production build enables the
+matching UI. Invite the employee under Settings > Team as Print staff; the production
+Access team policy already lets any invited email sign in. Start with a practice job
+before releasing real work. To turn printing off again, set both flags to `"false"` in
+one release; existing jobs, events and wallet records are kept.

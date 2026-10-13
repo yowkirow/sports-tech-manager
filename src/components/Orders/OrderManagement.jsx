@@ -23,13 +23,18 @@ export default function OrderManagement({ transactions, onAddTransaction, onDele
     const readOnly = useReadOnly();
     const deletionRequests = React.useRef(new Map());
     const persistOrder = async changes => {
-        const ready = details => ['ready', 'shipped'].includes(details?.fulfillmentStatus ?? details?.status);
-        const needsPackingConfirmation = import.meta.env.VITE_PRINT_QUEUE_ENABLED === 'true'
-            && changes.some(change => !ready(change.original.details) && ready(change.updates.details));
-        if (needsPackingConfirmation && !window.confirm('Confirm that all shirts passed quality checks and packing, accessories and labels are complete.')) {
-            throw new Error('Packing was not confirmed. No changes were saved.');
+        const save = packingConfirmed => saveOrderChanges(changes, { requirePending: isReseller, ...(packingConfirmed ? { packingConfirmed: true } : {}) });
+        let result;
+        try {
+            result = await save(false);
+        } catch (error) {
+            // Only orders in the print queue need this; the server decides.
+            if (error.cause?.code !== 'PACKING_CONFIRMATION_REQUIRED') throw error;
+            if (!window.confirm('This order went through the print queue. Confirm that packing, accessories and labels are complete.')) {
+                throw new Error('Packing was not confirmed. No changes were saved.');
+            }
+            result = await save(true);
         }
-        const result = await saveOrderChanges(changes, { requirePending: isReseller, ...(needsPackingConfirmation ? { packingConfirmed: true } : {}) });
         onOrderSaved?.(changes, result);
         return result;
     };

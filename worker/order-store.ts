@@ -290,8 +290,11 @@ const membership = `type = 'sale'
 const receipt = 'EXISTS (SELECT 1 FROM mutation_receipts WHERE actor_id = ? AND request_id = ?)';
 
 // One JSON-array binding scopes this post-write check to the affected orders.
-// The production views include flat and legacy nested shirt variants; absence of
-// a job cannot be mistaken for completed QA. Only used after migration 0005.
+// Owner decision (2026-10-13): only lines sent to the print queue (an active,
+// non-superseded job) are gated. Each such job must be completed, fully accepted in
+// QA and match the current flat or nested line. Orders without print jobs, such as
+// counter sales and pre-queue orders, keep the previous Ready workflow. Only used
+// after migration 0005.
 export const PRODUCTION_READY_CONDITION = `NOT EXISTS (
     SELECT 1 FROM transactions AS ready
     WHERE ready.type = 'sale'
@@ -306,6 +309,9 @@ export const PRODUCTION_READY_CONDITION = `NOT EXISTS (
                     AND (job.accepted <> job.required OR job.status <> 'completed' OR job.source_changed <> 0))
             OR EXISTS (SELECT 1 FROM production_order_shirt_lines AS line
                 WHERE line.order_id = coalesce(ready.order_id, nullif(json_extract(ready.details, '$.orderId'), ''), ready.id)
+                    AND EXISTS (SELECT 1 FROM production_jobs AS queued
+                        WHERE queued.source_id = line.source_id AND queued.item_index = line.item_index
+                            AND queued.status <> 'superseded')
                     AND NOT EXISTS (SELECT 1 FROM production_jobs AS job
                         WHERE job.source_id = line.source_id AND job.item_index = line.item_index
                             AND job.order_id = line.order_id AND job.required = line.required
@@ -344,7 +350,8 @@ function mapGuard(error: unknown, readyTransition = false): never {
 
 /**
  * One snapshot SELECT plus a fixed 13-statement atomic batch (14 D1 statements,
- * at most 8 bindings per statement), independent of the source-row count.
+ * at most 8 bindings per statement), independent of the source-row count. An
+ * unconfirmed Ready transition with printing enabled adds one print-queue SELECT.
  *
  * JS compares normalized decimal/date/JSON snapshots. The batch then locks that
  * decision to every exact raw column read, and rechecks complete membership and
@@ -363,7 +370,17 @@ export async function saveOrderChanges(
     const readyTransition = options.requireProductionReady
         && changes.some(change => !ready(change.expected.details) && ready(change.updates.details));
     if (readyTransition && options.packingConfirmed !== true) {
-        throw new OrderStoreError('PACKING_CONFIRMATION_REQUIRED', 'Confirm that packing and any accessories are complete before marking Ready or Shipped.', 400);
+        // Advisory preflight for a clear message; the batch guard below is authoritative.
+        const queue = (await db.prepare(`SELECT count(*) AS jobs, coalesce(sum(CASE WHEN status <> 'completed'
+                OR accepted <> required OR source_changed <> 0 THEN 1 ELSE 0 END), 0) AS open
+            FROM production_jobs WHERE order_id = ? AND status <> 'superseded'`)
+            .bind(key).all<{ jobs: number; open: number }>()).results[0];
+        if (queue?.open) {
+            throw new OrderStoreError('ORDER_CONFLICT', 'This order is in the print queue. Finish its print jobs and accept them in QA before Ready or Shipped.', 409);
+        }
+        if (queue?.jobs) {
+            throw new OrderStoreError('PACKING_CONFIRMATION_REQUIRED', 'Confirm that packing and any accessories are complete before marking Ready or Shipped.', 400);
+        }
     }
     const payload = canonical({
         orderId: key, expectedVersion, requirePending: normalized.requirePending, changes

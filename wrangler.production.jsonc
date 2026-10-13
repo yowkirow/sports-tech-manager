@@ -17,7 +17,7 @@
     "ENVIRONMENT": "production",
     "ACCESS_TEAM_DOMAIN": "jolly-fog-e8df.cloudflareaccess.com",
     "ACCESS_AUDIENCE": "b34b322f990824061e2e12e0b09863d3634f19cf816fbe04506ae0bcde1d39eb",
-    "PRINT_QUEUE_ENABLED": "false",
+    "PRINT_QUEUE_ENABLED": "true",
     "MUTATIONS_ENABLED": "true",
     "CANONICAL_HOST": "www.sportstechph.store",
     "REDIRECT_HOSTS": "sportstechph.store"

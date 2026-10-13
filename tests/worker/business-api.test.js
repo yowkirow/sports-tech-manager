@@ -557,18 +557,16 @@ test('existing production jobs block transaction reset without blocking financia
     assert.equal(db.sqlite.prepare('SELECT action FROM production_events').get().action, 'source_deleted');
 });
 
-test('Ready requires current completed QA for every flat source with the same 14-statement primitive', async t => {
+test('Ready gates only print-queued sources, with the same 14-statement primitive', async t => {
     const db = new LocalD1(t);
     const saved = await insert(db, [sale(1), sale(2)]);
     enableProduction(db);
     const input = orderInput(saved.rows, 'ready-order', { fulfillmentStatus: 'ready' });
+    productionJob(db, id(1));
+    productionJob(db, id(2), -1, false);
     const before = state(db);
     await assert.rejects(call(db, 'owner', '/api/orders/save', 'POST', input), error('ORDER_CONFLICT', 409));
     assert.deepEqual(state(db), before);
-    productionJob(db, id(1));
-    await assert.rejects(call(db, 'owner', '/api/orders/save', 'POST', input), error('ORDER_CONFLICT', 409));
-    productionJob(db, id(2), -1, false);
-    await assert.rejects(call(db, 'owner', '/api/orders/save', 'POST', input), error('ORDER_CONFLICT', 409));
     db.sqlite.exec("UPDATE production_jobs SET accepted = required, status = 'completed'");
     const start = db.executed.length;
     assert.deepEqual(await call(db, 'owner', '/api/orders/save', 'POST', input), {
@@ -578,6 +576,38 @@ test('Ready requires current completed QA for every flat source with the same 14
     const after = state(db);
     await call(db, 'owner', '/api/orders/save', 'POST', input);
     assert.deepEqual(state(db), after);
+});
+
+test('orders without active print jobs reach Ready like before the queue, without a packing prompt', async t => {
+    const db = new LocalD1(t);
+    const saved = await insert(db, [sale(1), sale(2)]);
+    enableProduction(db);
+    productionJob(db, id(2), -1, false);
+    db.sqlite.exec("UPDATE production_jobs SET status = 'superseded'");
+    const input = orderInput(saved.rows, 'counter-ready', { fulfillmentStatus: 'shipped' });
+    delete input.packingConfirmed;
+    assert.deepEqual(await call(db, 'owner', '/api/orders/save', 'POST', input), {
+        orderId: ORDER, version: 1, ids: [id(1), id(2)]
+    });
+    assert.equal(db.sqlite.prepare('SELECT count(*) AS n FROM production_events').get().n, 0);
+});
+
+test('queued orders report unfinished print QA before asking for packing confirmation', async t => {
+    const db = new LocalD1(t);
+    const saved = await insert(db, [sale(1), sale(2)]);
+    enableProduction(db);
+    productionJob(db, id(1), -1, false);
+    const input = orderInput(saved.rows, 'queued-ready', { fulfillmentStatus: 'ready' });
+    delete input.packingConfirmed;
+    const before = state(db);
+    await assert.rejects(call(db, 'owner', '/api/orders/save', 'POST', input),
+        err => err.code === 'ORDER_CONFLICT' && err.status === 409 && /print queue/.test(err.message));
+    assert.deepEqual(state(db), before);
+    db.sqlite.exec("UPDATE production_jobs SET accepted = required, status = 'completed'");
+    await assert.rejects(call(db, 'owner', '/api/orders/save', 'POST', input), error('PACKING_CONFIRMATION_REQUIRED', 400));
+    assert.deepEqual(state(db), before);
+    input.packingConfirmed = true;
+    assert.equal((await call(db, 'owner', '/api/orders/save', 'POST', input)).version, 1);
 });
 
 test('Ready requires explicit owner packing confirmation even after print QA is complete', async t => {
@@ -599,7 +629,7 @@ test('migration retains source customer notes and referrer administrator attribu
     assert.ok(db.sqlite.prepare('PRAGMA table_info(customers)').all().some(column => column.name === 'notes'));
     assert.ok(db.sqlite.prepare('PRAGMA table_info(referrers)').all().some(column => column.name === 'admin_email'));
 });
-test('Ready rejects missing nested variants, stale fingerprints and same-write physical changes', async t => {
+test('Ready rejects stale fingerprints and same-write physical changes on queued nested variants', async t => {
     const db = new LocalD1(t);
     const saved = await insert(db, [sale(1, { details: { orderId: ORDER, items: [
         { name: 'Shirt A', category: 'shirts', size: 'M', quantity: 1 },
@@ -608,9 +638,9 @@ test('Ready rejects missing nested variants, stale fingerprints and same-write p
     enableProduction(db);
     const input = orderInput(saved.rows, 'nested-ready', { fulfillmentStatus: 'ready' });
     productionJob(db, id(1), 0);
+    productionJob(db, id(1), 1, false);
     await assert.rejects(call(db, 'owner', '/api/orders/save', 'POST', input), error('ORDER_CONFLICT', 409));
-    productionJob(db, id(1), 1);
-    db.sqlite.exec("UPDATE production_jobs SET source_fingerprint = 'stale' WHERE item_index = 1");
+    db.sqlite.exec("UPDATE production_jobs SET accepted = required, status = 'completed', source_fingerprint = 'stale' WHERE item_index = 1");
     await assert.rejects(call(db, 'owner', '/api/orders/save', 'POST', input), error('ORDER_CONFLICT', 409));
     db.sqlite.exec(`UPDATE production_jobs SET source_fingerprint =
         (SELECT fingerprint FROM production_source_state WHERE source_id = production_jobs.source_id)`);
@@ -697,16 +727,15 @@ test('historical Ready orders retain financial and comment editing without retro
     assert.equal(db.sqlite.prepare('SELECT count(*) AS n FROM production_jobs').get().n, 0);
 });
 
-test('owner inserts cannot bypass production Ready coverage, while non-shirt orders remain valid', async t => {
+test('owner inserts of new Ready shirt orders keep counter sales working, since new orders have no print jobs', async t => {
     const db = new LocalD1(t);
     enableProduction(db);
-    const before = state(db);
-    await assert.rejects(insert(db, [sale(1, { details: { orderId: ORDER, fulfillmentStatus: 'ready', category: 'shirts' } })]),
-        error('production_locked', 409));
-    assert.deepEqual(state(db), before);
+    const counter = await insert(db, [sale(1, { details: { orderId: ORDER, fulfillmentStatus: 'ready', category: 'shirts' } })]);
+    assert.equal(counter.rows[0].details.fulfillmentStatus, 'ready');
     const saved = await insert(db, [sale(2, { category: 'balls',
-        details: { orderId: ORDER, fulfillmentStatus: 'ready', category: 'balls', quantity: 1 } })]);
+        details: { orderId: 'ST-BUSINESS02', fulfillmentStatus: 'ready', category: 'balls', quantity: 1 } })]);
     assert.equal(saved.rows[0].details.fulfillmentStatus, 'ready');
+    assert.equal(db.sqlite.prepare('SELECT count(*) AS n FROM production_jobs').get().n, 0);
 });
 
 test('order-save delegates the complete primitive and transaction triggers advance feed revision', async t => {
