@@ -393,7 +393,7 @@ async function changeMember(db: D1Database, member: Member, id: string | undefin
         `SELECT json_object('member',json_object('id',m.id,'email',m.email,'role',m.role,'active',json(CASE WHEN m.active=1 THEN 'true' ELSE 'false' END),
         'name',coalesce(nullif(trim(CASE WHEN json_type(p.profile,'$.full_name')='text'
             THEN json_extract(p.profile,'$.full_name') END),''),'Print operator')),
-        'accessNotice','Login also requires this email to be allowed in the Cloudflare Access policy.')
+        'accessNotice','They sign in with a code sent to this email, then create their own PIN.')
         FROM members m LEFT JOIN member_profiles p ON p.member_id=m.id WHERE m.id=?`, [id]);
 }
 

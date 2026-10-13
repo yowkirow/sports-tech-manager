@@ -399,7 +399,7 @@ test('employee invitation is owner-only, idempotent, not a Cloudflare grant and 
     assert.deepEqual(JSON.parse(f.db.sqlite.prepare('SELECT profile FROM member_profiles WHERE member_id=?')
         .get(response.member.id).profile), { full_name: 'New employee' });
     assert.equal(f.db.sqlite.prepare("SELECT count(*) AS n FROM sqlite_master WHERE name='production_operator_profiles'").get().n, 0);
-    assert.match(response.accessNotice, /Cloudflare Access policy/);
+    assert.match(response.accessNotice, /code sent to this email/);
     assert.deepEqual(await call(f, '/api/members', body), response);
     await assert.rejects(call(f, '/api/members', { ...body, requestId: requestId() }), failure(409));
     await assert.rejects(call(f, '/api/members', { ...body, role: 'owner', requestId: requestId() }), failure(400));

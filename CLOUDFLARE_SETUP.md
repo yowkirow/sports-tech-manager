@@ -146,9 +146,8 @@ locked.
 - The old app's shared PIN login (a short PIN tried as a password for each admin) is
   not restored.
 
-To make the emailed code a roughly monthly step, set the **SportsTech production**
-Access application's session duration to 1 month in the Cloudflare dashboard (the
-CLI token cannot edit Access applications).
+The **SportsTech production** Access application's session duration is 30 days
+(set October 13, 2026), so the emailed code is roughly a monthly step per device.
 
 ### Team and invitations
 
@@ -164,17 +163,16 @@ code, create a PIN). Signed-in emails that are not active team members see the a
 "no access" screen instead of a raw error.
 
 Cloudflare Access also decides who can request a sign-in code for the production
-application. Either:
+application. **Applied October 13, 2026:** the production application (and only it)
+has the reusable policy **SportsTech production team**
+(`32c1e3b8-39f0-44f4-818a-030a9097a01c`): include everyone, require the One-time PIN
+login method. Anyone can prove they own an email, but the Worker admits only active
+Team members to private pages and APIs, so the Team list is the single place that
+grants access and inviting needs no dashboard step. The **SportsTech owner** policy is
+still attached first. The staging application keeps only the owner policy.
 
-- **Recommended:** a production-only policy that includes everyone who completes the
-  emailed code, so the Team list is the single place that grants access (the Worker
-  rejects every private request from a non-member). Inviting then needs no dashboard
-  step.
-- **Or:** a production-only policy listing each staff email, updated in the dashboard
-  whenever someone is invited.
-
-Keep the staging application on the owner-only policy either way. Neither change is
-applied yet: the Cloudflare dashboard must be signed in.
+The production application's session duration is **720h (30 days)**, so the emailed
+code is roughly a monthly step per device while the PIN opens the app each day.
 
 Resellers can edit only their own unpaid, pending orders. The server rebuilds
 quantity/removal pricing using the existing reseller policy, verifies complete

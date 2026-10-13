@@ -23,12 +23,12 @@ function EmployeeAccounts({ members, wallets, reload, online, stale }) {
     const invite = event => {
         event.preventDefault();
         mutation.run('/api/members', { email: email.trim(), name: name.trim() || 'Print operator', role: 'print_operator' },
-            'Employee account prepared. Cloudflare Access must also allow this email.', () => { setEmail(''); setName(''); });
+            'Employee account prepared. They sign in with a code sent to this email.', () => { setEmail(''); setName(''); });
     };
     return <details className="production-section">
         <summary>Employee accounts{employees.length ? ` (${employees.length})` : ''}{due > 0 ? ` · ${walletPeso(due)} due` : ''}</summary>
         <p className="production-help">Prepare one employee at a time. This does not send an invitation or grant Cloudflare access.</p>
-        <ProductionNotice>Login also requires the employee’s exact email to be allowed in the Cloudflare Access policy. No employee is added automatically.</ProductionNotice>
+        <ProductionNotice>Only emails on your team can open the print queue. They sign in with a code sent to their email, then create their own PIN. No employee is added automatically.</ProductionNotice>
         <form onSubmit={invite}>
             <fieldset disabled={blocked} className="production-form-grid">
                 <legend className="production-sr-only">Prepare employee account</legend>

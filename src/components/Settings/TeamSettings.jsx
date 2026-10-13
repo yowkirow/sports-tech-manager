@@ -149,7 +149,7 @@ export default function TeamSettings({ currentUserId }) {
                         <CopyInvite member={invited} />
                         <button type="button" onClick={() => setInvited(null)} className="btn-ghost text-sm">Done</button>
                     </div>
-                    <p className="text-xs text-ink-3">If their code never arrives, their email still needs to be allowed in Cloudflare Access.</p>
+                    <p className="text-xs text-ink-3">If their code does not arrive within a few minutes, ask them to check spam and to type the email exactly as added here.</p>
                 </div>
             )}
 
