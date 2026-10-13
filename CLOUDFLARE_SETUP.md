@@ -150,6 +150,32 @@ To make the emailed code a roughly monthly step, set the **SportsTech production
 Access application's session duration to 1 month in the Cloudflare dashboard (the
 CLI token cannot edit Access applications).
 
+### Team and invitations
+
+The owner manages people in **Settings > Team** (`/api/team`, owner only, atomic,
+idempotent and audited in `business_events`): invite an individual email as Owner,
+Reseller or Print staff, change Owner/Reseller roles, remove or restore access, and
+reset someone's PIN. Removing access takes effect on that person's next request;
+removing print staff holds their unfinished jobs (`production_operator_revoke`).
+Print staff cannot switch roles, so pay credits and job history stay attributed.
+Nobody can change their own access; another owner must. The app sends no email; the
+owner copies the sign-in steps (open `/admin`, enter the email, type the emailed
+code, create a PIN). Signed-in emails that are not active team members see the app's
+"no access" screen instead of a raw error.
+
+Cloudflare Access also decides who can request a sign-in code for the production
+application. Either:
+
+- **Recommended:** a production-only policy that includes everyone who completes the
+  emailed code, so the Team list is the single place that grants access (the Worker
+  rejects every private request from a non-member). Inviting then needs no dashboard
+  step.
+- **Or:** a production-only policy listing each staff email, updated in the dashboard
+  whenever someone is invited.
+
+Keep the staging application on the owner-only policy either way. Neither change is
+applied yet: the Cloudflare dashboard must be signed in.
+
 Resellers can edit only their own unpaid, pending orders. The server rebuilds
 quantity/removal pricing using the existing reseller policy, verifies complete
 source snapshots and ownership inside the write batch, and rechecks membership

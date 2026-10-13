@@ -119,6 +119,7 @@ function ProtectedWorkspace({ printPath }) {
     const [session, setSession] = useState(null);
     const [authLoading, setAuthLoading] = useState(true);
     const [authError, setAuthError] = useState(null);
+    const [denied, setDenied] = useState(false);
     const [attempt, setAttempt] = useState(0);
     // Once the workspace has opened, a later lock covers it instead of unmounting it,
     // so unsaved work survives a PIN re-entry.
@@ -138,11 +139,14 @@ function ProtectedWorkspace({ printPath }) {
                         return { user: { ...member, user_metadata: { ...profile, role: member.role } }, readOnly: mutationsEnabled === false, environment, pin };
                     });
                     setAuthError(null);
+                    setDenied(false);
                 }
             } catch (err) {
                 if (active) {
                     setSession(null);
                     setAuthError(err.message);
+                    // Signed in with Cloudflare, but not (or no longer) on the team.
+                    setDenied(err?.code === 'access_denied');
                 }
             } finally {
                 if (active) setAuthLoading(false);
@@ -174,7 +178,7 @@ function ProtectedWorkspace({ printPath }) {
         try { await api.pin.lock(); } finally { reload(); }
     };
     if (authLoading) return <LoadingState label="Loading account..." />;
-    if (!session) return <Login error={authError} onRetry={reload} />;
+    if (!session) return denied ? <Login denied /> : <Login error={authError} onRetry={reload} />;
     if (!['owner', 'reseller', 'print_operator'].includes(role)) return <Login denied />;
     if (role === 'print_operator' && !printPath) return <LoadingState label="Opening print queue..." />;
     const pinGate = !pinUnlocked && (

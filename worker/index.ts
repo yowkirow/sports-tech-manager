@@ -1,4 +1,5 @@
 import { findMember, verifyAccessIdentity } from './auth.ts';
+import type { Member } from './auth.ts';
 import { HttpError } from './errors.ts';
 import type { AppEnv } from './env.ts';
 import { canonicalRedirect, json, sameOriginMutation } from './http.ts';
@@ -44,15 +45,22 @@ export default {
             const privatePage = /^\/(?:admin|print)(?:\/|$)/.test(path);
             if (path.startsWith('/api/') || privatePage) {
                 const identity = await verifyAccessIdentity(request, env);
-                const member = await findMember(env.DB, identity);
                 if (privatePage) {
-                    if (member.role === 'print_operator' && path.startsWith('/admin')) {
+                    let member: Member | null = null;
+                    try { member = await findMember(env.DB, identity); }
+                    catch (error) {
+                        // A verified email that is not (or no longer) on the team gets the app's own
+                        // "no access" screen instead of a raw error. The app shell holds no private data.
+                        if (!(error instanceof HttpError && error.status === 403)) throw error;
+                    }
+                    if (member?.role === 'print_operator' && path.startsWith('/admin')) {
                         return Response.redirect(new URL('/print', request.url).href, 302);
                     }
-                    if (path.startsWith('/print') && env.PRINT_QUEUE_ENABLED !== 'true') {
+                    if (member && path.startsWith('/print') && env.PRINT_QUEUE_ENABLED !== 'true') {
                         throw new HttpError(404, 'not_found', 'The print queue is not enabled.');
                     }
                 } else {
+                    const member = await findMember(env.DB, identity);
                     if (path === '/api/session' && request.method === 'GET') {
                         const pin = await pinStatus(request, env, member, identity);
                         const row = pin.unlocked ? await env.DB.prepare('SELECT profile FROM member_profiles WHERE member_id=?')

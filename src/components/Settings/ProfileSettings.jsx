@@ -6,6 +6,7 @@ import ActivityLogViewer from './ActivityLogViewer';
 import ColorSettings from './ColorSettings';
 import BrandSettings from './BrandSettings';
 import ExpenseCategorySettings from './ExpenseCategorySettings';
+import TeamSettings from './TeamSettings';
 import { useReadOnly, READ_ONLY_HINT } from '../ui/ReadOnly';
 
 function ChangePinForm() {
@@ -212,6 +213,8 @@ export default function ProfileSettings({ user, onLogout, onProfileChange, trans
                         </button>
                     </div>
                 </section>
+
+                {isAdmin && <TeamSettings currentUserId={user?.id} />}
 
                 {isAdmin && (
                     <section className="surface space-y-5 p-5 sm:p-6 md:col-span-2" aria-labelledby="textbee-title">

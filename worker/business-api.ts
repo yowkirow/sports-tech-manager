@@ -721,6 +721,107 @@ async function members(db: D1Database, member: Member): Promise<Data> {
     return { members: result.results.map(row => ({ ...row, active: row.active === 1 })) };
 }
 
+// Team management (owner only). Membership here decides who may use the app; Cloudflare
+// Access separately proves that a person controls the email they sign in with.
+const TEAM_ROLES: Role[] = ['owner', 'reseller', 'print_operator'];
+const EMAIL = /^[a-z0-9.!#$%&'*+/=?^_`{|}~-]+@[a-z0-9](?:[a-z0-9-]*[a-z0-9])?(?:\.[a-z0-9](?:[a-z0-9-]*[a-z0-9])?)+$/i;
+const TEAM_JSON = `json_object('id', m.id, 'email', m.email, 'role', m.role,
+    'active', json(CASE WHEN m.active = 1 THEN 'true' ELSE 'false' END),
+    'signedIn', json(CASE WHEN m.access_subject IS NULL THEN 'false' ELSE 'true' END),
+    'hasPin', json(CASE WHEN EXISTS (SELECT 1 FROM member_pins AS pin WHERE pin.member_id = m.id) THEN 'true' ELSE 'false' END),
+    'name', coalesce(CASE WHEN json_type(p.profile, '$.full_name') = 'text' THEN json_extract(p.profile, '$.full_name') END, ''),
+    'createdAt', m.created_at)`;
+const TEAM_MEMBER = `SELECT json_object('member', ${TEAM_JSON}) AS response
+    FROM members AS m LEFT JOIN member_profiles AS p ON p.member_id = m.id WHERE m.id = ?`;
+
+function teamEmail(value: unknown): string {
+    const email = text(value, 'email', 254).trim().toLowerCase();
+    if (!EMAIL.test(email) || email.includes('..') || email.startsWith('.') || email.split('@')[0]?.endsWith('.')) {
+        invalid('Enter one valid email address.');
+    }
+    return email;
+}
+
+function teamRole(value: unknown): Role {
+    if (typeof value !== 'string' || !TEAM_ROLES.includes(value as Role)) invalid('Choose Owner, Reseller or Print staff.');
+    return value as Role;
+}
+
+async function teamTarget(db: D1Database, member: Member, id: string, self: string) {
+    if (id === member.id) invalid(self);
+    const row = (await bind(db, 'SELECT id, role, active FROM members WHERE id = ?', id)
+        .all<{ id: string; role: Role; active: number }>()).results[0];
+    if (!row) throw new HttpError(404, 'member_not_found', 'That team member was not found.');
+    return row;
+}
+
+async function team(db: D1Database, member: Member): Promise<Data> {
+    allow(member, ['owner']);
+    const result = await bind(db, `SELECT ${TEAM_JSON} AS member FROM members AS m
+        LEFT JOIN member_profiles AS p ON p.member_id = m.id
+        WHERE ${ACTIVE} ORDER BY m.active DESC, m.created_at, m.email LIMIT 1000`, member.id, member.email, member.role)
+        .all<{ member: string }>();
+    return { members: result.results.map(row => JSON.parse(row.member) as Data) };
+}
+
+async function inviteMember(db: D1Database, member: Member, body: Data): Promise<Data> {
+    const email = teamEmail(body.email);
+    const role = teamRole(body.role);
+    const name = body.name == null ? '' : text(body.name, 'name', 80, true).trim();
+    const mutation = await Mutation.create(db, member, ['owner'], body.requestId, 'team.invite', { email, role, name });
+    const replay = await mutation.replay();
+    if (replay) return replay;
+    if ((await bind(db, 'SELECT id FROM members WHERE lower(email) = ?', email).all()).results.length) {
+        throw new HttpError(409, 'member_exists', 'This email already has an account. Change or reactivate it in the team list.');
+    }
+    const id = crypto.randomUUID();
+    mutation.check('NOT EXISTS (SELECT 1 FROM members WHERE lower(email) = ?)', email);
+    mutation.add(`INSERT INTO members(id, email, role, active) SELECT ?, ?, ?, 1 WHERE NOT ${REPLAY}`,
+        id, email, role, ...mutation.replayValues);
+    mutation.changed(1);
+    if (name) {
+        mutation.add(`INSERT INTO member_profiles(member_id, profile) SELECT ?, json_object('full_name', ?) WHERE NOT ${REPLAY}`,
+            id, name, ...mutation.replayValues);
+    }
+    return mutation.finish(TEAM_MEMBER, [id], { id, email, role });
+}
+
+async function updateMember(db: D1Database, member: Member, id: string, body: Data): Promise<Data> {
+    const patch: { role?: Role; active?: boolean } = {};
+    if (body.role !== undefined) patch.role = teamRole(body.role);
+    if (body.active !== undefined) {
+        if (typeof body.active !== 'boolean') invalid('Active must be true or false.');
+        patch.active = body.active;
+    }
+    if (patch.role === undefined && patch.active === undefined) invalid('Choose a role or access change.');
+    const mutation = await Mutation.create(db, member, ['owner'], body.requestId, 'team.update', { id, ...patch });
+    const replay = await mutation.replay();
+    if (replay) return replay;
+    const current = await teamTarget(db, member, id, 'You cannot change your own access. Ask another owner.');
+    const role = patch.role ?? current.role;
+    // Print pay credits and job assignments belong to the print role; switching would orphan them.
+    if ((current.role === 'print_operator') !== (role === 'print_operator')) {
+        invalid('Print staff accounts cannot switch roles. Deactivate the account instead.');
+    }
+    const active = patch.active === undefined ? current.active : patch.active ? 1 : 0;
+    mutation.check('EXISTS (SELECT 1 FROM members WHERE id = ? AND role = ? AND active = ?)', id, current.role, current.active);
+    // Deactivating print staff holds their unfinished jobs through the production_operator_revoke trigger.
+    mutation.add(`UPDATE members SET role = ?, active = ? WHERE id = ? AND NOT ${REPLAY}`, role, active, id, ...mutation.replayValues);
+    mutation.changed(1);
+    return mutation.finish(TEAM_MEMBER, [id], { id, from: { role: current.role, active: current.active === 1 }, to: { role, active: active === 1 } });
+}
+
+async function resetMemberPin(db: D1Database, member: Member, id: string, body: Data): Promise<Data> {
+    const mutation = await Mutation.create(db, member, ['owner'], body.requestId, 'team.reset_pin', { id });
+    const replay = await mutation.replay();
+    if (replay) return replay;
+    await teamTarget(db, member, id, 'Use Change PIN or Forgot PIN for your own PIN.');
+    mutation.check('EXISTS (SELECT 1 FROM members WHERE id = ?)', id);
+    // The member chooses a new PIN on their next sign-in; existing unlocks stop matching a missing PIN.
+    mutation.add(`DELETE FROM member_pins WHERE member_id = ? AND NOT ${REPLAY}`, id, ...mutation.replayValues);
+    return mutation.finish(TEAM_MEMBER, [id], { id });
+}
+
 export async function handleBusinessRequest(request: Request, env: AppEnv, member: Member): Promise<Response | null> {
     const url = new URL(request.url);
     const path = url.pathname;
@@ -788,6 +889,22 @@ export async function handleBusinessRequest(request: Request, env: AppEnv, membe
         }
         if (path === '/api/members' && method === 'GET') {
             return json(await members(env.DB, member));
+        }
+        if (path === '/api/team') {
+            if (method === 'GET') return json(await team(env.DB, member));
+            if (method === 'POST') {
+                return json(await inviteMember(env.DB, member, fields(await readJson(request), ['email', 'role', 'requestId'], ['name'])));
+            }
+        }
+        const teamPath = /^\/api\/team\/([^/]+)(\/reset-pin)?$/.exec(path);
+        if (teamPath) {
+            const target = text(decodeURIComponent(teamPath[1]!), 'member ID', 128);
+            if (!teamPath[2] && method === 'PATCH') {
+                return json(await updateMember(env.DB, member, target, fields(await readJson(request), ['requestId'], ['role', 'active'])));
+            }
+            if (teamPath[2] && method === 'POST') {
+                return json(await resetMemberPin(env.DB, member, target, fields(await readJson(request), ['requestId'])));
+            }
         }
         return null;
     } catch (error) {
