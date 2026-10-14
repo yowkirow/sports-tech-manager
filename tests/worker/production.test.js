@@ -720,3 +720,27 @@ test('jobs list first in, first out by order date for owner and staff, with acce
     const staffJobs = (await call(f, '/jobs', undefined, printer)).jobs;
     assert.ok(staffJobs.every(job => !('date' in job) && !('orderDate' in job)), 'the order date is a sort key only');
 });
+
+test('the 0011 backfill attaches exactly the photo a newly prepared job gets, and nothing private', async t => {
+    const f = fixture(t, { imageUrl: `/api/media/objects/${PUBLIC_PHOTO}`, items: [
+        { name: 'Own photo', category: 'shirts', size: 'M', quantity: 1, imageUrl: `https://www.sportstechph.store/api/media/objects/${PUBLIC_PHOTO}` },
+        { details: { name: 'External photo', category: 'shirts', size: 'L', quantity: 1, imageUrl: 'https://example.invalid/x.png' } },
+        { name: 'Parent photo', category: 'shirts', size: 'S', quantity: 1 },
+        { details: { name: 'Nested photo', category: 'shirts', size: 'XL', quantity: 1, imageUrl: `/api/media/objects/${PUBLIC_PHOTO.toUpperCase()}` } }
+    ] });
+    media(f);
+    const RECEIPT = '00000000-0000-4000-8000-000000000003';
+    shirtOrder(f, RECEIPT, 'ST-RECEIPT', { imageUrl: `/api/media/objects/${PRIVATE_PHOTO}` });
+    const lines = (await call(f, '/sources')).sources.map(lineOf);
+    assert.equal(lines.length, 5);
+    await call(f, '/jobs/batch', { lines, assigneeId: printer.id, requestId: requestId() });
+    const read = () => f.db.sqlite.prepare('SELECT id,design_image_id,version,updated_at FROM production_jobs ORDER BY id').all().map(row => ({ ...row }));
+    const prepared = read();
+    assert.deepEqual(prepared.map(row => row.design_image_id === null).sort(), [false, false, false, true, true]);
+    f.db.sqlite.exec('UPDATE production_jobs SET design_image_id=NULL');
+    const backfill = readFileSync(new URL('0011_backfill_design_photos.sql', directory), 'utf8');
+    f.db.sqlite.exec(backfill);
+    assert.deepEqual(read(), prepared);
+    f.db.sqlite.exec(backfill);
+    assert.deepEqual(read(), prepared, 'safe to re-run');
+});
