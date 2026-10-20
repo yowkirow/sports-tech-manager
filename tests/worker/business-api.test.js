@@ -624,6 +624,31 @@ test('Ready requires explicit owner packing confirmation even after print QA is 
     await call(db, 'owner', '/api/orders/save', 'POST', input);
 });
 
+test('LBC tracking saves while print jobs are still open, without Ready and without holding the jobs', async t => {
+    const db = new LocalD1(t);
+    const saved = await insert(db, [sale(1, { details: { orderId: ORDER, itemName: 'Team Shirt', category: 'shirts', quantity: 1,
+        status: 'in_progress', fulfillmentStatus: 'in_progress' } })]);
+    enableProduction(db);
+    const jobId = productionJob(db, id(1), -1, false);
+    const before = state(db);
+    // The old one-step save (tracking also marking Shipped) is refused while printing is unfinished.
+    const shipped = orderInput(saved.rows, 'lbc-shipped', { trackingNumber: '123456789012', fulfillmentStatus: 'shipped', status: 'shipped' });
+    delete shipped.packingConfirmed;
+    await assert.rejects(call(db, 'owner', '/api/orders/save', 'POST', shipped),
+        err => err.code === 'ORDER_CONFLICT' && err.status === 409 && /print queue/.test(err.message));
+    assert.deepEqual(state(db), before);
+    // The tracking number alone saves, keeps the status, and leaves the job printing.
+    const tracking = orderInput(saved.rows, 'lbc-tracking', { trackingNumber: '123456789012' });
+    delete tracking.packingConfirmed;
+    assert.equal((await call(db, 'owner', '/api/orders/save', 'POST', tracking)).version, 1);
+    const details = JSON.parse(db.sqlite.prepare('SELECT details FROM transactions WHERE id = ?').get(id(1)).details);
+    assert.equal(details.trackingNumber, '123456789012');
+    assert.equal(details.fulfillmentStatus, 'in_progress');
+    assert.deepEqual({ ...db.sqlite.prepare('SELECT status, source_changed FROM production_jobs WHERE id = ?').get(jobId) },
+        { status: 'released', source_changed: 0 });
+    assert.equal(db.sqlite.prepare('SELECT count(*) AS n FROM production_events').get().n, 0);
+});
+
 test('migration retains source customer notes and referrer administrator attribution', async t => {
     const db = new LocalD1(t);
     assert.ok(db.sqlite.prepare('PRAGMA table_info(customers)').all().some(column => column.name === 'notes'));

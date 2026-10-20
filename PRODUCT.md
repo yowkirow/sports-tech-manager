@@ -46,6 +46,10 @@ prints, not an anonymous merch store.
   Cash on Delivery, GCash, or bank transfer; GCash/bank need a payment-proof upload against the QR
   in `public/payment-qr.jpeg` ("verify 'Sports Tech' name before paying").
 - Shipping schedule: cutoff every Thursday, shipping every Sunday.
+- Parcels go out by LBC. The owner books each parcel on LBC with the receiver's details copied
+  from the order, pastes the LBC tracking number on the order, and the print employee writes the
+  customer's name and tracking number on the package label. A tracking number does not mean
+  shipped; the owner marks the order Shipped when the parcel is handed to LBC.
 - Order tracking is contact-verified: the customer's mobile number unlocks `/track/:id`; pending
   orders can be modified by the customer.
 - Ball pricing is tiered by quantity (1, 5, 10, 20, 50, 100 pieces).

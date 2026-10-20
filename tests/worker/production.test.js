@@ -152,8 +152,10 @@ test('employees see only their released jobs, safe explicit fields and safe acto
     }
     assert.deepEqual(Object.keys(response.jobs[0]).sort(), [
         'accepted', 'assignee', 'awaitingQA', 'brand', 'color', 'customerName', 'designImageUrl', 'designName', 'events', 'id', 'instructions',
-        'jobCode', 'rejected', 'releasedAt', 'remainingToPrint', 'required', 'reworkRemaining', 'size', 'status', 'updatedAt', 'version'
+        'jobCode', 'rejected', 'releasedAt', 'remainingToPrint', 'required', 'reworkRemaining', 'size', 'status', 'trackingNumber', 'updatedAt', 'version'
     ].sort());
+    // No tracking number on this order yet.
+    assert.equal(response.jobs[0].trackingNumber, null);
 });
 
 test('release requires explicit readiness and atomically moves every order row out of pending', async t => {
@@ -664,6 +666,48 @@ test('batch prepare and release moves every chosen order to in progress in one s
     assert.deepEqual(staff.map(job => job.customerName), ['PRIVATE CUSTOMER', 'PRIVATE CUSTOMER']);
     const encoded = JSON.stringify(staff.map(({ customerName, ...job }) => job)).toLowerCase();
     for (const forbidden of ['private', 'customer', 'orderid', 'sourceid', 'st-print', 'st-other']) assert.ok(!encoded.includes(forbidden), forbidden);
+});
+
+test('staff see a plain LBC tracking code for the package label, never a link, and saving it never holds the job', async t => {
+    const f = fixture(t);
+    let job = await prepare(f);
+    job = await release(f, job);
+    const staffJob = async () => (await call(f, '/jobs', undefined, printer)).jobs[0];
+    assert.equal((await staffJob()).trackingNumber, null);
+    for (const [value, expected] of [
+        ['123456789012', '123456789012'],
+        ['  1234 5678-9012  ', '1234 5678-9012'],
+        ['AB12', 'AB12'],
+        ['https://www.lbcexpress.com/track/?tracking_no=123456789012', null],
+        ['0917 123 4567 / PRIVATE ADDRESS', null],
+        ['123', null],
+        ['x'.repeat(41), null],
+        ['1234\n5678', null],
+        [12345678, null],
+        ['', null]
+    ]) {
+        changeSource(f, { trackingNumber: value });
+        assert.equal((await staffJob()).trackingNumber, expected, JSON.stringify(value));
+    }
+    // A tracking number is not a physical line change: the job keeps printing, untouched.
+    changeSource(f, { trackingNumber: '123456789012' });
+    const stored = f.db.sqlite.prepare('SELECT status,source_changed,version FROM production_jobs WHERE id=?').get(job.id);
+    assert.deepEqual({ ...stored }, { status: 'released', source_changed: 0, version: job.version });
+    assert.equal(f.db.sqlite.prepare("SELECT count(*) AS n FROM production_events WHERE action IN ('source_changed','source_deleted')").get().n, 0);
+    // Printing continues and the corrected code reaches the printer live.
+    await progress(f, job, 'start');
+    changeSource(f, { trackingNumber: '9999 0000 1111' });
+    const current = await staffJob();
+    assert.equal(current.trackingNumber, '9999 0000 1111');
+    assert.equal(current.status, 'printing');
+    // Only the name and the code describe the order; nothing else about the buyer or the order.
+    const { customerName, trackingNumber, ...rest } = current;
+    const encoded = JSON.stringify(rest).toLowerCase();
+    for (const forbidden of ['private', 'st-print', 'contact', 'address', 'shipping', 'amount', 'receipt']) {
+        assert.ok(!encoded.includes(forbidden), forbidden);
+    }
+    // Another employee sees nothing.
+    assert.deepEqual((await call(f, '/jobs', undefined, other)).jobs, []);
 });
 
 test('staff see the current customer name, legacy customer field, or null, and nothing else about the buyer', async t => {

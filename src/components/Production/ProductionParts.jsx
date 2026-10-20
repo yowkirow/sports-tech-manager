@@ -44,13 +44,20 @@ export function JobHeading({ job, owner = false, customer = '', orderDate = '' }
         </span>
     </div>;
 }
-// The customer's name for the package label (owner decision 2026-10-13). Name only.
+// What the employee writes on the package: the customer's name (owner decision 2026-10-13) and
+// the LBC tracking code once the owner has booked the parcel (owner decision 2026-10-20).
 export function JobCustomer({ job }) {
     return <div className="production-customer">
         <span>Write on package</span>
         {job.customerName
             ? <strong>{job.customerName}</strong>
             : <strong className="production-customer-missing">No name on this order. Ask the owner before packing.</strong>}
+        <div className="production-tracking">
+            <span>LBC tracking</span>
+            {job.trackingNumber
+                ? <strong className="production-tracking-code">{job.trackingNumber}</strong>
+                : <p className="production-tracking-missing">Not booked yet. The owner adds it after booking with LBC.</p>}
+        </div>
     </div>;
 }
 // Small product photo for the owner's line picker. Decorative: the label names the design.
