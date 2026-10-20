@@ -79,7 +79,7 @@ export function LbcBookingPanel({ order, canEditTracking, busy, onCopy, onSaveTr
                     onClick={onMarkShipped}>
                     <Send size={16} aria-hidden="true" /> Mark as shipped
                 </button>
-                <p className="text-xs text-ink-2">When the parcel is handed to LBC. {saved ? 'Texts the tracking link if SMS is on.' : ''}</p>
+                <p className="text-xs text-ink-2">When LBC picks up the parcel. {saved ? 'Texts the tracking link if SMS is on.' : ''}</p>
             </div>}
         </form> : <div className="mt-4 border-t border-line pt-4">
             <p className="field-label">LBC tracking number</p>

@@ -296,14 +296,15 @@ package (owner decision, October 13, 2026, migration `0010_production_customer_n
 it is read live from the order line, so a corrected name reaches the printer.
 
 LBC booking (owner decision, October 20, 2026, migration `0012_production_tracking_number.sql`):
-the owner books each parcel on LBC from Orders (expand an order > Book with LBC: one copy
-button per LBC form field, or Copy all; the row's clipboard button copies the same block),
-then pastes the tracking number there. Print staff see the tracking code next to the
-customer's name under "Write on package", read live from the order line. Only a plain
+the owner books an LBC pickup for each parcel from Orders (expand an order > Book with LBC: one
+copy button per LBC form field, or Copy all; the row's clipboard button copies the same block),
+then pastes the tracking number LBC gives at booking. Print staff see the tracking code next to the
+customer's name under "Write on package", read live from the order line, on in-progress and
+accepted jobs alike. Only a plain
 code (4-40 letters, digits, spaces or dashes) is shown; links and anything else stay
 owner-only. Saving a tracking number never changes the order status and never holds a print
 job, so it works while printing is still in progress. The owner marks the order Shipped
-when the parcel is handed to LBC (Mark as shipped, or the status field); the customer's
+when LBC picks the parcel up (Mark as shipped, or the status field); the customer's
 tracking text is sent then. Apply `0012` with `npm run db:staging` / `npm run db:production`
 before or with the code that shows it; until then staff see "Not booked yet".
 
