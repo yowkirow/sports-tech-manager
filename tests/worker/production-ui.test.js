@@ -1,5 +1,6 @@
 import assert from 'node:assert/strict';
 import { test } from 'node:test';
+import { MAX_BATCH_JOBS as WORKER_MAX_BATCH_JOBS } from '../../worker/production-api.ts';
 import { MAX_BATCH_JOBS, orderDateLabel, payoutSteps, productionBatchLines, productionCandidates, productionCustomerOf, productionGroupMatches, productionLineKey, productionOrderDateOf, productionOrderGroups, productionQuantity, productionError, walletPeso } from '../../src/lib/production.js';
 
 test('production UI sends only normalized shirt source references and server snapshot tokens', () => {
@@ -76,7 +77,8 @@ test('owner picker groups shirt lines by the customer who ordered, keeps order n
     assert.ok(!JSON.stringify(payload).includes('Ana') && !JSON.stringify(payload).includes('zoe'));
     assert.equal(productionCustomerOf(transactions)({ sourceId: 't2' }), 'Ana Reyes');
     assert.equal(productionCustomerOf(transactions)({ sourceId: 'missing' }), '');
-    assert.equal(MAX_BATCH_JOBS, 30);
+    assert.equal(MAX_BATCH_JOBS, 100);
+    assert.equal(MAX_BATCH_JOBS, WORKER_MAX_BATCH_JOBS, 'The owner picker and the Worker must agree on the per-save ceiling.');
 });
 
 test('picker puts orders without a date last and labels older orders with their year', () => {

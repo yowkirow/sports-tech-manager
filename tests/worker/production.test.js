@@ -2,7 +2,7 @@ import assert from 'node:assert/strict';
 import { readFileSync, readdirSync } from 'node:fs';
 import { DatabaseSync } from 'node:sqlite';
 import { test } from 'node:test';
-import { handleProductionRequest, productionReadyGuard } from '../../worker/production-api.ts';
+import { handleProductionRequest, MAX_BATCH_JOBS, productionReadyGuard } from '../../worker/production-api.ts';
 import { HttpError } from '../../worker/errors.ts';
 
 const directory = new URL('../../worker/migrations/', import.meta.url);
@@ -683,11 +683,46 @@ test('staff see the current customer name, legacy customer field, or null, and n
     assert.equal(updated.customerName, 'Juan P. Dela Cruz');
 });
 
-test('batch prepare is limited to a reviewable number of lines', async t => {
+test('batch prepare keeps only a high per-request safety ceiling, checked before any database read', async t => {
     const f = fixture(t);
-    const lines = Array.from({ length: 31 }, (_, index) => ({
+    assert.equal(MAX_BATCH_JOBS, 100);
+    const lines = Array.from({ length: MAX_BATCH_JOBS + 1 }, (_, index) => ({
         sourceId: `00000000-0000-4000-8000-${String(index + 10).padStart(12, '0')}`, expectedSourceToken: 'x' }));
+    const before = snapshot(f);
     await assert.rejects(call(f, '/jobs/batch', { lines, assigneeId: printer.id, requestId: requestId() }), failure(400));
+    assert.deepEqual(snapshot(f), before);
+});
+
+test('batch prepare and release takes 51 lines in one atomic save (the old 30-line cap is gone)', async t => {
+    const f = fixture(t);
+    // 50 more shirt orders plus the fixture's own shirt line: the backlog the owner reported.
+    const ids = Array.from({ length: 50 }, (_, index) => `00000000-0000-4000-8000-${String(index + 100).padStart(12, '0')}`);
+    ids.forEach((id, index) => shirtOrder(f, id, `ST-BULK-${index}`));
+    const sources = [];
+    let offset = 0;
+    do {
+        const page = await call(f, `/sources${offset ? `?offset=${offset}` : ''}`);
+        sources.push(...page.sources);
+        offset = page.nextOffset;
+    } while (offset != null);
+    const lines = sources.map(lineOf);
+    assert.equal(lines.length, 51);
+    const result = await call(f, '/jobs/batch', { lines, assigneeId: printer.id, release: true, artworkReady: true, blanksReady: true, requestId: requestId() });
+    assert.equal(result.jobs.length, 51);
+    assert.ok(result.jobs.every(job => job.status === 'released' && job.releasedAt));
+    assert.equal(f.db.sqlite.prepare('SELECT count(*) AS n FROM production_jobs').get().n, 51);
+    assert.equal(f.db.sqlite.prepare("SELECT count(*) AS n FROM production_events WHERE action='prepared'").get().n, 51);
+    assert.equal(f.db.sqlite.prepare("SELECT count(*) AS n FROM production_events WHERE action='release'").get().n, 51);
+    assert.equal(f.db.sqlite.prepare('SELECT count(*) AS n FROM production_request_receipts').get().n, 1);
+    assert.equal(f.db.sqlite.prepare("SELECT count(*) AS n FROM transactions WHERE type='sale' AND json_extract(details,'$.fulfillmentStatus')<>'in_progress'").get().n, 0);
+    const staff = [];
+    offset = 0;
+    do {
+        const page = await call(f, `/jobs${offset ? `?offset=${offset}` : ''}`, undefined, printer);
+        staff.push(...page.jobs);
+        offset = page.nextOffset;
+    } while (offset != null);
+    assert.equal(new Set(staff.map(job => job.id)).size, 51);
 });
 
 test('jobs list first in, first out by order date for owner and staff, with accepted jobs last', async t => {

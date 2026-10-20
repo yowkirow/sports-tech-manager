@@ -368,6 +368,7 @@
 }
 .production-batch-bar p { color: var(--color-ink-2); font-variant-numeric: tabular-nums; }
 .production-batch-bar strong { color: var(--color-ink); }
+.production-batch-note { display: block; margin-top: 4px; font-size: .875rem; }
 .production-photo {
     display: block;
     width: 100%;
