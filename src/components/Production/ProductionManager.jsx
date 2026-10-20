@@ -90,9 +90,12 @@ function PrepareJobs({ candidates, transactions, employees, reload, online, stal
     const groups = useMemo(() => productionOrderGroups(candidates, transactions), [candidates, transactions]);
     const visibleGroups = groups.filter(group => productionGroupMatches(group, search));
     // Lines that were prepared elsewhere or changed drop out of the selection automatically.
-    const chosen = candidates.filter(candidate => selected.has(productionLineKey(candidate)));
+    // Oldest order first, so a selection above the per-save ceiling prepares the oldest lines
+    // and keeps the rest ticked for the next save. There is no selection limit.
+    const chosen = groups.flatMap(group => group.lines).filter(line => selected.has(productionLineKey(line)));
     const shirts = chosen.reduce((total, line) => total + line.required, 0);
-    const tooMany = chosen.length > MAX_BATCH_JOBS;
+    const batch = chosen.slice(0, MAX_BATCH_JOBS);
+    const later = chosen.length - batch.length;
     const employee = employees.find(item => item.id === assignee);
     const toggle = (keys, on) => setSelected(current => {
         const next = new Set(current);
@@ -101,19 +104,30 @@ function PrepareJobs({ candidates, transactions, employees, reload, online, stal
     });
     const submit = event => {
         event.preventDefault();
-        if (!chosen.length || tooMany || !employee) {
-            setValidation(tooMany ? `Choose up to ${MAX_BATCH_JOBS} shirt lines at a time.` : 'Choose at least one shirt line and an active print operator.');
+        if (!chosen.length || !employee) {
+            setValidation('Choose at least one shirt line and an active print operator.');
             return;
         }
         if (releaseNow && (!artwork || !blanks)) { setValidation('Confirm the artwork and blank shirts before releasing.'); return; }
         setValidation('');
-        const count = `${chosen.length} job${chosen.length === 1 ? '' : 's'}`;
+        const count = `${batch.length} job${batch.length === 1 ? '' : 's'}`;
+        const rest = later ? ` ${later} more line${later === 1 ? ' stays' : 's stay'} ticked for your next save.` : '';
         mutation.run('/api/production/jobs/batch', {
-            lines: productionBatchLines(chosen), assigneeId: assignee, instructions: instructions.trim(),
+            lines: productionBatchLines(batch), assigneeId: assignee, instructions: instructions.trim(),
             ...(releaseNow ? { release: true, artworkReady: true, blanksReady: true } : {})
-        }, releaseNow ? `${count} released to ${employeeName(employee)}. They can start printing.`
-            : `${count} prepared for ${employeeName(employee)}. Release them when artwork and blanks are ready.`,
-        () => { setSelected(new Set()); setInstructions(''); setArtwork(false); setBlanks(false); });
+        }, (releaseNow ? `${count} released to ${employeeName(employee)}. They can start printing.`
+            : `${count} prepared for ${employeeName(employee)}. Release them when artwork and blanks are ready.`) + rest,
+        () => {
+            if (later) {
+                setSelected(current => {
+                    const next = new Set(current);
+                    for (const line of batch) next.delete(productionLineKey(line));
+                    return next;
+                });
+                return;
+            }
+            setSelected(new Set()); setInstructions(''); setArtwork(false); setBlanks(false);
+        });
     };
     return <details className="production-section" open={candidates.length > 0 || undefined}>
         <summary>Prepare shirt jobs{candidates.length ? ` (${candidates.length} lines waiting)` : ''}</summary>
@@ -186,14 +200,14 @@ function PrepareJobs({ candidates, transactions, employees, reload, online, stal
                     </div>}
                     <div className="production-batch-bar" role="status">
                         <p><strong>{chosen.length}</strong> line{chosen.length === 1 ? '' : 's'} · <strong>{shirts}</strong> shirt{shirts === 1 ? '' : 's'} selected
-                            {tooMany && <span className="production-validation"> Choose up to {MAX_BATCH_JOBS} at a time.</span>}</p>
+                            {later > 0 && <span className="production-batch-note">This save prepares the {MAX_BATCH_JOBS} oldest; the other {later} stay ticked for the next save.</span>}</p>
                         <div className="production-actions">
                             {chosen.length > 0 && <button type="button" className="production-button" onClick={() => setSelected(new Set())}>Clear</button>}
                             <button type="submit" className="production-button production-primary"
-                                disabled={readOnly || !chosen.length || tooMany || !assignee || (releaseNow && (!artwork || !blanks))}
+                                disabled={readOnly || !chosen.length || !assignee || (releaseNow && (!artwork || !blanks))}
                                 title={readOnly ? READ_ONLY_HINT : undefined}>
                                 {releaseNow ? <Send size={18} aria-hidden="true" /> : null}
-                                {releaseNow ? 'Prepare and release' : 'Prepare'} {chosen.length || ''} job{chosen.length === 1 ? '' : 's'}
+                                {releaseNow ? 'Prepare and release' : 'Prepare'} {later > 0 ? `${batch.length} of ${chosen.length}` : chosen.length || ''} job{chosen.length === 1 ? '' : 's'}
                             </button>
                         </div>
                     </div>

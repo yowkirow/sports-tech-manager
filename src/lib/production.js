@@ -83,7 +83,9 @@ export function orderDateLabel(value, now = new Date()) {
         ...(year(date) !== year(now) ? { year: 'numeric' } : {}) });
 }
 
-export const MAX_BATCH_JOBS = 30;
+// The Worker's per-request ceiling (worker/production-api.ts). Not a selection limit: the picker
+// prepares the oldest MAX_BATCH_JOBS chosen lines per save and keeps the rest selected.
+export const MAX_BATCH_JOBS = 100;
 // The batch payload: server-verified source references and tokens only.
 export const productionBatchLines = (candidates) => candidates.map(candidate => ({
     sourceId: candidate.sourceId, itemIndex: candidate.itemIndex, expectedSourceToken: candidate.sourceToken

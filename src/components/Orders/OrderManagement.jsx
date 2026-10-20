@@ -1,6 +1,6 @@
 import React, { useState, useMemo } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
-import { Package, Clock, CheckCircle, Truck, User, Search, Edit2, Save, X, Trash2, Layers, ChevronDown, ChevronUp, ShoppingBag, Loader2, AlertCircle, Banknote, Filter, Copy, MessageSquare, Send, RotateCcw } from 'lucide-react';
+import { Package, Clock, CheckCircle, Truck, User, Search, Edit2, Save, X, Trash2, Layers, ChevronDown, ChevronUp, ShoppingBag, Loader2, AlertCircle, Banknote, Filter, MessageSquare, Send, RotateCcw, ClipboardCopy } from 'lucide-react';
 import { useToast } from '../ui/Toast';
 import Dialog from '../ui/Dialog';
 import { useReadOnly, READ_ONLY_HINT } from '../ui/ReadOnly';
@@ -9,6 +9,8 @@ import { useProducts } from '../../hooks/useInventory';
 import { withLocalDate } from '../../lib/transactionDate';
 import { groupOrders } from '../../lib/orderItems';
 import { buildOrderChanges, buildOrderDetailChanges, priceOrderChanges, saveOrderChanges } from '../../lib/orderEditing';
+import { lbcCopyText, lbcReceiver, normalizeTracking, plainTrackingCode, receiverAddress, withTrackingNumber } from '../../lib/lbcBooking';
+import { LbcBookingPanel } from './LbcBooking';
 
 const SIZES = ['XS', 'S', 'M', 'L', 'XL', '2XL'];
 
@@ -140,8 +142,13 @@ export default function OrderManagement({ transactions, onAddTransaction, onDele
                 ? order.date
                 : withLocalDate(editForm.date, new Date(order.date)).toISOString();
 
-            const isNewTracking = !isReseller && editForm.trackingNumber && editForm.trackingNumber !== (order.items[0]?.details?.trackingNumber || '');
-            const finalFulfillmentStatus = isReseller ? order.fulfillmentStatus : isNewTracking ? 'shipped' : editForm.fulfillmentStatus;
+            const previousTracking = order.items[0]?.details?.trackingNumber || '';
+            const trackingNumber = isReseller ? previousTracking : normalizeTracking(editForm.trackingNumber);
+            // A tracking number is booked before printing and packing finish, so it never changes
+            // the status. The customer is texted when the order is Shipped with a tracking number.
+            const finalFulfillmentStatus = isReseller ? order.fulfillmentStatus : editForm.fulfillmentStatus;
+            const textTracking = !isReseller && trackingNumber && finalFulfillmentStatus === 'shipped'
+                && (order.fulfillmentStatus !== 'shipped' || trackingNumber !== previousTracking);
 
             const result = buildOrderChanges(order, editForm.items, {
                 customerName: editForm.customerName,
@@ -149,7 +156,7 @@ export default function OrderManagement({ transactions, onAddTransaction, onDele
                 fulfillmentStatus: finalFulfillmentStatus,
                 paymentStatus: isReseller ? order.paymentStatus : editForm.paymentStatus,
                 paymentMode: editForm.paymentMode,
-                trackingNumber: isReseller ? (order.items[0]?.details?.trackingNumber || '') : editForm.trackingNumber,
+                trackingNumber,
                 status: finalFulfillmentStatus,
                 shippingDetails: {
                     contactNumber: editForm.contactNumber,
@@ -173,9 +180,8 @@ export default function OrderManagement({ transactions, onAddTransaction, onDele
             await persistOrder(result.changes);
             showToast('Order updated!', 'success');
 
-            // Trigger SMS if tracking number was added/updated
-            if (isNewTracking) {
-                await handleSendTrackingSms(order, editForm.trackingNumber);
+            if (textTracking) {
+                await handleSendTrackingSms(order, trackingNumber);
             }
 
             setEditingId(null);
@@ -190,25 +196,26 @@ export default function OrderManagement({ transactions, onAddTransaction, onDele
         }
     };
 
-    const handleQuickTracking = async (orderId, trackingNumber) => {
+    const handleQuickTracking = async (orderId, value) => {
         if (isReseller) return;
         setLoading(true);
         try {
             const order = groupedOrders.find(o => o.id === orderId);
             if (!order) throw new Error('Order not found. Reload before retrying.');
+            const trackingNumber = normalizeTracking(value);
+            const previous = order.items[0]?.details?.trackingNumber || '';
 
-            const changes = buildOrderDetailChanges(order, details => ({
-                ...details,
-                trackingNumber,
-                fulfillmentStatus: trackingNumber ? 'shipped' : details.fulfillmentStatus,
-                status: trackingNumber ? 'shipped' : details.status
-            }));
+            // Tracking only: booking with LBC happens before printing and packing finish, so this
+            // never marks the order shipped (and never trips the print-queue Ready check).
+            const changes = buildOrderDetailChanges(order, details => withTrackingNumber(details, trackingNumber));
             await persistOrder(changes);
 
-            showToast('Tracking updated', 'success');
+            if (!trackingNumber) showToast('Tracking removed', 'success');
+            else if (plainTrackingCode(trackingNumber)) showToast('Tracking saved. Print staff can see it for the package label.', 'success');
+            else showToast('Tracking saved for you only. Print staff see plain codes, not links or notes.', 'info');
 
-            // Trigger SMS
-            if (trackingNumber) {
+            // A shipped order whose tracking number changed gets the corrected tracking text.
+            if (trackingNumber && trackingNumber !== previous && order.fulfillmentStatus === 'shipped') {
                 await handleSendTrackingSms(order, trackingNumber);
             }
 
@@ -216,6 +223,27 @@ export default function OrderManagement({ transactions, onAddTransaction, onDele
         } catch (err) {
             console.error(err);
             showToast('Update failed: ' + err.message, 'error');
+        } finally {
+            setLoading(false);
+        }
+    };
+
+    const handleMarkShipped = async (orderId) => {
+        if (isReseller) return;
+        setLoading(true);
+        try {
+            const order = groupedOrders.find(o => o.id === orderId);
+            if (!order) throw new Error('Order not found. Reload before retrying.');
+            const changes = buildOrderDetailChanges(order, details => ({ ...details, fulfillmentStatus: 'shipped', status: 'shipped' }));
+            await persistOrder(changes);
+            showToast('Order marked as shipped', 'success');
+            const trackingNumber = order.items[0]?.details?.trackingNumber;
+            if (trackingNumber) await handleSendTrackingSms(order, trackingNumber);
+            if (refetch) await refetch();
+        } catch (err) {
+            console.error(err);
+            showToast(err.message || 'Failed to mark the order shipped', 'error');
+            if (refetch) await refetch();
         } finally {
             setLoading(false);
         }
@@ -352,9 +380,16 @@ export default function OrderManagement({ transactions, onAddTransaction, onDele
         }
     };
 
-    const handleCopyToClipboard = (text, type) => {
-        navigator.clipboard.writeText(text);
-        showToast(`${type} copied!`, 'success');
+    const handleCopyToClipboard = async (text, type, { quiet = false } = {}) => {
+        if (!text) return false;
+        try {
+            await navigator.clipboard.writeText(text);
+            if (!quiet) showToast(`${type} copied!`, 'success');
+            return true;
+        } catch {
+            showToast(`Couldn't copy ${type.toLowerCase()}. Select it and copy it manually.`, 'error');
+            return false;
+        }
     };
 
     const formatContactForSMS = (number) => {
@@ -366,18 +401,6 @@ export default function OrderManagement({ transactions, onAddTransaction, onDele
         if (clean.startsWith('09')) return `+63${clean.slice(1)}`;
         if (clean.startsWith('639')) return `+${clean}`;
         if (clean.startsWith('+639')) return clean;
-        return clean;
-    };
-
-    const formatContactForCopy = (number) => {
-        if (!number) return '';
-        // Remove all non-numeric characters
-        let clean = number.toString().replace(/\D/g, '');
-
-        // Strip prefixes: +63, 63, or 0
-        if (clean.startsWith('639')) clean = clean.slice(2);
-        else if (clean.startsWith('09')) clean = clean.slice(1);
-
         return clean;
     };
 
@@ -438,7 +461,7 @@ export default function OrderManagement({ transactions, onAddTransaction, onDele
 
 
     return (
-        <div className="flex h-full flex-col gap-4 lg:gap-5">
+        <div className="flex flex-col gap-4 lg:h-full lg:gap-5">
             <h2 className="sr-only">Order Management</h2>
 
             <section className="surface p-4 sm:p-5" aria-label="Order filters">
@@ -559,8 +582,10 @@ export default function OrderManagement({ transactions, onAddTransaction, onDele
                 </div>
             </section>
 
-            <div className="min-h-0 flex-1 overflow-y-auto pr-1">
-                <div className="space-y-3 pb-2">
+            {/* Phones scroll the whole page so an open order isn't squeezed under the filters. The
+                page wrapper is fixed-height, so the list carries its own room above the tab bar. */}
+            <div className="lg:min-h-0 lg:flex-1 lg:overflow-y-auto lg:pr-1">
+                <div className="space-y-3 pb-24 lg:pb-2">
                     {filteredOrders.map(order => {
                         const isExpanded = expandedOrderIds.has(order.id);
                         const isEditing = editingId === order.id;
@@ -699,22 +724,18 @@ export default function OrderManagement({ transactions, onAddTransaction, onDele
                                                         </div>
 
                                                         <div className="sm:col-span-2">
-                                                            <label htmlFor={trackingInputId} className="field-label">Tracking number</label>
+                                                            <label htmlFor={trackingInputId} className="field-label">LBC tracking number</label>
                                                             <div className="relative">
                                                                 <Truck className="pointer-events-none absolute left-3 top-1/2 -translate-y-1/2 text-ink-3" size={16} aria-hidden="true" />
                                                                 <input
                                                                     id={trackingInputId}
-                                                                    placeholder="Tracking number"
+                                                                    placeholder="Paste after booking"
                                                                     disabled={readOnly || isReseller}
                                                                     title={readOnly ? READ_ONLY_HINT : undefined}
                                                                     value={editForm.trackingNumber || ''}
                                                                     onChange={e => {
                                                                         const val = e.target.value;
-                                                                        setEditForm(prev => ({
-                                                                            ...prev,
-                                                                            trackingNumber: val,
-                                                                            fulfillmentStatus: val ? 'shipped' : prev.fulfillmentStatus
-                                                                        }));
+                                                                        setEditForm(prev => ({ ...prev, trackingNumber: val }));
                                                                     }}
                                                                     className="field pl-9 py-2 text-sm"
                                                                 />
@@ -777,12 +798,13 @@ export default function OrderManagement({ transactions, onAddTransaction, onDele
                                                     <div className="relative w-full sm:w-52">
                                                         <Truck size={16} className={`pointer-events-none absolute left-3 top-1/2 -translate-y-1/2 ${order.items[0]?.details?.trackingNumber ? 'text-primary' : 'text-ink-3'}`} aria-hidden="true" />
                                                         <input
-                                                            aria-label={`Tracking number for ${order.customerName}`}
+                                                            key={order.items[0]?.details?.trackingNumber || 'none'}
+                                                            aria-label={`LBC tracking number for ${order.customerName}`}
                                                             defaultValue={order.items[0]?.details?.trackingNumber || ''}
                                                             readOnly={isReseller}
                                                             disabled={readOnly}
-                                                            title={readOnly ? READ_ONLY_HINT : undefined}
-                                                            placeholder="Add tracking"
+                                                            title={readOnly ? READ_ONLY_HINT : 'Saving a tracking number does not mark the order shipped'}
+                                                            placeholder="LBC tracking"
                                                             className={`field pl-9 pr-3 py-2 text-sm ${order.items[0]?.details?.trackingNumber
                                                                 ? 'border-primary/40 bg-primary/10 text-primary font-mono font-semibold'
                                                                 : ''
@@ -805,6 +827,15 @@ export default function OrderManagement({ transactions, onAddTransaction, onDele
                                                     <div className="flex flex-wrap items-center gap-2 sm:justify-end">
                                                         {!isSelectionMode && (
                                                             <>
+                                                                {receiverAddress(lbcReceiver(order)) && <button
+                                                                    type="button"
+                                                                    onClick={(e) => { e.stopPropagation(); handleCopyToClipboard(lbcCopyText(lbcReceiver(order)), 'Receiver details'); }}
+                                                                    className="icon-btn"
+                                                                    title="Copy receiver details for LBC"
+                                                                    aria-label={`Copy LBC receiver details for ${order.customerName}`}
+                                                                >
+                                                                    <ClipboardCopy size={18} aria-hidden="true" />
+                                                                </button>}
                                                                 {!isReseller && order.fulfillmentStatus !== 'returned' && (
                                                                     <button
                                                                         type="button"
@@ -1030,9 +1061,9 @@ export default function OrderManagement({ transactions, onAddTransaction, onDele
                                                     </div>
                                                 </div>
 
-                                                {(order.items[0]?.details?.shippingDetails || order.items[0]?.details?.customerProvince || isEditing) && (
+                                                {(order.items[0]?.details?.shippingDetails || order.items[0]?.details?.customerProvince || order.items[0]?.details?.customerAddress || isEditing) && (
                                                     <div className="mt-4 border-t border-line pt-4" onClick={e => e.stopPropagation()}>
-                                                        <p className="section-title mb-3 flex items-center gap-2"><Truck size={16} aria-hidden="true" /> Shipping information</p>
+                                                        {isEditing && <p className="section-title mb-3 flex items-center gap-2"><Truck size={16} aria-hidden="true" /> Shipping information</p>}
                                                         {isEditing ? (
                                                             <div className="grid grid-cols-1 gap-4 text-sm md:grid-cols-2">
                                                                 <div>
@@ -1099,51 +1130,15 @@ export default function OrderManagement({ transactions, onAddTransaction, onDele
                                                                 </div>
                                                             </div>
                                                         ) : (
-                                                            <div className="grid grid-cols-1 gap-4 text-sm md:grid-cols-2">
-                                                                <div>
-                                                                    <p className="field-label">Address</p>
-                                                                    <button
-                                                                        type="button"
-                                                                        className="group/address flex min-h-11 w-full items-center gap-2 text-left text-ink transition-colors hover:text-primary"
-                                                                        onClick={() => handleCopyToClipboard(order.items[0].details.shippingDetails?.address || order.items[0].details.customerAddress, 'Address')}
-                                                                        title="Click to copy address"
-                                                                    >
-                                                                        <span className="min-w-0 flex-1">{order.items[0].details.shippingDetails?.address || order.items[0].details.customerAddress || 'No address provided'}</span>
-                                                                        <Copy size={14} className="shrink-0 opacity-0 transition-opacity group-hover/address:opacity-100" aria-hidden="true" />
-                                                                    </button>
-                                                                </div>
-                                                                <div>
-                                                                    <p className="field-label">Contact</p>
-                                                                    <button
-                                                                        type="button"
-                                                                        className="group/contact flex min-h-11 w-full items-center gap-2 text-left text-ink transition-colors hover:text-primary"
-                                                                        onClick={() => {
-                                                                            const raw = order.items[0].details.shippingDetails?.contactNumber || order.items[0].details.customerContact || order.items[0].details.contactNumber;
-                                                                            handleCopyToClipboard(formatContactForCopy(raw), 'Contact number');
-                                                                        }}
-                                                                        title="Click to copy contact (starts with 9)"
-                                                                    >
-                                                                        <span className="min-w-0 flex-1">{order.items[0].details.shippingDetails?.contactNumber || order.items[0].details.customerContact || order.items[0].details.contactNumber || 'N/A'}</span>
-                                                                        <Copy size={14} className="shrink-0 opacity-0 transition-opacity group-hover/contact:opacity-100" aria-hidden="true" />
-                                                                    </button>
-                                                                </div>
-                                                                <div className="md:col-span-2">
-                                                                    <p className="field-label">Details (barangay, city, province)</p>
-                                                                    <p className="text-ink">
-                                                                        {order.items[0].details.shippingDetails ? (
-                                                                            `${order.items[0].details.shippingDetails.barangay ? order.items[0].details.shippingDetails.barangay + ', ' : ''}${order.items[0].details.shippingDetails.city ? order.items[0].details.shippingDetails.city + ', ' : ''}${order.items[0].details.shippingDetails.province || ''}`
-                                                                        ) : (
-                                                                            `${order.items[0].details.customerBarangay ? order.items[0].details.customerBarangay + ', ' : ''}${order.items[0].details.customerCity ? order.items[0].details.customerCity + ', ' : ''}${order.items[0].details.customerProvince || ''}`
-                                                                        )}
-                                                                    </p>
-                                                                </div>
-                                                                {order.items[0].details.trackingNumber && (
-                                                                    <div className="md:col-span-2 border-t border-line pt-3">
-                                                                        <p className="field-label flex items-center gap-2"><Truck size={14} aria-hidden="true" /> Tracking number</p>
-                                                                        <p className="font-mono font-semibold text-primary">{order.items[0].details.trackingNumber}</p>
-                                                                    </div>
-                                                                )}
-                                                            </div>
+                                                            <LbcBookingPanel
+                                                                key={order.items[0]?.details?.trackingNumber || 'none'}
+                                                                order={order}
+                                                                canEditTracking={!isReseller}
+                                                                busy={loading}
+                                                                onCopy={handleCopyToClipboard}
+                                                                onSaveTracking={value => handleQuickTracking(order.id, value)}
+                                                                onMarkShipped={() => handleMarkShipped(order.id)}
+                                                            />
                                                         )}
                                                     </div>
                                                 )}

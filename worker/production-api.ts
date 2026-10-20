@@ -14,7 +14,11 @@ type Shirt = { designName: string; brand: string; color: string; size: string; r
 const UUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
 // Product photos stored in this app's media table. Anything else (external URLs) is not attached.
 const MEDIA_URL = /^(?:https:\/\/(?:www\.)?sportstechph\.store)?\/api\/media\/objects\/([0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12})$/i;
-export const MAX_BATCH_JOBS = 30;
+// Per-request safety ceiling for batch prepare, not a workflow limit (owner decision 2026-10-20
+// replaced the earlier 30-line cap). Each batch is one atomic, idempotent D1 batch with a fixed
+// number of statements; the ceiling keeps the bound source snapshots well below D1's 2 MB value
+// limit and the Worker's CPU budget. The owner picker uses the same number.
+export const MAX_BATCH_JOBS = 100;
 const now = "strftime('%Y-%m-%dT%H:%M:%fZ','now')";
 const visible = "j.assignee_id = ? AND j.released_at IS NOT NULL AND j.status IN ('released','printing','awaiting_qa','problem','completed')";
 const sourceQuery = `SELECT t.id,t.type,t.category,t.details,s.fingerprint,s.order_id

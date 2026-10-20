@@ -290,17 +290,32 @@ that exact email in the production `/print` Access application. The employee
 must not receive Cloudflare dashboard privileges or an owner role.
 
 Only assigned, explicitly released shirt jobs are visible. Product/design names,
-variants, required quantities, progress, the design photo and the customer's name are
-allowlisted. The name is shown so the printer can write it on the package (owner
-decision, October 13, 2026, migration `0010_production_customer_name.sql`); it is read
-live from the order line, so a corrected name reaches the printer. Customer contacts,
-addresses, order numbers, receipts, pricing, stock costs and management comments are
-not returned. Order numbers appear only on the owner's screens.
+variants, required quantities, progress, the design photo, the customer's name and the
+LBC tracking code are allowlisted. The name is shown so the printer can write it on the
+package (owner decision, October 13, 2026, migration `0010_production_customer_name.sql`);
+it is read live from the order line, so a corrected name reaches the printer.
+
+LBC booking (owner decision, October 20, 2026, migration `0012_production_tracking_number.sql`):
+the owner books an LBC pickup for each parcel from Orders (expand an order > Book with LBC: one
+copy button per LBC form field, or Copy all; the row's clipboard button copies the same block),
+then pastes the tracking number LBC gives at booking. Print staff see the tracking code next to the
+customer's name under "Write on package", read live from the order line, on in-progress and
+accepted jobs alike. Only a plain
+code (4-40 letters, digits, spaces or dashes) is shown; links and anything else stay
+owner-only. Saving a tracking number never changes the order status and never holds a print
+job, so it works while printing is still in progress. The owner marks the order Shipped
+when LBC picks the parcel up (Mark as shipped, or the status field); the customer's
+tracking text is sent then. Apply `0012` with `npm run db:staging` / `npm run db:production`
+before or with the code that shows it; until then staff see "Not booked yet".
+
+Customer contacts, addresses, order numbers, receipts, pricing, stock costs and management
+comments are not returned. Order numbers appear only on the owner's screens.
 
 The owner prepares jobs under Production > Prepare shirt jobs: waiting shirt lines are
 grouped by the customer who ordered (oldest order first, with the order number), can be ticked one by
-one or a whole order at a time, and up to 30 lines are prepared for one employee in a
-single atomic save (`POST /api/production/jobs/batch`), optionally released at once
+one or a whole order at a time, and every ticked line is prepared for one employee in a
+single atomic save (`POST /api/production/jobs/batch`, up to 100 lines per request; a larger
+selection prepares the oldest 100 and keeps the rest ticked), optionally released at once
 after the same artwork and blanks confirmations as a single release. Job lists for the
 owner and print staff are first in, first out: unfinished jobs by order date, oldest first,
 then accepted jobs. The order date is a sort key only; it is not returned to staff.

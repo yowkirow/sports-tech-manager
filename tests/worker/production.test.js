@@ -2,7 +2,7 @@ import assert from 'node:assert/strict';
 import { readFileSync, readdirSync } from 'node:fs';
 import { DatabaseSync } from 'node:sqlite';
 import { test } from 'node:test';
-import { handleProductionRequest, productionReadyGuard } from '../../worker/production-api.ts';
+import { handleProductionRequest, MAX_BATCH_JOBS, productionReadyGuard } from '../../worker/production-api.ts';
 import { HttpError } from '../../worker/errors.ts';
 
 const directory = new URL('../../worker/migrations/', import.meta.url);
@@ -152,8 +152,10 @@ test('employees see only their released jobs, safe explicit fields and safe acto
     }
     assert.deepEqual(Object.keys(response.jobs[0]).sort(), [
         'accepted', 'assignee', 'awaitingQA', 'brand', 'color', 'customerName', 'designImageUrl', 'designName', 'events', 'id', 'instructions',
-        'jobCode', 'rejected', 'releasedAt', 'remainingToPrint', 'required', 'reworkRemaining', 'size', 'status', 'updatedAt', 'version'
+        'jobCode', 'rejected', 'releasedAt', 'remainingToPrint', 'required', 'reworkRemaining', 'size', 'status', 'trackingNumber', 'updatedAt', 'version'
     ].sort());
+    // No tracking number on this order yet.
+    assert.equal(response.jobs[0].trackingNumber, null);
 });
 
 test('release requires explicit readiness and atomically moves every order row out of pending', async t => {
@@ -666,6 +668,48 @@ test('batch prepare and release moves every chosen order to in progress in one s
     for (const forbidden of ['private', 'customer', 'orderid', 'sourceid', 'st-print', 'st-other']) assert.ok(!encoded.includes(forbidden), forbidden);
 });
 
+test('staff see a plain LBC tracking code for the package label, never a link, and saving it never holds the job', async t => {
+    const f = fixture(t);
+    let job = await prepare(f);
+    job = await release(f, job);
+    const staffJob = async () => (await call(f, '/jobs', undefined, printer)).jobs[0];
+    assert.equal((await staffJob()).trackingNumber, null);
+    for (const [value, expected] of [
+        ['123456789012', '123456789012'],
+        ['  1234 5678-9012  ', '1234 5678-9012'],
+        ['AB12', 'AB12'],
+        ['https://www.lbcexpress.com/track/?tracking_no=123456789012', null],
+        ['0917 123 4567 / PRIVATE ADDRESS', null],
+        ['123', null],
+        ['x'.repeat(41), null],
+        ['1234\n5678', null],
+        [12345678, null],
+        ['', null]
+    ]) {
+        changeSource(f, { trackingNumber: value });
+        assert.equal((await staffJob()).trackingNumber, expected, JSON.stringify(value));
+    }
+    // A tracking number is not a physical line change: the job keeps printing, untouched.
+    changeSource(f, { trackingNumber: '123456789012' });
+    const stored = f.db.sqlite.prepare('SELECT status,source_changed,version FROM production_jobs WHERE id=?').get(job.id);
+    assert.deepEqual({ ...stored }, { status: 'released', source_changed: 0, version: job.version });
+    assert.equal(f.db.sqlite.prepare("SELECT count(*) AS n FROM production_events WHERE action IN ('source_changed','source_deleted')").get().n, 0);
+    // Printing continues and the corrected code reaches the printer live.
+    await progress(f, job, 'start');
+    changeSource(f, { trackingNumber: '9999 0000 1111' });
+    const current = await staffJob();
+    assert.equal(current.trackingNumber, '9999 0000 1111');
+    assert.equal(current.status, 'printing');
+    // Only the name and the code describe the order; nothing else about the buyer or the order.
+    const { customerName, trackingNumber, ...rest } = current;
+    const encoded = JSON.stringify(rest).toLowerCase();
+    for (const forbidden of ['private', 'st-print', 'contact', 'address', 'shipping', 'amount', 'receipt']) {
+        assert.ok(!encoded.includes(forbidden), forbidden);
+    }
+    // Another employee sees nothing.
+    assert.deepEqual((await call(f, '/jobs', undefined, other)).jobs, []);
+});
+
 test('staff see the current customer name, legacy customer field, or null, and nothing else about the buyer', async t => {
     const f = fixture(t, { customerName: '  Juan Dela Cruz  ' });
     const THIRD = '00000000-0000-4000-8000-000000000003';
@@ -683,11 +727,46 @@ test('staff see the current customer name, legacy customer field, or null, and n
     assert.equal(updated.customerName, 'Juan P. Dela Cruz');
 });
 
-test('batch prepare is limited to a reviewable number of lines', async t => {
+test('batch prepare keeps only a high per-request safety ceiling, checked before any database read', async t => {
     const f = fixture(t);
-    const lines = Array.from({ length: 31 }, (_, index) => ({
+    assert.equal(MAX_BATCH_JOBS, 100);
+    const lines = Array.from({ length: MAX_BATCH_JOBS + 1 }, (_, index) => ({
         sourceId: `00000000-0000-4000-8000-${String(index + 10).padStart(12, '0')}`, expectedSourceToken: 'x' }));
+    const before = snapshot(f);
     await assert.rejects(call(f, '/jobs/batch', { lines, assigneeId: printer.id, requestId: requestId() }), failure(400));
+    assert.deepEqual(snapshot(f), before);
+});
+
+test('batch prepare and release takes 51 lines in one atomic save (the old 30-line cap is gone)', async t => {
+    const f = fixture(t);
+    // 50 more shirt orders plus the fixture's own shirt line: the backlog the owner reported.
+    const ids = Array.from({ length: 50 }, (_, index) => `00000000-0000-4000-8000-${String(index + 100).padStart(12, '0')}`);
+    ids.forEach((id, index) => shirtOrder(f, id, `ST-BULK-${index}`));
+    const sources = [];
+    let offset = 0;
+    do {
+        const page = await call(f, `/sources${offset ? `?offset=${offset}` : ''}`);
+        sources.push(...page.sources);
+        offset = page.nextOffset;
+    } while (offset != null);
+    const lines = sources.map(lineOf);
+    assert.equal(lines.length, 51);
+    const result = await call(f, '/jobs/batch', { lines, assigneeId: printer.id, release: true, artworkReady: true, blanksReady: true, requestId: requestId() });
+    assert.equal(result.jobs.length, 51);
+    assert.ok(result.jobs.every(job => job.status === 'released' && job.releasedAt));
+    assert.equal(f.db.sqlite.prepare('SELECT count(*) AS n FROM production_jobs').get().n, 51);
+    assert.equal(f.db.sqlite.prepare("SELECT count(*) AS n FROM production_events WHERE action='prepared'").get().n, 51);
+    assert.equal(f.db.sqlite.prepare("SELECT count(*) AS n FROM production_events WHERE action='release'").get().n, 51);
+    assert.equal(f.db.sqlite.prepare('SELECT count(*) AS n FROM production_request_receipts').get().n, 1);
+    assert.equal(f.db.sqlite.prepare("SELECT count(*) AS n FROM transactions WHERE type='sale' AND json_extract(details,'$.fulfillmentStatus')<>'in_progress'").get().n, 0);
+    const staff = [];
+    offset = 0;
+    do {
+        const page = await call(f, `/jobs${offset ? `?offset=${offset}` : ''}`, undefined, printer);
+        staff.push(...page.jobs);
+        offset = page.nextOffset;
+    } while (offset != null);
+    assert.equal(new Set(staff.map(job => job.id)).size, 51);
 });
 
 test('jobs list first in, first out by order date for owner and staff, with accepted jobs last', async t => {
