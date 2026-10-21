@@ -366,6 +366,47 @@ async function createJobs(db: D1Database, member: Member, body: Row, requestId: 
             FROM json_each(?) AS r JOIN production_jobs j ON j.id=r.value JOIN production_job_public p ON p.id=j.id ORDER BY r.key)`,
         [ids]);
 }
+// Owner "Accept all" (owner request 2026-10-21): accepts every shirt awaiting QA on the listed
+// jobs, exactly as the owner saw them. Each job gets the same update and the same immutable 'qa'
+// event (with the certain printer credited for the wallet) as a single full acceptance; nothing is
+// rejected. If any job changed (version or awaiting count), the whole save is rejected unchanged.
+async function acceptAllQA(db: D1Database, member: Member, body: Row, requestId: string, hash: string): Promise<Response> {
+    fields(body, ['jobs', 'requestId']);
+    if (!Array.isArray(body.jobs) || !body.jobs.length || body.jobs.length > MAX_BATCH_JOBS) {
+        fail(`Accept from 1 to ${MAX_BATCH_JOBS} jobs at a time.`);
+    }
+    const jobs = (body.jobs as unknown[]).map(value => {
+        if (!isObject(value)) fail('Each job must be an object.');
+        fields(value, ['id', 'expectedVersion', 'accepted']);
+        const accepted = integer(value.accepted, 'Accepted quantity');
+        if (!accepted) fail('Each job needs at least one shirt awaiting QA.');
+        return { id: text(value.id, 'Job', 256, false), version: integer(value.expectedVersion, 'Expected version', Number.MAX_SAFE_INTEGER - 1), accepted };
+    });
+    if (new Set(jobs.map(job => job.id)).size !== jobs.length) fail('Choose each job only once.');
+    const items = JSON.stringify(jobs);
+    const ids = JSON.stringify(jobs.map(job => job.id));
+    const field = (name: string) => `json_extract(r.value,'$.${name}')`;
+    const open = "released_at IS NOT NULL AND source_changed=0 AND status NOT IN ('draft','completed','superseded')";
+    const writes = [
+        statement(db, `UPDATE production_jobs SET pending=0,accepted=accepted+pending,
+                status=CASE WHEN accepted+pending=required THEN 'completed'
+                    WHEN status IN ('held','problem') THEN status ELSE 'released' END,
+                version=version+1,updated_at=${now}
+            WHERE ${open} AND pending>0 AND EXISTS(SELECT 1 FROM json_each(?) AS r WHERE ${field('id')}=production_jobs.id
+                AND ${field('version')}=production_jobs.version AND ${field('accepted')}=production_jobs.pending)`, [items]),
+        guard(db, 'conflict', 'changes()=?', [jobs.length]),
+        // Same event a single QA writes; pendingPrinter reads only the event log, which is unchanged here.
+        statement(db, `INSERT INTO production_events(job_id,actor_id,actor_name,action,quantity,accepted,rejected,note,version,operator_id)
+            SELECT production_jobs.id,?,${actorName},'qa',${field('accepted')},${field('accepted')},0,'',production_jobs.version,${pendingPrinter}
+            FROM json_each(?) AS r JOIN production_jobs ON production_jobs.id=${field('id')} ORDER BY r.key`,
+        [member.id, member.role, member.id, items]),
+        guard(db, 'write', 'changes()=?', [jobs.length])
+    ];
+    return mutation(db, member, requestId, hash, writes,
+        `SELECT json_object('jobs',json_group_array(json(payload))) FROM (SELECT ${ownerPayload} AS payload
+            FROM json_each(?) AS r JOIN production_jobs j ON j.id=r.value JOIN production_job_public p ON p.id=j.id ORDER BY r.key)`,
+        [ids], 'Some shirts changed since you loaded the list. Nothing was accepted. Review the latest counts and try again.');
+}
 async function changeJob(db: D1Database, member: Member, id: string, action: string, body: Row, requestId: string, hash: string): Promise<Response> {
     const owner = member.role === 'owner';
     if (!owner && action !== 'progress') fail('Only the owner can release, hold or accept print jobs.', 'production_forbidden', 403);
@@ -665,6 +706,7 @@ export async function handleProductionRequest(request: Request, env: AppEnv, mem
     if (saved) return json(saved);
     if (memberMutation) return changeMember(env.DB, member, memberPath?.[1], input, requestId, hash);
     if (url.pathname === '/api/production/jobs/batch') return createJobs(env.DB, member, input, requestId, hash);
+    if (url.pathname === '/api/production/qa') return acceptAllQA(env.DB, member, input, requestId, hash);
     if (url.pathname === '/api/production/jobs') return createJob(env.DB, member, input, requestId, hash);
     if (match?.[2] === 'revise') return reviseJob(env.DB, member, match[1]!, input, requestId, hash);
     if (match) return changeJob(env.DB, member, match[1]!, match[2]!, input, requestId, hash);

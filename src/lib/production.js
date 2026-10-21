@@ -86,6 +86,13 @@ export function orderDateLabel(value, now = new Date()) {
 // The Worker's per-request ceiling (worker/production-api.ts). Not a selection limit: the picker
 // prepares the oldest MAX_BATCH_JOBS chosen lines per save and keeps the rest selected.
 export const MAX_BATCH_JOBS = 100;
+
+// Jobs whose printed shirts the owner can accept in one go: released, current (order line
+// unchanged) jobs with shirts awaiting QA, in the list's first-in, first-out order.
+export const acceptAllQueue = (jobs) => jobs.filter(job => job.awaitingQA > 0 && !job.sourceChanged && job.releasedAt
+    && !['draft', 'completed', 'superseded'].includes(job.status));
+// Exactly the counts the owner saw; the server refuses the whole save if any job changed since.
+export const acceptAllPayload = (jobs) => jobs.map(job => ({ id: job.id, expectedVersion: job.version, accepted: job.awaitingQA }));
 // The batch payload: server-verified source references and tokens only.
 export const productionBatchLines = (candidates) => candidates.map(candidate => ({
     sourceId: candidate.sourceId, itemIndex: candidate.itemIndex, expectedSourceToken: candidate.sourceToken

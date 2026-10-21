@@ -342,6 +342,12 @@ photo"; the employee then uses the artwork the owner supplied separately.
 The employee records whole partial quantities as Printing, Printed or Problem.
 Printed quantities await owner QA. Accepted and rejected quantities are recorded
 atomically with immutable events; rejected shirts return to the rework count.
+**Accept all** (owner, October 21, 2026; `POST /api/production/qa`) accepts every shirt
+awaiting QA on up to 100 released, unchanged jobs (oldest first) in one atomic,
+idempotent save. Each job gets the same update and `qa` event as a single full
+acceptance, so wallet credit is identical; if any job's version or awaiting count
+changed since the owner loaded the list, nothing is accepted. Rejections stay on each
+job's own quality check.
 
 Physical order-line changes hold related jobs, retaining their original counts
 and immutable source fingerprints. The owner can explicitly prepare a reviewed

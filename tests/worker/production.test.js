@@ -828,3 +828,77 @@ test('the 0011 backfill attaches exactly the photo a newly prepared job gets, an
     f.db.sqlite.exec(backfill);
     assert.deepEqual(read(), prepared, 'safe to re-run');
 });
+
+const acceptAllBody = jobs => ({ jobs: jobs.map(job => ({ id: job.id, expectedVersion: job.version, accepted: job.awaitingQA })), requestId: requestId() });
+async function twoPrintedJobs(f) {
+    const THIRD = '00000000-0000-4000-8000-000000000003';
+    shirtOrder(f, THIRD, 'ST-OTHER');
+    const lines = (await call(f, '/sources')).sources.map(lineOf);
+    const released = (await call(f, '/jobs/batch', { lines, assigneeId: printer.id, release: true, artworkReady: true, blanksReady: true, requestId: requestId() })).jobs;
+    const big = released.find(job => job.required === 10);
+    const small = released.find(job => job.required === 2);
+    return [await progress(f, big, 'printed', { quantity: 4 }), await progress(f, small, 'printed', { quantity: 2 })];
+}
+const comparable = f => ({
+    jobs: f.db.sqlite.prepare('SELECT required,pending,accepted,rejected,rework,status,version,source_changed FROM production_jobs ORDER BY required').all().map(row => ({ ...row })),
+    qa: f.db.sqlite.prepare(`SELECT j.required,e.actor_id,e.actor_name,e.action,e.quantity,e.accepted,e.rejected,e.note,e.version,e.operator_id
+        FROM production_events e JOIN production_jobs j ON j.id=e.job_id WHERE e.action='qa' ORDER BY j.required`).all().map(row => ({ ...row })),
+    credits: f.db.sqlite.prepare('SELECT operator_id,sum(shirts) AS shirts FROM print_wallet_credits GROUP BY operator_id').all().map(row => ({ ...row }))
+});
+
+test('accept all QA records exactly what single full acceptances record, including wallet credit', async t => {
+    const single = fixture(t);
+    for (const job of await twoPrintedJobs(single)) await qa(single, job, job.awaitingQA, 0);
+    const bulk = fixture(t);
+    const printed = await twoPrintedJobs(bulk);
+    const result = await call(bulk, '/qa', acceptAllBody(printed));
+    assert.deepEqual(result.jobs.map(job => [job.required, job.accepted, job.awaitingQA, job.status]), [[10, 4, 0, 'released'], [2, 2, 0, 'completed']]);
+    assert.ok(result.jobs.every(job => job.orderId && job.customerName), 'owner payload');
+    assert.deepEqual(comparable(bulk), comparable(single));
+    assert.deepEqual(comparable(bulk).credits, [{ operator_id: printer.id, shirts: 6 }]);
+});
+
+test('accept all QA is owner-only, idempotent and all-or-nothing when anything changed', async t => {
+    const f = fixture(t);
+    const printed = await twoPrintedJobs(f);
+    const body = acceptAllBody(printed);
+    const before = snapshot(f);
+    await assert.rejects(call(f, '/qa', body, printer), failure(403));
+    for (const bad of [{ ...body, jobs: [] }, { ...body, jobs: [body.jobs[0], body.jobs[0]] },
+        { ...body, jobs: [{ ...body.jobs[0], accepted: 0 }] }, { ...body, jobs: [{ ...body.jobs[0], note: 'x' }] },
+        { ...body, jobs: Array.from({ length: 101 }, (_, index) => ({ id: `job-${index}`, expectedVersion: 1, accepted: 1 })) }]) {
+        await assert.rejects(call(f, '/qa', { ...bad, requestId: requestId() }), failure(400));
+    }
+    // The printer recorded more since the owner loaded the list: the counts no longer match.
+    await progress(f, printed[0], 'printed', { quantity: 1 });
+    const changed = snapshot(f);
+    await assert.rejects(call(f, '/qa', body), failure(409));
+    assert.deepEqual(snapshot(f), changed);
+    const fresh = (await call(f)).jobs.filter(job => job.awaitingQA > 0);
+    const saved = acceptAllBody(fresh);
+    const result = await call(f, '/qa', saved);
+    assert.deepEqual(result.jobs.map(job => job.accepted).sort((a, b) => a - b), [2, 5]);
+    const after = snapshot(f);
+    assert.deepEqual(await call(f, '/qa', saved), result, 'replay returns the saved receipt');
+    assert.deepEqual(snapshot(f), after);
+    await assert.rejects(call(f, '/qa', { ...saved, requestId: requestId() }), failure(409), 'nothing is awaiting QA any more');
+    assert.deepEqual(snapshot(f), after);
+    assert.notDeepEqual(before, after);
+});
+
+test('accept all QA keeps held jobs held, and refuses the whole batch if an order line changed', async t => {
+    const f = fixture(t);
+    let [big] = await twoPrintedJobs(f);
+    big = (await call(f, `/jobs/${big.id}/hold`, { expectedVersion: big.version, requestId: requestId(), note: 'Check ink first.' })).job;
+    const result = await call(f, '/qa', acceptAllBody([big]));
+    assert.deepEqual([result.jobs[0].status, result.jobs[0].accepted, result.jobs[0].awaitingQA], ['held', 4, 0]);
+
+    const g = fixture(t);
+    await twoPrintedJobs(g);
+    const listed = (await call(g)).jobs.filter(job => job.awaitingQA > 0);
+    changeSource(g, { size: 'XL' });
+    assert.equal((await call(g)).jobs.find(job => job.required === 10).sourceChanged, true);
+    const before = snapshot(g);
+    await assert.rejects(call(g, '/qa', acceptAllBody(listed)), failure(409));
+    assert.deepEqual(snapshot(g), before);
+});

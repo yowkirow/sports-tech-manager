@@ -1,8 +1,8 @@
 import React, { useCallback, useMemo, useState } from 'react';
-import { CheckCircle2, Pause, Send, UserPlus, UserX } from 'lucide-react';
+import { CheckCheck, CheckCircle2, Pause, Send, UserPlus, UserX } from 'lucide-react';
 import LoadingState from '../ui/LoadingState.jsx';
 import {
-    MAX_BATCH_JOBS, orderDateLabel, productionBatchLines, productionCandidates, productionCustomerOf, productionGroupMatches,
+    MAX_BATCH_JOBS, acceptAllPayload, acceptAllQueue, orderDateLabel, productionBatchLines, productionCandidates, productionCustomerOf, productionGroupMatches,
     productionLineKey, productionOrderDateOf, productionOrderGroups, productionQuantity, walletPeso
 } from '../../lib/production.js';
 import { useProductionData, useProductionMutation, useProductionWallet } from './productionHooks.js';
@@ -220,6 +220,52 @@ function PrepareJobs({ candidates, transactions, employees, reload, online, stal
     </details>;
 }
 
+// One tap to accept every printed shirt waiting for QA (owner request 2026-10-21). Rejections
+// stay on each job's own quality check, so problem shirts are sent back before accepting all.
+function AcceptAllQA({ jobs, customerOf, reload, online, stale }) {
+    const readOnly = useReadOnly();
+    const mutation = useProductionMutation(reload);
+    const queue = acceptAllQueue(jobs);
+    if (!queue.length && !mutation.error) return null;
+    const batch = queue.slice(0, MAX_BATCH_JOBS);
+    const later = queue.length - batch.length;
+    const shirts = batch.reduce((total, job) => total + job.awaitingQA, 0);
+    const blocked = readOnly || !online || stale || mutation.busy || mutation.uncertain;
+    const plural = (count, word) => `${count} ${word}${count === 1 ? '' : 's'}`;
+    const accept = () => {
+        if (!window.confirm(`Accept all ${plural(shirts, 'shirt')} across ${plural(batch.length, 'job')} as good?\n\nThey count toward each order and the printer's pay. To send any back for rework, cancel and use that job's quality check first.`)) return;
+        mutation.run('/api/production/qa', { jobs: acceptAllPayload(batch) },
+            `Accepted ${plural(shirts, 'shirt')} across ${plural(batch.length, 'job')}.${later ? ` ${plural(later, 'more job')} still ${later === 1 ? 'waits' : 'wait'} for QA.` : ''}`);
+    };
+    return <section className="production-qa-all" aria-labelledby="production-qa-all-title">
+        {queue.length > 0 && <>
+            <div className="production-qa-all-head">
+                <div>
+                    <h3 id="production-qa-all-title">Waiting for your QA</h3>
+                    <p><strong>{plural(queue.reduce((total, job) => total + job.awaitingQA, 0), 'shirt')}</strong> printed across <strong>{plural(queue.length, 'job')}</strong>.</p>
+                </div>
+                <button type="button" className="production-button production-primary" disabled={blocked}
+                    title={readOnly ? READ_ONLY_HINT : undefined} onClick={accept}>
+                    <CheckCheck size={18} aria-hidden="true" />Accept all {later ? `${shirts} shirts (oldest ${batch.length} jobs)` : plural(shirts, 'shirt')}
+                </button>
+            </div>
+            <details className="production-qa-all-list">
+                <summary>Show the jobs</summary>
+                <ul>
+                    {queue.map(job => <li key={job.id}>
+                        <span className="production-qa-all-job">{job.jobCode}</span>
+                        <span className="production-qa-all-name">{job.designName} · {job.size}{customerOf(job) || job.customerName ? ` · ${customerOf(job) || job.customerName}` : ''}</span>
+                        <strong>{job.awaitingQA}</strong>
+                    </li>)}
+                </ul>
+            </details>
+            <p className="production-help">Check the shirts first. To send some back for rework, use Reject on that job below, then accept the rest here.</p>
+        </>}
+        <MutationNotice mutation={mutation} online={online} />
+        {mutation.busy && <p role="status">Accepting shirts…</p>}
+    </section>;
+}
+
 function OwnerJob({ job, customer, orderDate, sources, employees, reload, online, stale }) {
     const readOnly = useReadOnly();
     const [artwork, setArtwork] = useState(false);
@@ -378,6 +424,7 @@ export default function ProductionManager({ transactions = [], refetch }) {
                 {data.loading && !data.jobs.length && !data.members.length ? <LoadingState label="Loading print production…" /> : <>
                     <EmployeeAccounts members={data.members} wallets={wallets} reload={reload} online={data.online} stale={!!data.error} />
                     <PrepareJobs candidates={candidates} transactions={transactions} employees={employees} reload={reload} online={data.online} stale={!!data.error || orderRefreshError} />
+                    <AcceptAllQA jobs={data.jobs} customerOf={customerOf} reload={reload} online={data.online} stale={!!data.error} />
                     <div className="production-toolbar">
                         <label className="production-field production-filter">Show jobs
                             <select value={filter} onChange={event => setFilter(event.target.value)}>

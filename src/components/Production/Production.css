@@ -411,6 +411,40 @@
 .production-customer span { color: var(--color-ink-2); font-size: .875rem; font-weight: 600; }
 .production-customer strong { color: var(--color-ink); font-size: 1.125rem; font-weight: 700; line-height: 1.3; overflow-wrap: anywhere; }
 .production-customer .production-customer-missing { color: var(--color-ink-2); font-size: 1rem; font-weight: 600; }
+.production-qa-all {
+    background: var(--color-surface);
+    border: 1px solid var(--color-line);
+    border-radius: 16px;
+    padding: 16px 18px;
+    margin-bottom: 16px;
+}
+.production-qa-all:empty { display: none; }
+.production-qa-all-head { display: flex; align-items: center; justify-content: space-between; flex-wrap: wrap; gap: 12px 20px; }
+.production-qa-all-head h3 {
+    font-family: var(--font-display);
+    font-size: 1.125rem;
+    line-height: 1;
+    text-transform: uppercase;
+    letter-spacing: .02em;
+}
+.production-qa-all-head p { margin-top: 6px; color: var(--color-ink-2); font-variant-numeric: tabular-nums; }
+.production-qa-all-head strong { color: var(--color-ink); }
+.production-qa-all-list { margin-top: 8px; }
+.production-qa-all-list summary { color: var(--color-ink-2); font-size: .875rem; }
+.production-qa-all-list ul { list-style: none; margin: 0; padding: 0; max-height: 320px; overflow-y: auto; scrollbar-color: var(--color-slate-600) transparent; }
+.production-qa-all-list li {
+    display: grid;
+    grid-template-columns: max-content minmax(0, 1fr) max-content;
+    align-items: baseline;
+    gap: 12px;
+    padding-block: 10px;
+    border-top: 1px solid var(--color-line);
+    font-size: .875rem;
+    color: var(--color-ink-2);
+}
+.production-qa-all-job { color: var(--color-ink); font-weight: 700; letter-spacing: .02em; font-variant-numeric: tabular-nums; }
+.production-qa-all-name { min-width: 0; overflow-wrap: anywhere; }
+.production-qa-all-list li strong { color: var(--color-ink); font-family: var(--font-display); font-size: 1.125rem; font-variant-numeric: tabular-nums; }
 .production-booking { display: flex; flex-direction: column; gap: 2px; margin-top: 10px; padding-top: 10px; border-top: 1px solid var(--color-line); }
 .production-customer .production-booking-code {
     font-size: 1.125rem;
@@ -452,6 +486,7 @@
     .production-line-qty { grid-column: 3; }
     .production-photo-large { max-width: none; }
     .production-batch-bar { display: block; }
+    .production-qa-all-head .production-button { width: 100%; }
     .production-batch-bar .production-actions { margin-top: 12px; }
 }
 @media (prefers-reduced-motion: reduce) {

@@ -1,7 +1,7 @@
 import assert from 'node:assert/strict';
 import { test } from 'node:test';
 import { MAX_BATCH_JOBS as WORKER_MAX_BATCH_JOBS } from '../../worker/production-api.ts';
-import { MAX_BATCH_JOBS, orderDateLabel, payoutSteps, productionBatchLines, productionCandidates, productionCustomerOf, productionGroupMatches, productionLineKey, productionOrderDateOf, productionOrderGroups, productionQuantity, productionError, walletPeso } from '../../src/lib/production.js';
+import { MAX_BATCH_JOBS, acceptAllPayload, acceptAllQueue, orderDateLabel, payoutSteps, productionBatchLines, productionCandidates, productionCustomerOf, productionGroupMatches, productionLineKey, productionOrderDateOf, productionOrderGroups, productionQuantity, productionError, walletPeso } from '../../src/lib/production.js';
 
 test('production UI sends only normalized shirt source references and server snapshot tokens', () => {
     const transactions = [
@@ -97,4 +97,17 @@ test('picker puts orders without a date last and labels older orders with their 
     assert.equal(orderDateLabel('not a date', now), '');
     assert.equal(productionOrderDateOf(transactions)({ sourceId: 'dated' }), '2025-12-28T02:00:00Z');
     assert.equal(productionOrderDateOf(transactions)({ sourceId: 'undated' }), null);
+});
+
+test('accept all QA picks only released, current jobs with shirts awaiting QA, oldest first, with exact counts', () => {
+    const job = (id, patch) => ({ id, version: 3, awaitingQA: 2, sourceChanged: false, releasedAt: '2026-10-21T00:00:00Z', status: 'awaiting_qa', ...patch });
+    const jobs = [
+        job('old'), job('none', { awaitingQA: 0 }), job('changed', { sourceChanged: true }), job('draft', { status: 'draft', releasedAt: null }),
+        job('held', { status: 'held', awaitingQA: 1 }), job('done', { status: 'completed' }), job('retired', { status: 'superseded' }), job('new', { awaitingQA: 5, version: 7 })
+    ];
+    assert.deepEqual(acceptAllQueue(jobs).map(item => item.id), ['old', 'held', 'new']);
+    assert.deepEqual(acceptAllPayload(acceptAllQueue(jobs)), [
+        { id: 'old', expectedVersion: 3, accepted: 2 }, { id: 'held', expectedVersion: 3, accepted: 1 }, { id: 'new', expectedVersion: 7, accepted: 5 }
+    ]);
+    assert.deepEqual(acceptAllQueue([]), []);
 });

@@ -276,6 +276,7 @@ The form language is blunt athletic retail: rounded enough to be touchable, neve
 - **Design photo:** Each job shows its product photo in a Raised Charcoal media well (`object-fit: contain`, card corners) with an "Open full size" footer link. It is full-width on the employee's phone and 240px on owner cards; a muted "No design photo" line replaces it when missing.
 - **Package name:** Above the photo, the employee sees "Write on package" with the customer's name in a Raised Charcoal block (Label over 1.125rem bold, natural case so it is copied exactly). Only the name is shown to staff; a muted "No name on this order" line asks them to check with the owner.
 - **Owner line picker:** Waiting shirt lines are grouped by order, oldest first (customer name, then order number, order date and shirt count) in Raised Charcoal cards with hairline rows: checkbox, 56px media thumbnail, design and variant, quantity. Selected rows get a subtle white wash, never red. A divided summary bar ("3 lines · 4 shirts selected") holds Clear and the single red primary action.
+- **Accept all QA:** When printed shirts await QA, a Flat Charcoal panel above the job list states the total ("6 shirts printed across 2 jobs") beside one red "Accept all" pill, with a collapsed hairline list of the jobs (job code, design, customer, count). A confirmation dialog states the count and that rejections belong on each job's own quality check.
 
 ## Do's and Don'ts
 
