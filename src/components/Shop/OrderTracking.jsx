@@ -1,7 +1,8 @@
 import React, { useState, useEffect, useMemo, useRef } from 'react';
 import clsx from 'clsx';
-import { ArrowLeft, Check, Copy, ImageOff, Loader2, Minus, Plus, RefreshCw, RotateCcw, X } from 'lucide-react';
+import { ArrowLeft, Check, Copy, ExternalLink, ImageOff, Loader2, Minus, Plus, RefreshCw, RotateCcw, Truck, X } from 'lucide-react';
 import { refreshTrackedOrder, saveTrackedOrder, trackOrder, trackingToken } from '../../lib/publicShopApi';
+import { parcelTrackingUrl } from '../../lib/lbcBooking';
 import { useToast } from '../ui/Toast';
 import Logo from '../ui/Logo';
 import { getEditableOrderItems, priceOrderChanges } from '../../lib/orderEditingPure';
@@ -250,6 +251,18 @@ export default function OrderTracking() {
     const subtotal = order.items.reduce((acc, item) => acc + (item.details.originalAmount || item.amount), 0);
     const balance = Math.max(0, order.totalAmount - order.paidAmount);
     const shipping = order.details.shippingDetails || {};
+    // LBC's tracking number, sent by the server only once the order has shipped.
+    const parcelTracking = currentStatus === 'shipped' && typeof order.details.trackingNumber === 'string' ? order.details.trackingNumber.trim() : '';
+    const parcelIsLink = /^https?:\/\//i.test(parcelTracking);
+    const parcelUrl = parcelTrackingUrl(parcelTracking);
+    const copyParcelTracking = async () => {
+        try {
+            await navigator.clipboard.writeText(parcelTracking);
+            showToast('Tracking number copied!', 'success');
+        } catch {
+            showToast("Couldn't copy. Select the tracking number and copy it manually.", 'error');
+        }
+    };
 
     return (
         <div className="min-h-dvh bg-ground text-ink">
@@ -334,6 +347,33 @@ export default function OrderTracking() {
                                 })}
                             </ol>
                         </section>
+
+                        {parcelTracking && (
+                            <section className="surface mt-8 flex flex-col gap-4 p-5 sm:flex-row sm:items-end sm:justify-between sm:p-6" aria-labelledby="parcel-title">
+                                <div className="min-w-0">
+                                    <h2 id="parcel-title" className="section-title flex items-center gap-2"><Truck size={16} aria-hidden="true" /> Track your parcel</h2>
+                                    {parcelIsLink
+                                        ? <p className="mt-2 text-ink-2">Your parcel is on its way. Follow it with the courier's tracking link.</p>
+                                        : <>
+                                            <p className="mt-2 text-sm text-ink-2">LBC tracking number</p>
+                                            <p className="num mt-0.5 break-all text-2xl font-semibold tracking-wide text-ink sm:text-3xl">{parcelTracking}</p>
+                                        </>}
+                                </div>
+                                <div className="flex flex-wrap gap-2">
+                                    {!parcelIsLink && (
+                                        <button type="button" className="btn-secondary" onClick={copyParcelTracking}>
+                                            <Copy size={16} aria-hidden="true" /> Copy
+                                        </button>
+                                    )}
+                                    {parcelUrl && (
+                                        <a className="btn-primary" href={parcelUrl} target="_blank" rel="noopener noreferrer">
+                                            {parcelIsLink ? 'Open tracking link' : 'Track on LBC'} <ExternalLink size={16} aria-hidden="true" />
+                                            <span className="sr-only"> (opens in a new tab)</span>
+                                        </a>
+                                    )}
+                                </div>
+                            </section>
+                        )}
 
                         <div className="mt-10 grid gap-6 md:grid-cols-[minmax(0,1.3fr)_minmax(0,1fr)]">
                             <section className="surface p-5 sm:p-6" aria-labelledby="summary-title">

@@ -177,7 +177,7 @@ code is roughly a monthly step per device while the PIN opens the app each day.
 Resellers can edit only their own unpaid, pending orders. The server rebuilds
 quantity/removal pricing using the existing reseller policy, verifies complete
 source snapshots and ownership inside the write batch, and rechecks membership
-on retries. Payment, fulfillment, tracking, product replacement, discounts and
+on retries. Payment, fulfillment, LBC booking and tracking numbers, product replacement, discounts and
 arbitrary price adjustments are not reseller permissions. Metadata-only edits
 retain exact historical amounts. Ambiguous duplicate legacy-item removals and
 quantity changes inside wrapped legacy items explicitly require owner review.
@@ -291,22 +291,36 @@ must not receive Cloudflare dashboard privileges or an owner role.
 
 Only assigned, explicitly released shirt jobs are visible. Product/design names,
 variants, required quantities, progress, the design photo, the customer's name and the
-LBC tracking code are allowlisted. The name is shown so the printer can write it on the
+LBC booking code are allowlisted. The name is shown so the printer can write it on the
 package (owner decision, October 13, 2026, migration `0010_production_customer_name.sql`);
 it is read live from the order line, so a corrected name reaches the printer.
 
-LBC booking (owner decision, October 20, 2026, migration `0012_production_tracking_number.sql`):
-the owner books an LBC pickup for each parcel from Orders (expand an order > Book with LBC: one
-copy button per LBC form field, or Copy all; the row's clipboard button copies the same block),
-then pastes the tracking number LBC gives at booking. Print staff see the tracking code next to the
-customer's name under "Write on package", read live from the order line, on in-progress and
-accepted jobs alike. Only a plain
-code (4-40 letters, digits, spaces or dashes) is shown; links and anything else stay
-owner-only. Saving a tracking number never changes the order status and never holds a print
-job, so it works while printing is still in progress. The owner marks the order Shipped
-when LBC picks the parcel up (Mark as shipped, or the status field); the customer's
-tracking text is sent then. Apply `0012` with `npm run db:staging` / `npm run db:production`
-before or with the code that shows it; until then staff see "Not booked yet".
+LBC numbers (owner decisions, October 20 and 21, 2026; migrations
+`0012_production_tracking_number.sql`, then `0013_production_booking_number.sql`). LBC
+gives two numbers per parcel, kept apart on the order:
+
+- **Booking number** (`details.bookingNumber`): LBC gives it when the owner books the pickup.
+  In Orders, open an order > Book with LBC (one copy button per LBC form field, or Copy
+  all; the row's clipboard button copies the same block), then paste the booking number
+  there or in the order row's "LBC booking no." field. Print staff see it next to the
+  customer's name under "Write on package", read live from the order line, on in-progress
+  and accepted jobs alike, and write it on the package. Only a plain code (4-40 letters,
+  digits, spaces or dashes) is shown; links and anything else stay owner-only. Saving it
+  never changes the order status, is never texted and never holds a print job, so it works
+  while printing is still in progress.
+- **Tracking number** (`details.trackingNumber`): LBC gives it once the parcel ships. It is
+  the customer's. The owner pastes it in the same panel and taps Mark as shipped, which
+  saves it with Shipped in one save (print-queue orders still need finished QA and the
+  packing confirmation) and sends the tracking text when SMS is on. If the field is empty,
+  the panel asks for the number; shipping without one (another courier, a pickup) is an
+  explicit choice and texts nothing. The customer's contact-verified `/track` page shows the
+  number with a "Track on LBC" link once the order is Shipped. Print staff never receive
+  it. Correcting it on a shipped order texts the new number.
+
+Apply `0013` with `npm run db:staging` / `npm run db:production` right before deploying the
+code that shows it. Until both are live, the print queue shows "Not booked yet". Every
+production order that had a tracking number on October 21 was already shipped, so no
+saved number needed moving.
 
 Customer contacts, addresses, order numbers, receipts, pricing, stock costs and management
 comments are not returned. Order numbers appear only on the owner's screens.
