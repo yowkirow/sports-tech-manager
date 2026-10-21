@@ -481,9 +481,20 @@ function safeDetails(source: RecordData): RecordData {
     if (typeof source.proofOfPayment === 'string' && /^\/api\/media\/receipts\/[0-9a-f-]{36}$/i.test(source.proofOfPayment)) result.proofOfPayment = source.proofOfPayment;
     return result;
 }
+// Owner decision (2026-10-21): the tracking number LBC gives once the parcel ships belongs to the
+// customer, so their verified order page shows it from Shipped on. The booking number from the
+// pickup booking (for the package label) is never returned to customers.
+function shippedTracking(details: unknown): string | null {
+    if (!isObject(details)) return null;
+    const status = details.fulfillmentStatus ?? details.status;
+    const value = typeof details.trackingNumber === 'string' ? details.trackingNumber.trim() : '';
+    return status === 'shipped' && value && value.length <= 300 ? value : null;
+}
 function publicOrder(order: RecordData): RecordData {
     const rows = order.transactions.map((row: Transaction) => {
         const details = safeDetails(row.details);
+        const tracking = shippedTracking(row.details);
+        if (tracking) details.trackingNumber = tracking;
         if (!Array.isArray(details.items) && !details.itemName) {
             details.itemName = order.items.find((item: RecordData) => item.transactionId === row.id)?.details.itemName;
         }

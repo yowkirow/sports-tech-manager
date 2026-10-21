@@ -1,5 +1,8 @@
-// LBC booking helpers (owner request 2026-10-20). The owner books each parcel on LBC with the
-// receiver's details, then pastes the tracking number on the order for the print staff's label.
+// LBC helpers. LBC gives two numbers (owner, 2026-10-20 and 2026-10-21):
+// - the BOOKING number, when the owner books the pickup. Print staff write it on the package with
+//   the customer's name. Saving it never changes the order status.
+// - the TRACKING number, once the parcel ships. It is the customer's: their order page shows it and
+//   the tracking text sends it. Print staff never receive it.
 
 const text = value => (typeof value === 'string' ? value.trim() : '');
 const pick = (...values) => values.map(text).find(Boolean) || '';
@@ -44,9 +47,9 @@ export function lbcCopyText(receiver) {
     ].filter(Boolean).join('\n');
 }
 
-// Pasted values become a clean code: an LBC tracking link becomes its tracking number, and
-// tabs or line breaks become single spaces. Other text is kept so the owner can still save it.
-export function normalizeTracking(value) {
+// Pasted numbers become a clean code: an LBC tracking link becomes its number, and tabs or line
+// breaks become single spaces. Other text is kept so the owner can still save it.
+export function normalizeLbcNumber(value) {
     const raw = String(value ?? '').trim();
     if (/^https?:\/\//i.test(raw)) {
         try {
@@ -59,14 +62,34 @@ export function normalizeTracking(value) {
     return raw.replace(/\s+/g, ' ');
 }
 
-// Mirrors migration 0012: print staff see only a plain code of 4-40 letters, digits, spaces
-// or dashes. Anything else (links, notes, contacts) stays owner-only.
-export function plainTrackingCode(value) {
+// Mirrors migration 0013 (and 0012 before it): print staff see only a plain code of 4-40
+// letters, digits, spaces or dashes. Anything else (links, notes, contacts) stays owner-only.
+export function plainLabelCode(value) {
     if (typeof value !== 'string') return null;
     const code = value.replace(/^ +| +$/g, '');
     return /^[A-Za-z0-9 -]{4,40}$/.test(code) ? code : null;
 }
 
-// Saving a tracking number never changes the order status: parcels are booked before printing
-// and packing finish. The owner marks the order Shipped when the parcel is handed to LBC.
+// The booking number is saved while printing is still going on, so it never changes the status.
+export const withBookingNumber = (details, bookingNumber) => ({ ...details, bookingNumber });
+
+// Orders that can still be booked and shipped. Shipped, returned and cancelled orders only keep
+// their numbers for reference.
+export const SHIPPABLE_STATUSES = ['pending', 'in_progress', 'ready'];
+
+// Corrects the tracking number of an order that has already shipped; the status stays as it is.
 export const withTrackingNumber = (details, trackingNumber) => ({ ...details, trackingNumber });
+
+// LBC's tracking number arrives once the parcel ships, so it is saved together with Shipped.
+// Shipping without one (another courier, a pickup) keeps any number already saved.
+export const shippedWith = (details, trackingNumber) => ({
+    ...details, ...(trackingNumber ? { trackingNumber } : {}), fulfillmentStatus: 'shipped', status: 'shipped'
+});
+
+// Where the customer follows the parcel: a saved link as it is, or LBC's tracker for a plain code.
+export function parcelTrackingUrl(value) {
+    const raw = typeof value === 'string' ? value.trim() : '';
+    if (/^https?:\/\/[^\s]+$/i.test(raw)) return raw;
+    const code = plainLabelCode(raw);
+    return code ? `https://www.lbcexpress.com/track/?tracking_no=${encodeURIComponent(code.replace(/[\s-]+/g, ''))}` : null;
+}

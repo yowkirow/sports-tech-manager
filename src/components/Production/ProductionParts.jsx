@@ -45,18 +45,19 @@ export function JobHeading({ job, owner = false, customer = '', orderDate = '' }
     </div>;
 }
 // What the employee writes on the package: the customer's name (owner decision 2026-10-13) and
-// the LBC tracking code once the owner has booked the parcel (owner decision 2026-10-20).
+// the LBC booking number once the owner has booked the pickup (owner decisions 2026-10-20/21).
+// LBC's later tracking number is the customer's and is never sent here.
 export function JobCustomer({ job }) {
     return <div className="production-customer">
         <span>Write on package</span>
         {job.customerName
             ? <strong>{job.customerName}</strong>
             : <strong className="production-customer-missing">No name on this order. Ask the owner before packing.</strong>}
-        <div className="production-tracking">
-            <span>LBC tracking</span>
-            {job.trackingNumber
-                ? <strong className="production-tracking-code">{job.trackingNumber}</strong>
-                : <p className="production-tracking-missing">Not booked yet. The owner adds it after booking with LBC.</p>}
+        <div className="production-booking">
+            <span>LBC booking number</span>
+            {job.bookingNumber
+                ? <strong className="production-booking-code">{job.bookingNumber}</strong>
+                : <p className="production-booking-missing">Not booked yet. The owner adds it after booking the LBC pickup.</p>}
         </div>
     </div>;
 }

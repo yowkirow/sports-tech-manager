@@ -333,6 +333,34 @@ test('tracking verifies full normalized contact before returning only the scoped
     assert.equal(latest.body.order.id, second.orderId);
 });
 
+test('customers see LBC tracking number once the order ships, never the booking number', async t => {
+    const { env } = fixture(t);
+    const initial = await placed(env);
+    const setDetails = (bookingNumber, trackingNumber, fulfillmentStatus) => env.DB.sqlite.prepare(`UPDATE transactions
+        SET details=json_set(details,'$.bookingNumber',?,'$.trackingNumber',?,'$.fulfillmentStatus',?) WHERE order_id=?`)
+        .run(bookingNumber, trackingNumber, fulfillmentStatus, initial.orderId);
+    const view = async () => (await call(env, `/api/public/orders/${initial.orderId}`, undefined, initial.token)).body;
+    // Booked and still printing: the booking number (package label) and any early tracking stay with the owner.
+    setDetails('BK-PRIVATE-0001', '123456789012', 'in_progress');
+    let encoded = JSON.stringify(await view());
+    for (const hidden of ['BK-PRIVATE-0001', 'bookingNumber', '123456789012', 'trackingNumber']) assert.ok(!encoded.includes(hidden), hidden);
+    // Shipped: LBC's tracking number belongs to the customer; the booking number still never leaves.
+    setDetails('BK-PRIVATE-0001', ' 123456789012 ', 'shipped');
+    const shipped = await view();
+    assert.equal(shipped.order.details.trackingNumber, '123456789012');
+    assert.ok(shipped.order.items.every(item => item.details.trackingNumber === '123456789012'));
+    encoded = JSON.stringify(shipped);
+    assert.ok(!encoded.includes('BK-PRIVATE-0001') && !encoded.includes('bookingNumber'));
+    const tracked = await call(env, '/api/public/track', { orderId: initial.orderId, contact: '09171234567' });
+    assert.equal(tracked.body.order.details.trackingNumber, '123456789012');
+    assert.ok(!JSON.stringify(tracked.body).includes('BK-PRIVATE-0001'));
+    // Returned, cancelled or blank: nothing to follow.
+    for (const [tracking, status] of [['123456789012', 'returned'], ['123456789012', 'cancelled'], ['   ', 'shipped']]) {
+        setDetails('BK-PRIVATE-0001', tracking, status);
+        assert.ok(!JSON.stringify(await view()).includes('trackingNumber'), `${status} ${JSON.stringify(tracking)}`);
+    }
+});
+
 test('expired tracking capability requires fresh full-contact verification', async t => {
     const { env } = fixture(t);
     const initial = await placed(env);

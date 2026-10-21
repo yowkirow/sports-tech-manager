@@ -157,12 +157,12 @@ function commonDetails(order: Data, changes: Change[]): Data {
             if (Object.hasOwn(next.shippingDetails, key)) common.shippingDetails[key] = text(next.shippingDetails[key], key, 1024, true);
         }
     }
-    const defaults: Data = { fulfillmentStatus: 'pending', status: 'pending', paymentStatus: 'unpaid', paymentMode: 'Cash', trackingNumber: '' };
+    const defaults: Data = { fulfillmentStatus: 'pending', status: 'pending', paymentStatus: 'unpaid', paymentMode: 'Cash', trackingNumber: '', bookingNumber: '' };
     for (const change of active) {
         for (const key of Object.keys(defaults)) {
             if (Object.hasOwn(change.updates.details, key)
                 && change.updates.details[key] !== (change.expected.details![key] ?? defaults[key])) {
-                invalid('Payment, fulfillment and tracking changes are owner-only.');
+                invalid('Payment, fulfillment and LBC booking or tracking changes are owner-only.');
             }
         }
     }

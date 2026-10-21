@@ -46,13 +46,15 @@ prints, not an anonymous merch store.
   Cash on Delivery, GCash, or bank transfer; GCash/bank need a payment-proof upload against the QR
   in `public/payment-qr.jpeg` ("verify 'Sports Tech' name before paying").
 - Shipping schedule: cutoff every Thursday, shipping every Sunday.
-- Parcels go out by LBC, booked as a pickup. Booking gives the tracking number straight away,
-  often before the shirts are printed: the owner copies the receiver's details from the order into
-  LBC, pastes the tracking number on the order, and the print employee writes the customer's name
-  and tracking number on the package label. A tracking number does not mean shipped; the owner
-  marks the order Shipped when LBC picks the parcel up.
+- Parcels go out by LBC, booked as a pickup, and LBC gives two numbers. The booking number comes
+  straight away, often before the shirts are printed: the owner copies the receiver's details from
+  the order into LBC, pastes the booking number on the order, and the print employee writes the
+  customer's name and booking number on the package label. The tracking number comes once the
+  parcel ships; it is the customer's. The owner pastes it and marks the order Shipped in one step,
+  and the customer sees it on their order page (and by text when SMS is on). Print staff never
+  need it.
 - Order tracking is contact-verified: the customer's mobile number unlocks `/track/:id`; pending
-  orders can be modified by the customer.
+  orders can be modified by the customer, and shipped orders show LBC's tracking number.
 - Ball pricing is tiered by quantity (1, 5, 10, 20, 50, 100 pieces).
 - Shirt sizes XS–2XL with brand-specific size guides.
 - Staff sign-in is email-code via Cloudflare Access; staging is a read-only snapshot with a visible

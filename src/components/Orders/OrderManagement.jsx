@@ -9,7 +9,7 @@ import { useProducts } from '../../hooks/useInventory';
 import { withLocalDate } from '../../lib/transactionDate';
 import { groupOrders } from '../../lib/orderItems';
 import { buildOrderChanges, buildOrderDetailChanges, priceOrderChanges, saveOrderChanges } from '../../lib/orderEditing';
-import { lbcCopyText, lbcReceiver, normalizeTracking, plainTrackingCode, receiverAddress, withTrackingNumber } from '../../lib/lbcBooking';
+import { SHIPPABLE_STATUSES, lbcCopyText, lbcReceiver, normalizeLbcNumber, parcelTrackingUrl, plainLabelCode, receiverAddress, shippedWith, withBookingNumber, withTrackingNumber } from '../../lib/lbcBooking';
 import { LbcBookingPanel } from './LbcBooking';
 
 const SIZES = ['XS', 'S', 'M', 'L', 'XL', '2XL'];
@@ -118,6 +118,7 @@ export default function OrderManagement({ transactions, onAddTransaction, onDele
             paymentStatus: order.paymentStatus,
             paymentMode: order.paymentMode,
             trackingNumber: order.items[0]?.details?.trackingNumber || '',
+            bookingNumber: order.items[0]?.details?.bookingNumber || '',
             date: new Date(order.date).toISOString().split('T')[0],
             contactNumber: shipping.contactNumber || firstItemDetails.customerContact || firstItemDetails.contactNumber || '',
             address: shipping.address || firstItemDetails.customerAddress || '',
@@ -143,9 +144,11 @@ export default function OrderManagement({ transactions, onAddTransaction, onDele
                 : withLocalDate(editForm.date, new Date(order.date)).toISOString();
 
             const previousTracking = order.items[0]?.details?.trackingNumber || '';
-            const trackingNumber = isReseller ? previousTracking : normalizeTracking(editForm.trackingNumber);
-            // A tracking number is booked before printing and packing finish, so it never changes
-            // the status. The customer is texted when the order is Shipped with a tracking number.
+            const trackingNumber = isReseller ? previousTracking : normalizeLbcNumber(editForm.trackingNumber);
+            const previousBooking = order.items[0]?.details?.bookingNumber || '';
+            const bookingNumber = isReseller ? previousBooking : normalizeLbcNumber(editForm.bookingNumber);
+            // Neither number changes the status by itself. Only the tracking number is ever texted:
+            // the customer gets it when the order is Shipped with one, or when it changes after.
             const finalFulfillmentStatus = isReseller ? order.fulfillmentStatus : editForm.fulfillmentStatus;
             const textTracking = !isReseller && trackingNumber && finalFulfillmentStatus === 'shipped'
                 && (order.fulfillmentStatus !== 'shipped' || trackingNumber !== previousTracking);
@@ -157,6 +160,7 @@ export default function OrderManagement({ transactions, onAddTransaction, onDele
                 paymentStatus: isReseller ? order.paymentStatus : editForm.paymentStatus,
                 paymentMode: editForm.paymentMode,
                 trackingNumber,
+                ...(bookingNumber || previousBooking ? { bookingNumber } : {}),
                 status: finalFulfillmentStatus,
                 shippingDetails: {
                     contactNumber: editForm.contactNumber,
@@ -196,29 +200,19 @@ export default function OrderManagement({ transactions, onAddTransaction, onDele
         }
     };
 
-    const handleQuickTracking = async (orderId, value) => {
+    // The booking number from LBC's pickup booking, for the print staff's package label. It is
+    // saved while printing is still going on, so it never changes the status and is never texted.
+    const handleSaveBooking = async (orderId, value) => {
         if (isReseller) return;
         setLoading(true);
         try {
             const order = groupedOrders.find(o => o.id === orderId);
             if (!order) throw new Error('Order not found. Reload before retrying.');
-            const trackingNumber = normalizeTracking(value);
-            const previous = order.items[0]?.details?.trackingNumber || '';
-
-            // Tracking only: booking with LBC happens before printing and packing finish, so this
-            // never marks the order shipped (and never trips the print-queue Ready check).
-            const changes = buildOrderDetailChanges(order, details => withTrackingNumber(details, trackingNumber));
-            await persistOrder(changes);
-
-            if (!trackingNumber) showToast('Tracking removed', 'success');
-            else if (plainTrackingCode(trackingNumber)) showToast('Tracking saved. Print staff can see it for the package label.', 'success');
-            else showToast('Tracking saved for you only. Print staff see plain codes, not links or notes.', 'info');
-
-            // A shipped order whose tracking number changed gets the corrected tracking text.
-            if (trackingNumber && trackingNumber !== previous && order.fulfillmentStatus === 'shipped') {
-                await handleSendTrackingSms(order, trackingNumber);
-            }
-
+            const bookingNumber = normalizeLbcNumber(value);
+            await persistOrder(buildOrderDetailChanges(order, details => withBookingNumber(details, bookingNumber)));
+            if (!bookingNumber) showToast('Booking number removed', 'success');
+            else if (plainLabelCode(bookingNumber)) showToast('Booking number saved. Print staff can see it for the package label.', 'success');
+            else showToast('Booking number saved for you only. Print staff see plain codes, not links or notes.', 'info');
             if (refetch) await refetch();
         } catch (err) {
             console.error(err);
@@ -228,16 +222,41 @@ export default function OrderManagement({ transactions, onAddTransaction, onDele
         }
     };
 
-    const handleMarkShipped = async (orderId) => {
+    // Corrects the tracking number of an order that already shipped; a new number is texted again.
+    const handleSaveTracking = async (orderId, value) => {
         if (isReseller) return;
         setLoading(true);
         try {
             const order = groupedOrders.find(o => o.id === orderId);
             if (!order) throw new Error('Order not found. Reload before retrying.');
-            const changes = buildOrderDetailChanges(order, details => ({ ...details, fulfillmentStatus: 'shipped', status: 'shipped' }));
-            await persistOrder(changes);
-            showToast('Order marked as shipped', 'success');
-            const trackingNumber = order.items[0]?.details?.trackingNumber;
+            const trackingNumber = normalizeLbcNumber(value);
+            const previous = order.items[0]?.details?.trackingNumber || '';
+            await persistOrder(buildOrderDetailChanges(order, details => withTrackingNumber(details, trackingNumber)));
+            showToast(trackingNumber ? 'Tracking number saved' : 'Tracking number removed', 'success');
+            if (trackingNumber && trackingNumber !== previous && order.fulfillmentStatus === 'shipped') {
+                await handleSendTrackingSms(order, trackingNumber);
+            }
+            if (refetch) await refetch();
+        } catch (err) {
+            console.error(err);
+            showToast('Update failed: ' + err.message, 'error');
+        } finally {
+            setLoading(false);
+        }
+    };
+
+    // LBC's tracking number arrives once the parcel ships, so it is saved with Shipped in one save
+    // (print-queue orders still need finished QA and the packing confirmation). Only this number
+    // is texted, never the booking number; shipping without one texts nothing.
+    const handleShip = async (orderId, value) => {
+        if (isReseller) return;
+        setLoading(true);
+        try {
+            const order = groupedOrders.find(o => o.id === orderId);
+            if (!order) throw new Error('Order not found. Reload before retrying.');
+            const trackingNumber = normalizeLbcNumber(value);
+            await persistOrder(buildOrderDetailChanges(order, details => shippedWith(details, trackingNumber)));
+            showToast(trackingNumber ? 'Marked as shipped' : 'Marked as shipped without a tracking number', 'success');
             if (trackingNumber) await handleSendTrackingSms(order, trackingNumber);
             if (refetch) await refetch();
         } catch (err) {
@@ -430,12 +449,9 @@ export default function OrderManagement({ transactions, onAddTransaction, onDele
                 return;
             }
 
-            // Intelligently format the tracking link
-            let trackingLink = trackingNumber;
-            if (!trackingNumber.startsWith('http') && trackingNumber.length < 25) {
-                // If it looks like an ordinary tracking ID, fallback to LBC or courier
-                trackingLink = `https://www.lbcexpress.com/track/?tracking_no=${trackingNumber}`;
-            }
+            // The same link the customer's order page shows: LBC's tracker for a plain code (spaces
+            // removed, so the texted link isn't cut short), or the saved link itself.
+            const trackingLink = parcelTrackingUrl(trackingNumber) || trackingNumber;
 
             // Parse template
             let message = settings.trackingSmsTemplate || 'Hi {customerName}, your order {orderId} has been shipped! Track here: {trackingLink}';
@@ -608,6 +624,13 @@ export default function OrderManagement({ transactions, onAddTransaction, onDele
                                             : Clock;
                         const dateInputId = `order-date-${order.id}`;
                         const trackingInputId = `tracking-${order.id}`;
+                        const bookingInputId = `booking-${order.id}`;
+                        const savedBooking = order.items[0]?.details?.bookingNumber || '';
+                        const savedTracking = order.items[0]?.details?.trackingNumber || '';
+                        // The row's quick field is the booking number: it is what the owner pastes right
+                        // after booking (often with the row's copy button), and it never ships or texts.
+                        const quickBooking = !isReseller && SHIPPABLE_STATUSES.includes(order.fulfillmentStatus)
+                            && !!receiverAddress(lbcReceiver(order));
                         const fulfillmentSelectId = `fulfillment-${order.id}`;
                         const paymentStatusSelectId = `payment-status-${order.id}`;
                         const paymentModeSelectId = `payment-mode-${order.id}`;
@@ -689,6 +712,13 @@ export default function OrderManagement({ transactions, onAddTransaction, onDele
                                                     <FulfillmentIcon size={14} className={order.fulfillmentStatus === 'in_progress' ? 'animate-spin' : ''} aria-hidden="true" />
                                                     {order.fulfillmentStatus.replace('_', ' ')}
                                                 </span>
+                                                {savedTracking && (
+                                                    <span className="badge min-w-0 max-w-full border-line text-ink-2" title={`LBC tracking number: ${savedTracking}`}>
+                                                        <Truck size={14} aria-hidden="true" className="shrink-0 text-ink-3" />
+                                                        <span className="sr-only">LBC tracking number</span>
+                                                        <span className="num truncate">{savedTracking}</span>
+                                                    </span>
+                                                )}
                                                 <span className="inline-flex items-center gap-1 text-ink-2">
                                                     <Banknote size={14} aria-hidden="true" className="text-ink-3" /> {order.paymentMode}
                                                 </span>
@@ -723,13 +753,34 @@ export default function OrderManagement({ transactions, onAddTransaction, onDele
                                                             />
                                                         </div>
 
+                                                        {!isReseller && (
+                                                            <div className="sm:col-span-2">
+                                                                <label htmlFor={bookingInputId} className="field-label">LBC booking number</label>
+                                                                <div className="relative">
+                                                                    <Package className="pointer-events-none absolute left-3 top-1/2 -translate-y-1/2 text-ink-3" size={16} aria-hidden="true" />
+                                                                    <input
+                                                                        id={bookingInputId}
+                                                                        placeholder="From the pickup booking"
+                                                                        disabled={readOnly}
+                                                                        title={readOnly ? READ_ONLY_HINT : undefined}
+                                                                        value={editForm.bookingNumber || ''}
+                                                                        onChange={e => {
+                                                                            const val = e.target.value;
+                                                                            setEditForm(prev => ({ ...prev, bookingNumber: val }));
+                                                                        }}
+                                                                        className="field pl-9 py-2 text-sm"
+                                                                    />
+                                                                </div>
+                                                            </div>
+                                                        )}
+
                                                         <div className="sm:col-span-2">
                                                             <label htmlFor={trackingInputId} className="field-label">LBC tracking number</label>
                                                             <div className="relative">
                                                                 <Truck className="pointer-events-none absolute left-3 top-1/2 -translate-y-1/2 text-ink-3" size={16} aria-hidden="true" />
                                                                 <input
                                                                     id={trackingInputId}
-                                                                    placeholder="Paste after booking"
+                                                                    placeholder="Once LBC ships the parcel"
                                                                     disabled={readOnly || isReseller}
                                                                     title={readOnly ? READ_ONLY_HINT : undefined}
                                                                     value={editForm.trackingNumber || ''}
@@ -795,17 +846,16 @@ export default function OrderManagement({ transactions, onAddTransaction, onDele
                                                 </div>
                                             ) : (
                                                 <div className="flex w-full flex-col gap-2 sm:w-auto sm:items-end" onClick={e => e.stopPropagation()}>
-                                                    <div className="relative w-full sm:w-52">
-                                                        <Truck size={16} className={`pointer-events-none absolute left-3 top-1/2 -translate-y-1/2 ${order.items[0]?.details?.trackingNumber ? 'text-primary' : 'text-ink-3'}`} aria-hidden="true" />
+                                                    {quickBooking && <div className="relative w-full sm:w-52">
+                                                        <Package size={16} className={`pointer-events-none absolute left-3 top-1/2 -translate-y-1/2 ${savedBooking ? 'text-primary' : 'text-ink-3'}`} aria-hidden="true" />
                                                         <input
-                                                            key={order.items[0]?.details?.trackingNumber || 'none'}
-                                                            aria-label={`LBC tracking number for ${order.customerName}`}
-                                                            defaultValue={order.items[0]?.details?.trackingNumber || ''}
-                                                            readOnly={isReseller}
+                                                            key={savedBooking || 'none'}
+                                                            aria-label={`LBC booking number for ${order.customerName}`}
+                                                            defaultValue={savedBooking}
                                                             disabled={readOnly}
-                                                            title={readOnly ? READ_ONLY_HINT : 'Saving a tracking number does not mark the order shipped'}
-                                                            placeholder="LBC tracking"
-                                                            className={`field pl-9 pr-3 py-2 text-sm ${order.items[0]?.details?.trackingNumber
+                                                            title={readOnly ? READ_ONLY_HINT : 'From the LBC pickup booking. Print staff write it on the package.'}
+                                                            placeholder="LBC booking no."
+                                                            className={`field pl-9 pr-3 py-2 text-sm ${savedBooking
                                                                 ? 'border-primary/40 bg-primary/10 text-primary font-mono font-semibold'
                                                                 : ''
                                                                 }`}
@@ -815,14 +865,13 @@ export default function OrderManagement({ transactions, onAddTransaction, onDele
                                                                 }
                                                             }}
                                                             onBlur={(e) => {
-                                                                const val = e.target.value.trim();
-                                                                const current = order.items[0]?.details?.trackingNumber || '';
-                                                                if (val !== current) {
-                                                                    handleQuickTracking(order.id, val);
+                                                                const val = normalizeLbcNumber(e.target.value);
+                                                                if (val !== savedBooking) {
+                                                                    handleSaveBooking(order.id, val);
                                                                 }
                                                             }}
                                                         />
-                                                    </div>
+                                                    </div>}
 
                                                     <div className="flex flex-wrap items-center gap-2 sm:justify-end">
                                                         {!isSelectionMode && (
@@ -1131,13 +1180,14 @@ export default function OrderManagement({ transactions, onAddTransaction, onDele
                                                             </div>
                                                         ) : (
                                                             <LbcBookingPanel
-                                                                key={order.items[0]?.details?.trackingNumber || 'none'}
+                                                                key={`${savedBooking}|${savedTracking}|${order.fulfillmentStatus}`}
                                                                 order={order}
-                                                                canEditTracking={!isReseller}
+                                                                canEdit={!isReseller}
                                                                 busy={loading}
                                                                 onCopy={handleCopyToClipboard}
-                                                                onSaveTracking={value => handleQuickTracking(order.id, value)}
-                                                                onMarkShipped={() => handleMarkShipped(order.id)}
+                                                                onSaveBooking={value => handleSaveBooking(order.id, value)}
+                                                                onSaveTracking={value => handleSaveTracking(order.id, value)}
+                                                                onShip={value => handleShip(order.id, value)}
                                                             />
                                                         )}
                                                     </div>
