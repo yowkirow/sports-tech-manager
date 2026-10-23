@@ -902,3 +902,106 @@ test('accept all QA keeps held jobs held, and refuses the whole batch if an orde
     await assert.rejects(call(g, '/qa', acceptAllBody(listed)), failure(409));
     assert.deepEqual(snapshot(g), before);
 });
+
+const fulfillment = (f, id) => JSON.parse(f.db.sqlite.prepare('SELECT details FROM transactions WHERE id=?').get(id).details).fulfillmentStatus;
+const orderVersion = (f, id) => f.db.sqlite.prepare('SELECT version FROM orders WHERE id=?').get(id).version;
+const qaCall = (f, job, accepted, rejected = 0) => call(f, `/jobs/${job.id}/qa`, { expectedVersion: job.version, requestId: requestId(),
+    accepted, rejected, ...(rejected ? { note: 'Align the print again.' } : {}) });
+
+test('QA that accepts the last shirt moves the whole order to Ready in the same save', async t => {
+    const f = fixture(t);
+    let job = await release(f, await prepare(f));
+    assert.deepEqual([fulfillment(f, SOURCE), fulfillment(f, SECOND)], ['in_progress', 'in_progress']);
+    const before = orderVersion(f, 'ST-PRINT');
+    job = await progress(f, job, 'printed', { quantity: 10 });
+    let result = await qaCall(f, job, 5, 1);
+    assert.equal(result.orderReady, false);
+    assert.equal(fulfillment(f, SOURCE), 'in_progress');
+    assert.equal(orderVersion(f, 'ST-PRINT'), before);
+    result = await qaCall(f, result.job, 4);
+    assert.equal(result.orderReady, false, 'one shirt is still in rework');
+    let reprint = await progress(f, result.job, 'printed', { quantity: 1 });
+    result = await qaCall(f, reprint, 1);
+    assert.equal(result.orderReady, true);
+    assert.equal(result.job.status, 'completed');
+    assert.deepEqual([fulfillment(f, SOURCE), fulfillment(f, SECOND)], ['ready', 'ready'], 'non-shirt rows of the order move too');
+    assert.equal(orderVersion(f, 'ST-PRINT'), before + 1);
+    const details = JSON.parse(f.db.sqlite.prepare('SELECT details FROM transactions WHERE id=?').get(SOURCE).details);
+    assert.equal(details.status, 'paid', 'payment status is untouched');
+    const row = f.db.sqlite.prepare('SELECT status,source_changed FROM production_jobs WHERE id=?').get(job.id);
+    assert.deepEqual({ ...row }, { status: 'completed', source_changed: 0 }, 'Ready never holds the job');
+    assert.equal(f.db.sqlite.prepare("SELECT count(*) AS n FROM production_events WHERE action IN ('source_changed','source_deleted')").get().n, 0);
+});
+
+test('an order stays open until every shirt line is accepted, and closed orders are never changed', async t => {
+    const f = fixture(t);
+    const THIRD = '00000000-0000-4000-8000-000000000003';
+    shirtOrder(f, THIRD, 'ST-PRINT');
+    let first = await progress(f, await release(f, await prepare(f)), 'printed', { quantity: 10 });
+    let result = await qaCall(f, first, 10);
+    assert.equal(result.orderReady, false, 'the second shirt line is not printed yet');
+    assert.deepEqual([fulfillment(f, SOURCE), fulfillment(f, THIRD)], ['in_progress', 'in_progress']);
+    let second = await progress(f, await release(f, await prepare(f, { sourceId: THIRD })), 'printed', { quantity: 2 });
+    result = await qaCall(f, second, 2);
+    assert.equal(result.orderReady, true);
+    assert.deepEqual([fulfillment(f, SOURCE), fulfillment(f, SECOND), fulfillment(f, THIRD)], ['ready', 'ready', 'ready']);
+
+    const g = fixture(t);
+    const job = await progress(g, await release(g, await prepare(g)), 'printed', { quantity: 10 });
+    changeSource(g, { fulfillmentStatus: 'cancelled' }, SECOND);
+    result = await qaCall(g, job, 10);
+    assert.equal(result.orderReady, false);
+    assert.deepEqual([fulfillment(g, SOURCE), fulfillment(g, SECOND)], ['in_progress', 'cancelled']);
+});
+
+test('accept all moves completed orders to Ready exactly like single QA does', async t => {
+    const f = fixture(t);
+    const printed = await twoPrintedJobs(f);
+    const result = await call(f, '/qa', acceptAllBody(printed));
+    assert.equal(result.readyOrders, 1);
+    assert.equal(fulfillment(f, SOURCE), 'in_progress', '4 of 10 accepted');
+    assert.equal(fulfillment(f, '00000000-0000-4000-8000-000000000003'), 'ready');
+    const statuses = g => ({
+        rows: g.db.sqlite.prepare("SELECT id,json_extract(details,'$.fulfillmentStatus') AS s FROM transactions ORDER BY id").all().map(row => ({ ...row })),
+        orders: g.db.sqlite.prepare('SELECT id,version FROM orders ORDER BY id').all().map(row => ({ ...row }))
+    });
+    const single = fixture(t);
+    for (const job of await twoPrintedJobs(single)) await qa(single, job, job.awaitingQA, 0);
+    assert.deepEqual(statuses(f), statuses(single));
+});
+
+test('the 0014 backfill moves exactly the orders the Worker would, and is safe to re-run', async t => {
+    const f = fixture(t);
+    const OTHER = '00000000-0000-4000-8000-000000000003';
+    const [big, small] = await twoPrintedJobs(f);
+    await progress(f, big, 'printed', { quantity: 6 });
+    const fresh = (await call(f)).jobs.filter(job => job.awaitingQA > 0);
+    await call(f, '/qa', acceptAllBody(fresh));
+    const NEW = '00000000-0000-4000-8000-000000000004';
+    shirtOrder(f, NEW, 'ST-NEW');
+    await release(f, await prepare(f, { sourceId: NEW }));
+    const read = () => ({
+        rows: f.db.sqlite.prepare("SELECT id,json_extract(details,'$.fulfillmentStatus') AS s FROM transactions ORDER BY id").all().map(row => ({ ...row })),
+        orders: f.db.sqlite.prepare('SELECT id,version FROM orders ORDER BY id').all().map(row => ({ ...row }))
+    });
+    const worker = read();
+    assert.deepEqual(worker.rows.map(row => row.s), ['ready', 'ready', 'ready', 'in_progress']);
+    const reset = () => {
+        f.db.sqlite.exec(`UPDATE transactions SET details=json_set(details,'$.fulfillmentStatus','in_progress')
+            WHERE json_extract(details,'$.fulfillmentStatus')='ready'`);
+        f.db.sqlite.exec("UPDATE orders SET version=version-1 WHERE id IN ('ST-PRINT','ST-OTHER')");
+    };
+    const backfill = readFileSync(new URL('0014_ready_after_qa.sql', directory), 'utf8');
+    reset();
+    f.db.sqlite.exec(backfill);
+    assert.deepEqual(read(), worker);
+    f.db.sqlite.exec(backfill);
+    assert.deepEqual(read(), worker, 'safe to re-run');
+    reset();
+    changeSource(f, { fulfillmentStatus: 'cancelled' }, SECOND);
+    f.db.sqlite.exec(backfill);
+    assert.deepEqual([fulfillment(f, SOURCE), fulfillment(f, SECOND), fulfillment(f, OTHER), fulfillment(f, NEW)],
+        ['in_progress', 'cancelled', 'ready', 'in_progress']);
+    assert.equal(f.db.sqlite.prepare('SELECT count(*) AS n FROM production_jobs WHERE source_changed=1').get().n, 0);
+    void small;
+});

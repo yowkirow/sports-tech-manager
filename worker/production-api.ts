@@ -171,6 +171,38 @@ const RELEASABLE = `status IN ('draft','held') AND EXISTS(SELECT 1 FROM producti
     WHERE s.source_id=production_jobs.source_id AND s.fingerprint=production_jobs.source_fingerprint
     AND coalesce(json_extract(t.details,'$.fulfillmentStatus'),
         CASE WHEN coalesce(json_extract(t.details,'$.status'),'paid')='paid' THEN 'pending' ELSE json_extract(t.details,'$.status') END) IN ('pending','in_progress'))`;
+// Owner decision (2026-10-23): once QA has accepted every shirt on an order, the order is Ready.
+// Orders of the given job ids (JSON array) qualify when every active job is complete and current,
+// every shirt line of the order has such a job (an unqueued shirt keeps the order open), and every
+// active row is still Pending or In progress (Shipped, Returned or Cancelled are never changed).
+// Migration 0014 applied the same rule once to orders accepted before this existed.
+const READY_ORDERS = `SELECT DISTINCT o.order_id FROM production_jobs o WHERE o.id IN (SELECT value FROM json_each(?))
+    AND NOT EXISTS(SELECT 1 FROM production_jobs x WHERE x.order_id=o.order_id AND x.status<>'superseded'
+        AND (x.status<>'completed' OR x.accepted<>x.required OR x.source_changed<>0))
+    AND NOT EXISTS(SELECT 1 FROM production_order_shirt_lines line WHERE line.order_id=o.order_id
+        AND NOT EXISTS(SELECT 1 FROM production_jobs y WHERE y.source_id=line.source_id AND y.item_index=line.item_index
+            AND y.order_id=line.order_id AND y.required=line.required AND y.accepted=y.required AND y.status='completed'
+            AND y.source_changed=0 AND y.source_fingerprint=line.fingerprint))
+    AND NOT EXISTS(SELECT 1 FROM transactions t WHERE t.type='sale'
+        AND coalesce(nullif(json_extract(t.details,'$.orderId'),''),t.id)=o.order_id
+        AND coalesce(json_extract(t.details,'$.removedFromOrder'),0) NOT IN (1,'true')
+        AND coalesce(json_extract(t.details,'$.fulfillmentStatus'),
+            CASE WHEN coalesce(json_extract(t.details,'$.status'),'paid')='paid' THEN 'pending' ELSE json_extract(t.details,'$.status') END)
+            NOT IN ('pending','in_progress'))`;
+// Runs after the QA writes in the same atomic batch. The version bump comes first, while the rows
+// still read Pending or In progress; fulfillmentStatus is not in the source fingerprint, so this
+// never holds a job (the same fulfillment-only change a release makes).
+function readyAfterQA(db: D1Database, ids: string): D1PreparedStatement[] {
+    return [
+        statement(db, `UPDATE orders SET version=version+1 WHERE id IN (${READY_ORDERS})`, [ids]),
+        statement(db, `UPDATE transactions SET details=json_set(coalesce(details,'{}'),'$.fulfillmentStatus','ready')
+            WHERE type='sale' AND coalesce(nullif(json_extract(details,'$.orderId'),''),id) IN (${READY_ORDERS})
+            AND coalesce(json_extract(details,'$.removedFromOrder'),0) NOT IN (1,'true')`, [ids])
+    ];
+}
+const ORDER_IS_READY = `EXISTS(SELECT 1 FROM transactions t WHERE t.type='sale'
+    AND coalesce(nullif(json_extract(t.details,'$.orderId'),''),t.id)=j.order_id
+    AND json_extract(t.details,'$.fulfillmentStatus')='ready')`;
 // The member who certainly printed every shirt now awaiting QA: each `printed` event since the
 // job's pending count was last zero has that same actor. Otherwise NULL, and nobody is credited.
 // Must stay identical to the rule in the print_wallet_credits view (migration 0007).
@@ -400,12 +432,14 @@ async function acceptAllQA(db: D1Database, member: Member, body: Row, requestId:
             SELECT production_jobs.id,?,${actorName},'qa',${field('accepted')},${field('accepted')},0,'',production_jobs.version,${pendingPrinter}
             FROM json_each(?) AS r JOIN production_jobs ON production_jobs.id=${field('id')} ORDER BY r.key`,
         [member.id, member.role, member.id, items]),
-        guard(db, 'write', 'changes()=?', [jobs.length])
+        guard(db, 'write', 'changes()=?', [jobs.length]),
+        ...readyAfterQA(db, ids)
     ];
     return mutation(db, member, requestId, hash, writes,
-        `SELECT json_object('jobs',json_group_array(json(payload))) FROM (SELECT ${ownerPayload} AS payload
-            FROM json_each(?) AS r JOIN production_jobs j ON j.id=r.value JOIN production_job_public p ON p.id=j.id ORDER BY r.key)`,
-        [ids], 'Some shirts changed since you loaded the list. Nothing was accepted. Review the latest counts and try again.');
+        `SELECT json_object('jobs',(SELECT json_group_array(json(payload)) FROM (SELECT ${ownerPayload} AS payload
+                FROM json_each(?) AS r JOIN production_jobs j ON j.id=r.value JOIN production_job_public p ON p.id=j.id ORDER BY r.key)),
+            'readyOrders',(SELECT count(DISTINCT j.order_id) FROM production_jobs j WHERE j.id IN (SELECT value FROM json_each(?)) AND ${ORDER_IS_READY}))`,
+        [ids, ids], 'Some shirts changed since you loaded the list. Nothing was accepted. Review the latest counts and try again.');
 }
 async function changeJob(db: D1Database, member: Member, id: string, action: string, body: Row, requestId: string, hash: string): Promise<Response> {
     const owner = member.role === 'owner';
@@ -487,6 +521,12 @@ async function changeJob(db: D1Database, member: Member, id: string, action: str
     }
     writes.push(event(db, member, id, eventAction, qty, accepted, rejected, note));
     writes.push(guard(db, 'write', 'changes()=1'));
+    if (action === 'qa') {
+        writes.push(...readyAfterQA(db, JSON.stringify([id])));
+        return mutation(db, member, requestId, hash, writes,
+            `SELECT json_object('job',json(${ownerPayload}),'orderReady',json(CASE WHEN ${ORDER_IS_READY} THEN 'true' ELSE 'false' END))
+                FROM production_job_public p JOIN production_jobs j ON j.id=p.id WHERE j.id=?`, [id]);
+    }
     return mutation(db, member, requestId, hash, writes, jobResponse(owner), [id]);
 }
 

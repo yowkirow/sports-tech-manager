@@ -118,7 +118,7 @@ export function useProductionMutation(reload, { serverErrors = false } = {}) {
             pending.current = null;
             setUncertain(false);
             operation.onSuccess?.(result);
-            showToast(operation.message);
+            showToast(typeof operation.message === 'function' ? operation.message(result) : operation.message);
             await reload();
             return true;
         } catch (failure) {

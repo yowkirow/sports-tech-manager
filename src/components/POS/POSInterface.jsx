@@ -457,7 +457,7 @@ export default function POSInterface({ transactions, onAddTransaction, onAddTran
     };
 
     return (
-        <div className="relative flex h-[calc(100dvh-8rem)] min-h-[620px] flex-col gap-4 lg:h-[calc(100vh-120px)] lg:flex-row lg:gap-6">
+        <div className="relative flex h-[calc(100dvh_-_8rem_-_env(safe-area-inset-top))] min-h-[620px] flex-col gap-4 lg:h-[calc(100vh-120px)] lg:flex-row lg:gap-6">
             {showProductModal && (
                 <ProductDefinitionModal
                     editingProduct={editingProduct}

@@ -88,6 +88,17 @@
     background: var(--color-ground);
   }
 
+  /* iOS 26+ Home Screen app (WebKit bug 301108): with viewport-fit=cover and the black-translucent
+     status bar, the viewport is shorter than the screen by the status-bar height while the page is
+     shorter than the screen, leaving a strip under the bottom tab bar. A page at least as tall as
+     the screen gets the full viewport. min() keeps 100lvh as the cap where it already is the full
+     screen (WebKit 316008), so the page never scrolls by the status-bar height. */
+  @media (display-mode: standalone) {
+    html {
+      min-height: min(100lvh, calc(100% + env(safe-area-inset-top)));
+    }
+  }
+
   body {
     @apply bg-ground text-ink antialiased font-sans;
     font-size: 16px;

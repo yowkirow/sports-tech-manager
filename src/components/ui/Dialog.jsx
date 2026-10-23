@@ -92,7 +92,7 @@ export default function Dialog({
                 className={clsx(
                     'relative flex w-full flex-col overflow-clip border-line bg-surface text-ink shadow-sheet outline-none animate-slide-up',
                     isDrawer
-                        ? 'h-dvh border-l sm:max-w-md'
+                        ? clsx('h-dvh border-l pt-[env(safe-area-inset-top)] sm:max-w-md', !footer && 'pb-[env(safe-area-inset-bottom)]')
                         : clsx('max-h-[92dvh] rounded-t-2xl border-t sm:max-h-[88dvh] sm:rounded-2xl sm:border', SIZES[size] || SIZES.md),
                     className
                 )}

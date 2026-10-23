@@ -108,7 +108,7 @@ export default function PinGate({ member, pin, onUnlocked, overlay = false }) {
     return (
         <div className={overlay ? 'fixed inset-0 z-[100] overflow-y-auto bg-ground/95 backdrop-blur-sm' : 'min-h-dvh bg-ground'}
             role={overlay ? 'dialog' : undefined} aria-modal={overlay ? 'true' : undefined} aria-labelledby="pin-heading">
-            <main className="mx-auto flex min-h-dvh w-full max-w-sm flex-col justify-center p-6 text-ink">
+            <main className="mx-auto flex min-h-dvh w-full max-w-sm flex-col justify-center px-6 pt-[max(1.5rem,env(safe-area-inset-top))] pb-[max(1.5rem,env(safe-area-inset-bottom))] text-ink">
                 <Logo className="h-10" />
                 <h1 id="pin-heading" className="display mt-8 text-4xl">{heading}</h1>
                 <p className="mt-3 text-ink-2">{intro}</p>

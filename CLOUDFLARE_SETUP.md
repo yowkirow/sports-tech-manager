@@ -310,8 +310,9 @@ gives two numbers per parcel, kept apart on the order:
   while printing is still in progress.
 - **Tracking number** (`details.trackingNumber`): LBC gives it once the parcel ships. It is
   the customer's. The owner pastes it in the same panel and taps Mark as shipped, which
-  saves it with Shipped in one save (print-queue orders still need finished QA and the
-  packing confirmation) and sends the tracking text when SMS is on. If the field is empty,
+  saves it with Shipped in one save (print-queue orders still need finished QA, and the
+  owner confirms packing, accessories and the package label at this step) and sends the
+  tracking text when SMS is on. If the field is empty,
   the panel asks for the number; shipping without one (another courier, a pickup) is an
   explicit choice and texts nothing. The customer's contact-verified `/track` page shows the
   number with a "Track on LBC" link once the order is Shipped. Print staff never receive
@@ -356,14 +357,23 @@ counts; it never transfers old accepted work to a changed design or shifted lega
 item index. Payment/comment changes and returned tags do not restock inventory or
 consume blanks again.
 
-Ready rule (owner decision, October 13, 2026): only orders sent to the print queue
+Ready rule (owner decisions, October 13 and 23, 2026): only orders sent to the print queue
 are gated. If an order has an active (not retired) print job, it can enter Ready or
 Shipped only when every such job is completed, fully accepted in QA and still matches
-its order line, and the owner confirms packing. Orders without print jobs, such as
-counter sales and orders placed before the queue, keep the previous workflow with no
-extra prompt. Retiring a held job removes its gate. Historical already-ready orders
-are not given retroactive jobs for a payment-only change. Employees cannot release
-work, approve QA, change quantities on orders, mark payments or ship orders.
+its order line. **QA moves the order to Ready by itself**: the save (single QA or Accept
+all) that accepts the last shirt sets every active row of the order to Ready when every
+shirt line of the order has a completed, current job and no row is already Shipped,
+Returned or Cancelled. An order with a shirt line that was never queued stays In progress
+until that line is printed and accepted, or the owner marks it Ready. Only
+`fulfillmentStatus` changes (never payment), the order version advances, and no job is held.
+Migration `0014_ready_after_qa.sql` applied the same rule once to the 28 orders that were
+already fully accepted on October 23. The owner confirms packing, accessories and the
+package label (customer name and LBC booking number) once, on the way into Shipped; Ready
+no longer asks. Orders without print jobs, such as counter sales and orders placed before
+the queue, keep the previous workflow with no extra prompt. Retiring a held job removes its
+gate. Historical already-ready orders are not given retroactive jobs for a payment-only
+change. Employees cannot release work, approve QA, change quantities on orders, mark
+payments or ship orders.
 
 ### Print wallet (migration 0007)
 

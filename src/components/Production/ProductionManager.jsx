@@ -233,9 +233,11 @@ function AcceptAllQA({ jobs, customerOf, reload, online, stale }) {
     const blocked = readOnly || !online || stale || mutation.busy || mutation.uncertain;
     const plural = (count, word) => `${count} ${word}${count === 1 ? '' : 's'}`;
     const accept = () => {
-        if (!window.confirm(`Accept all ${plural(shirts, 'shirt')} across ${plural(batch.length, 'job')} as good?\n\nThey count toward each order and the printer's pay. To send any back for rework, cancel and use that job's quality check first.`)) return;
+        if (!window.confirm(`Accept all ${plural(shirts, 'shirt')} across ${plural(batch.length, 'job')} as good?\n\nThey count toward the printer's pay, and orders whose shirts are all accepted move to Ready. To send any back for rework, cancel and use that job's quality check first.`)) return;
         mutation.run('/api/production/qa', { jobs: acceptAllPayload(batch) },
-            `Accepted ${plural(shirts, 'shirt')} across ${plural(batch.length, 'job')}.${later ? ` ${plural(later, 'more job')} still ${later === 1 ? 'waits' : 'wait'} for QA.` : ''}`);
+            result => `Accepted ${plural(shirts, 'shirt')} across ${plural(batch.length, 'job')}.`
+                + (result?.readyOrders ? ` ${plural(result.readyOrders, 'order')} moved to Ready.` : '')
+                + (later ? ` ${plural(later, 'more job')} still ${later === 1 ? 'waits' : 'wait'} for QA.` : ''));
     };
     return <section className="production-qa-all" aria-labelledby="production-qa-all-title">
         {queue.length > 0 && <>
@@ -313,7 +315,8 @@ function OwnerJob({ job, customer, orderDate, sources, employees, reload, online
             body = { ...body, note: note.trim() };
         }
         mutation.run(`/api/production/jobs/${job.id}/${action}`, body,
-            action === 'release' ? 'Job released. The full order is now in progress.' : action === 'hold' ? 'Job withdrawn from the employee queue.' : 'QA recorded. Rejected shirts return to the print count.',
+            action === 'release' ? 'Job released. The full order is now in progress.' : action === 'hold' ? 'Job withdrawn from the employee queue.'
+                : result => result?.orderReady ? 'QA recorded. Every shirt on this order is accepted, so the order is now Ready.' : 'QA recorded. Rejected shirts return to the print count.',
             () => { setArtwork(false); setBlanks(false); setAccepted(''); setRejected(''); setNote(''); });
     };
     return <li className="production-job">
@@ -386,7 +389,7 @@ function OwnerJob({ job, customer, orderDate, sources, employees, reload, online
                 <Pause size={18} aria-hidden="true" />Hold and withdraw
             </button>}
         </fieldset>}
-        {job.status === 'completed' && <p className="production-help">All shirts accepted. Finish packing and mark the whole order Ready in Orders; printing alone does not mark the order Ready.</p>}
+        {job.status === 'completed' && <p className="production-help">All shirts accepted. The order moves to Ready once every shirt on it is accepted.</p>}
         {validation && <p className="production-validation" role="alert">{validation}</p>}
         <MutationNotice mutation={mutation} online={online} />
         {mutation.busy && <p role="status">Saving job…</p>}

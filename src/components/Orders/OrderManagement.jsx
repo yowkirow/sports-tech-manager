@@ -32,7 +32,7 @@ export default function OrderManagement({ transactions, onAddTransaction, onDele
         } catch (error) {
             // Only orders in the print queue need this; the server decides.
             if (error.cause?.code !== 'PACKING_CONFIRMATION_REQUIRED') throw error;
-            if (!window.confirm('This order went through the print queue. Confirm that packing, accessories and labels are complete.')) {
+            if (!window.confirm('This order went through the print queue. Before shipping, confirm that packing, accessories and the package label (customer name and LBC booking number) are complete.')) {
                 throw new Error('Packing was not confirmed. No changes were saved.');
             }
             result = await save(true);
@@ -561,8 +561,10 @@ export default function OrderManagement({ transactions, onAddTransaction, onDele
                     </div>
                 </div>
 
-                <div className="mt-4 grid gap-3 lg:grid-cols-[minmax(0,1fr)_auto] lg:items-start">
-                    <div>
+                {/* grid-cols-1 (minmax(0, 1fr)) keeps each chip row's width to the card, so the row
+                    scrolls on its own instead of widening the card and the whole page on phones. */}
+                <div className="mt-4 grid grid-cols-1 gap-3 lg:grid-cols-[minmax(0,1fr)_auto] lg:items-start">
+                    <div className="min-w-0">
                         <p className="mb-2 text-sm font-medium text-ink-2">Fulfillment</p>
                         <div className="flex gap-2 overflow-x-auto pb-1 scrollbar-hide" aria-label="Fulfillment filter">
                             {['all', ...FULFILLMENT_STATUSES].map(status => (
@@ -579,7 +581,7 @@ export default function OrderManagement({ transactions, onAddTransaction, onDele
                         </div>
                     </div>
 
-                    <div>
+                    <div className="min-w-0">
                         <p className="mb-2 text-sm font-medium text-ink-2">Payment</p>
                         <div className="flex gap-2 overflow-x-auto pb-1 scrollbar-hide" aria-label="Payment filter">
                             {['all', 'paid', 'unpaid'].map(status => (

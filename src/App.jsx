@@ -195,7 +195,7 @@ function ProtectedWorkspace({ printPath }) {
             <div className="print-shell min-h-dvh bg-ground text-ink">
                 {pinGate}
                 <div inert={pinGate ? true : undefined}>
-                <header className="sticky top-0 z-30 border-b border-line bg-ground">
+                <header className="sticky top-0 z-30 border-b border-line bg-ground pt-[env(safe-area-inset-top)]">
                     <div className="mx-auto flex h-14 max-w-3xl items-center justify-between gap-3 px-4">
                         <Logo className="h-8" />
                         <div className="flex min-w-0 items-center gap-1">
@@ -355,7 +355,7 @@ function ManagementApp({ session, onProfileChange, onLock }) {
             </aside>
 
             <main className="relative flex min-w-0 flex-1 flex-col overflow-hidden">
-                <header className="flex h-14 shrink-0 items-center justify-between gap-3 border-b border-line px-4 lg:h-16 lg:px-8">
+                <header className="flex min-h-[calc(3.5rem+env(safe-area-inset-top))] shrink-0 items-center justify-between gap-3 border-b border-line px-4 pt-[env(safe-area-inset-top)] lg:min-h-[calc(4rem+env(safe-area-inset-top))] lg:px-8">
                     <div className="flex min-w-0 items-center gap-3">
                         <span className="lg:hidden"><Logo className="h-7" /></span>
                         <h1 className="display truncate text-2xl lg:text-3xl">{TAB_TITLES[activeTab]}</h1>

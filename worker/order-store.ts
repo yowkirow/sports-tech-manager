@@ -364,13 +364,19 @@ export async function saveOrderChanges(
     identifier(actorId, 'actor ID');
     const normalized = normalize(input);
     const { orderId: key, requestId, expectedVersion, changes } = normalized;
-    const ready = (details: unknown) => object(details) && ['ready', 'shipped'].includes(String(details.fulfillmentStatus ?? details.status));
+    const statusOf = (details: unknown) => object(details) ? String(details.fulfillmentStatus ?? details.status) : '';
+    const ready = (details: unknown) => ['ready', 'shipped'].includes(statusOf(details));
     // Historical Ready orders remain editable without inventing retrospective
     // jobs. Physical-change holds remain enforced by production SQL triggers.
     const readyTransition = options.requireProductionReady
         && changes.some(change => !ready(change.expected.details) && ready(change.updates.details));
-    if (readyTransition && options.packingConfirmed !== true) {
-        // Advisory preflight for a clear message; the batch guard below is authoritative.
+    // Owner decision (2026-10-23): QA itself moves a finished print-queue order to Ready, so the
+    // owner confirms packing, accessories and the package label once, on the way into Shipped.
+    const shipTransition = options.requireProductionReady
+        && changes.some(change => statusOf(change.expected.details) !== 'shipped' && statusOf(change.updates.details) === 'shipped');
+    const gated = readyTransition || shipTransition;
+    if (gated && options.packingConfirmed !== true) {
+        // Advisory preflight for a clear message; the batch guard below is authoritative for QA.
         const queue = (await db.prepare(`SELECT count(*) AS jobs, coalesce(sum(CASE WHEN status <> 'completed'
                 OR accepted <> required OR source_changed <> 0 THEN 1 ELSE 0 END), 0) AS open
             FROM production_jobs WHERE order_id = ? AND status <> 'superseded'`)
@@ -378,8 +384,8 @@ export async function saveOrderChanges(
         if (queue?.open) {
             throw new OrderStoreError('ORDER_CONFLICT', 'This order is in the print queue. Finish its print jobs and accept them in QA before Ready or Shipped.', 409);
         }
-        if (queue?.jobs) {
-            throw new OrderStoreError('PACKING_CONFIRMATION_REQUIRED', 'Confirm that packing and any accessories are complete before marking Ready or Shipped.', 400);
+        if (queue?.jobs && shipTransition) {
+            throw new OrderStoreError('PACKING_CONFIRMATION_REQUIRED', 'Confirm that packing, accessories and the package label are complete before marking Shipped.', 400);
         }
     }
     const payload = canonical({
@@ -409,7 +415,7 @@ export async function saveOrderChanges(
     const guard = (kind: string, condition: string, ...values: (string | number)[]) =>
         bind(`INSERT INTO _order_save_guards(kind, ok) VALUES ('${kind}', CASE WHEN ${condition} THEN 1 ELSE 0 END)`, ...values);
     const countGuard = (kind: string, count: number) =>
-        readyTransition && kind === 'updated'
+        gated && kind === 'updated'
             ? guard(kind, `${receipt} OR (changes() = ? AND ${PRODUCTION_READY_CONDITION})`,
                 actorId, requestId, count, JSON.stringify([key]))
             : guard(kind, `changes() = ? OR ${receipt}`, count, actorId, requestId);
@@ -461,7 +467,7 @@ export async function saveOrderChanges(
     try {
         results = await db.batch(statements);
     } catch (error) {
-        mapGuard(error, readyTransition);
+        mapGuard(error, gated);
     }
     const saved = results.at(-1)?.results as { response?: unknown }[] | undefined;
     const savedResponse = saved?.[0]?.response;

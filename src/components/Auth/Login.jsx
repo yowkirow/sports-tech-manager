@@ -11,7 +11,7 @@ export default function Login({ error, onRetry, denied = false }) {
                 <div className="absolute inset-0 bg-gradient-to-t from-ground via-ground/20 to-transparent" />
                 <p className="display absolute bottom-10 left-10 max-w-[12ch] text-6xl italic">SportsTech Manager</p>
             </div>
-            <main className="flex items-center justify-center overflow-y-auto p-6">
+            <main className="flex items-center justify-center overflow-y-auto px-6 pt-[max(1.5rem,env(safe-area-inset-top))] pb-[max(1.5rem,env(safe-area-inset-bottom))]">
                 <div className="w-full max-w-sm">
                     <Logo className="h-12" />
                     <h1 className="display mt-10 text-5xl">Manager access</h1>

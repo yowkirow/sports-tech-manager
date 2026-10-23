@@ -592,7 +592,7 @@ test('orders without active print jobs reach Ready like before the queue, withou
     assert.equal(db.sqlite.prepare('SELECT count(*) AS n FROM production_events').get().n, 0);
 });
 
-test('queued orders report unfinished print QA before asking for packing confirmation', async t => {
+test('queued orders report unfinished print QA before Ready, and ask for packing only on the way to Shipped', async t => {
     const db = new LocalD1(t);
     const saved = await insert(db, [sale(1), sale(2)]);
     enableProduction(db);
@@ -604,24 +604,40 @@ test('queued orders report unfinished print QA before asking for packing confirm
         err => err.code === 'ORDER_CONFLICT' && err.status === 409 && /print queue/.test(err.message));
     assert.deepEqual(state(db), before);
     db.sqlite.exec("UPDATE production_jobs SET accepted = required, status = 'completed'");
-    await assert.rejects(call(db, 'owner', '/api/orders/save', 'POST', input), error('PACKING_CONFIRMATION_REQUIRED', 400));
-    assert.deepEqual(state(db), before);
-    input.packingConfirmed = true;
+    // Ready no longer asks about packing (QA moves finished orders to Ready by itself).
     assert.equal((await call(db, 'owner', '/api/orders/save', 'POST', input)).version, 1);
+    const current = await call(db, 'owner', '/api/transactions');
+    const shipped = orderInput(current.rows.filter(row => row.type === 'sale'), 'queued-shipped', { fulfillmentStatus: 'shipped', status: 'shipped' });
+    delete shipped.packingConfirmed;
+    const ready = state(db);
+    await assert.rejects(call(db, 'owner', '/api/orders/save', 'POST', shipped),
+        err => err.code === 'PACKING_CONFIRMATION_REQUIRED' && err.status === 400 && /package label/.test(err.message));
+    assert.deepEqual(state(db), ready);
+    shipped.packingConfirmed = true;
+    assert.equal((await call(db, 'owner', '/api/orders/save', 'POST', shipped)).version, 2);
 });
 
-test('Ready requires explicit owner packing confirmation even after print QA is complete', async t => {
+test('Shipped requires explicit owner packing confirmation for print-queue orders, from any status', async t => {
     const db = new LocalD1(t);
     const saved = await insert(db, [sale(1)]);
     enableProduction(db);
     productionJob(db, id(1));
-    const input = orderInput(saved.rows, 'packing-ready', { fulfillmentStatus: 'ready' });
+    const input = orderInput(saved.rows, 'packing-shipped', { fulfillmentStatus: 'shipped' });
     input.packingConfirmed = false;
     const before = state(db);
     await assert.rejects(call(db, 'owner', '/api/orders/save', 'POST', input), error('PACKING_CONFIRMATION_REQUIRED', 400));
     assert.deepEqual(state(db), before);
     input.packingConfirmed = true;
     await call(db, 'owner', '/api/orders/save', 'POST', input);
+});
+
+test('orders without print jobs ship without a packing prompt', async t => {
+    const db = new LocalD1(t);
+    const saved = await insert(db, [sale(1)]);
+    enableProduction(db);
+    const input = orderInput(saved.rows, 'counter-shipped', { fulfillmentStatus: 'shipped' });
+    delete input.packingConfirmed;
+    assert.equal((await call(db, 'owner', '/api/orders/save', 'POST', input)).version, 1);
 });
 
 test('the LBC booking number saves while print jobs are still open, without Ready and without holding the jobs', async t => {
