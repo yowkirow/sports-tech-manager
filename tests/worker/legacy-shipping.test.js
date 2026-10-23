@@ -76,3 +76,25 @@ test('after 0015 the Orders screen shows a consistent total that an edit keeps',
     assert.equal(moreShirts.total, 1300, 'one shipping fee, not one per line');
     assert.equal(moreShirts.shippingFee, 100);
 });
+
+test('0016 records the item value on corrected lines that had no stored price, so Orders shows items + shipping', t => {
+    const db = database(t);
+    const plain = { originalAmount: undefined, unitPrice: undefined, discountShare: undefined,
+        shippingDetails: { region: 'Provincial', shippingFee: 200, rushFee: 0 } };
+    sale(db, 1, 'ST-PLAIN', '500', plain);
+    sale(db, 2, 'ST-PLAIN', '500', plain);
+    db.exec(correction);
+    const corrected = groupOrders(rows(db)).find(order => order.id === 'ST-PLAIN');
+    assert.equal(corrected.totalAmount, 1200);
+    assert.equal(corrected.priceAdjustment, -200, 'after 0015 alone the line amount (with shipping) reads as the item price');
+    const followUp = readFileSync(new URL('0016_corrected_line_item_value.sql', directory), 'utf8');
+    db.exec(followUp);
+    const order = groupOrders(rows(db)).find(item => item.id === 'ST-PLAIN');
+    assert.deepEqual([order.totalAmount, order.subtotal, order.shippingFee, order.priceAdjustment], [1200, 1000, 200, 0]);
+    assert.equal(priceOrderChanges(order, getEditableOrderItems(order)).total, 1200);
+    const before = read(db);
+    db.exec(followUp);
+    assert.deepEqual(read(db), before, 'safe to re-run');
+    const lines = before.map(row => JSON.parse(row.details));
+    assert.deepEqual(lines.map(line => line.originalAmount), [500, undefined], 'only the corrected line gets an item value');
+});
