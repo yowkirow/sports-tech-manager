@@ -1,6 +1,7 @@
 import assert from 'node:assert/strict';
 import { readFileSync } from 'node:fs';
 import { test } from 'node:test';
+import { EMAIL_SENDER } from '../worker/notifications.ts';
 
 const read = name => JSON.parse(readFileSync(new URL(`../${name}`, import.meta.url), 'utf8'));
 const staging = read('wrangler.staging.jsonc');
@@ -43,6 +44,13 @@ test('production serves the live domain with isolated data and the print queue e
     assert.equal(production.vars.CANONICAL_HOST, 'www.sportstechph.store');
     assert.equal(production.vars.REDIRECT_HOSTS, 'sportstechph.store');
     assert.equal(Object.hasOwn(staging.vars, 'CANONICAL_HOST'), false);
+});
+
+test('only production can email customers, and only from the no-reply sender', () => {
+    assert.deepEqual(production.send_email, [{ name: 'EMAIL', allowed_sender_addresses: [EMAIL_SENDER] }]);
+    assert.equal(EMAIL_SENDER, 'no-reply@sportstechph.store');
+    // Staging is a read-only copy of real orders, so it must never email their customers.
+    assert.equal(Object.hasOwn(staging, 'send_email'), false);
 });
 
 test('production deploy rebuilds non-staging assets and migrations target only production', () => {

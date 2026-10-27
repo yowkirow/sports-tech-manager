@@ -13,7 +13,7 @@ import { handlePinRequest, PIN_PATHS, pinStatus, requirePinUnlocked } from './pi
 export type Env = AppEnv;
 
 export default {
-    async fetch(request: Request, env: Env): Promise<Response> {
+    async fetch(request: Request, env: Env, ctx?: ExecutionContext): Promise<Response> {
         const requestId = crypto.randomUUID();
         try {
             if (!['staging', 'production'].includes(env.ENVIRONMENT)) {
@@ -33,7 +33,7 @@ export default {
                 return json({ service: `sportstech-${env.ENVIRONMENT}`, status: 'ok', version: env.VERSION?.id || null });
             }
             if (path.startsWith('/api/public/') || path.startsWith('/api/media/receipts')) {
-                const response = await handlePublicRequest(request, env);
+                const response = await handlePublicRequest(request, env, ctx);
                 if (response) return response;
                 throw new HttpError(404, 'not_found', 'Endpoint not found.');
             }
@@ -75,7 +75,7 @@ export default {
                     const response = await handleMediaRequest(request, env, member)
                         || await handleSmsRequest(request, env, member)
                         || await handleProductionRequest(request, env, member)
-                        || await handleBusinessRequest(request, env, member);
+                        || await handleBusinessRequest(request, env, member, ctx);
                     if (response) return response;
                     throw new HttpError(404, 'not_found', 'Endpoint not found.');
                 }
@@ -88,6 +88,12 @@ export default {
             if (privatePage) {
                 const headers = new Headers(response.headers);
                 headers.set('Cache-Control', 'private, no-store');
+                return new Response(response.body, { status: response.status, headers });
+            }
+            if (path.startsWith('/fonts/')) {
+                // Customer emails load the brand font from the mail app's origin.
+                const headers = new Headers(response.headers);
+                headers.set('Access-Control-Allow-Origin', '*');
                 return new Response(response.body, { status: response.status, headers });
             }
             return response;

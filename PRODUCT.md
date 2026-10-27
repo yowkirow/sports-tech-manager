@@ -52,8 +52,14 @@ prints, not an anonymous merch store.
   the order into LBC, pastes the booking number on the order, and the print employee writes the
   customer's name and booking number on the package label. The tracking number comes once the
   parcel ships; it is the customer's. The owner pastes it and marks the order Shipped in one step,
-  and the customer sees it on their order page (and by text when SMS is on). Print staff never
-  need it.
+  and the customer sees it on their order page (by text when SMS is on, and by email when the order
+  has one). Print staff never need it.
+- Customer emails (owner decision 2026-10-27): the email is optional (asked at checkout "for order
+  updates"; owners can add it in POS or an order's Edit; resellers never set it). An order with one
+  gets "We got your order" right after checkout and "It's on its way" with the LBC tracking number
+  when it ships, from no-reply@sportstechph.store. Replies aren't read; the emails point to
+  Facebook and Instagram. Customers never see their email on the order page, and print staff never
+  receive it.
 - Order tracking is contact-verified: the customer's mobile number unlocks `/track/:id`; pending
   orders can be modified by the customer, and shipped orders show LBC's tracking number.
 - Ball pricing is tiered by quantity (1, 5, 10, 20, 50, 100 pieces).

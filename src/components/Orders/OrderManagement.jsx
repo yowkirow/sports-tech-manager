@@ -10,6 +10,8 @@ import { withLocalDate } from '../../lib/transactionDate';
 import { groupOrders } from '../../lib/orderItems';
 import { buildOrderChanges, buildOrderDetailChanges, priceOrderChanges, saveOrderChanges } from '../../lib/orderEditing';
 import { SHIPPABLE_STATUSES, lbcCopyText, lbcReceiver, normalizeLbcNumber, parcelTrackingUrl, plainLabelCode, receiverAddress, shippedWith, withBookingNumber, withTrackingNumber } from '../../lib/lbcBooking';
+import { normalizeCustomerEmail, orderCustomerEmail, suggestEmailFix } from '../../lib/customerEmail';
+import EmailFixHint from '../ui/EmailFixHint';
 import { LbcBookingPanel } from './LbcBooking';
 
 const SIZES = ['XS', 'S', 'M', 'L', 'XL', '2XL'];
@@ -40,6 +42,16 @@ export default function OrderManagement({ transactions, onAddTransaction, onDele
         onOrderSaved?.(changes, result);
         return result;
     };
+    // The server sends the customer's shipped email (LBC tracking number) on the save itself and
+    // reports the outcome; nothing is shown when no email was due or it had already gone.
+    const announceEmail = saved => {
+        const email = saved?.email;
+        if (email?.status === 'sent') showToast(`Tracking emailed to ${email.recipient}`, 'success');
+        else if (email?.status === 'failed') {
+            showToast(`Tracking email not sent: ${email.message || 'The email service didn’t accept it.'} Save the order again to retry.`, 'error', 8000);
+        }
+    };
+    const [emailFix, setEmailFix] = useState(null);
     const [filterFulfillment, setFilterFulfillment] = useState('all');
     const [filterPayment, setFilterPayment] = useState('all'); // 'all', 'paid', 'unpaid'
     const [searchTerm, setSearchTerm] = useState('');
@@ -103,6 +115,7 @@ export default function OrderManagement({ transactions, onAddTransaction, onDele
         }
         setEditingId(order.id);
         setEditingOrder(order);
+        setEmailFix(null);
         
         // Ensure order is expanded so user sees the shipping details edit form
         const newSet = new Set(expandedOrderIds);
@@ -119,6 +132,7 @@ export default function OrderManagement({ transactions, onAddTransaction, onDele
             paymentMode: order.paymentMode,
             trackingNumber: order.items[0]?.details?.trackingNumber || '',
             bookingNumber: order.items[0]?.details?.bookingNumber || '',
+            customerEmail: orderCustomerEmail(order),
             date: new Date(order.date).toISOString().split('T')[0],
             contactNumber: shipping.contactNumber || firstItemDetails.customerContact || firstItemDetails.contactNumber || '',
             address: shipping.address || firstItemDetails.customerAddress || '',
@@ -147,6 +161,11 @@ export default function OrderManagement({ transactions, onAddTransaction, onDele
             const trackingNumber = isReseller ? previousTracking : normalizeLbcNumber(editForm.trackingNumber);
             const previousBooking = order.items[0]?.details?.bookingNumber || '';
             const bookingNumber = isReseller ? previousBooking : normalizeLbcNumber(editForm.bookingNumber);
+            // Owner-only, like the LBC numbers. Saving a new address on a shipped order emails the
+            // tracking number to it (the server decides; see announceEmail).
+            const previousEmail = orderCustomerEmail(order);
+            const customerEmail = isReseller ? previousEmail : normalizeCustomerEmail(editForm.customerEmail);
+            if (customerEmail === null) throw new Error('Check the customer email, or leave it blank.');
             // Neither number changes the status by itself. Only the tracking number is ever texted:
             // the customer gets it when the order is Shipped with one, or when it changes after.
             const finalFulfillmentStatus = isReseller ? order.fulfillmentStatus : editForm.fulfillmentStatus;
@@ -161,6 +180,7 @@ export default function OrderManagement({ transactions, onAddTransaction, onDele
                 paymentMode: editForm.paymentMode,
                 trackingNumber,
                 ...(bookingNumber || previousBooking ? { bookingNumber } : {}),
+                ...(!isReseller && (customerEmail || previousEmail) ? { customerEmail } : {}),
                 status: finalFulfillmentStatus,
                 shippingDetails: {
                     contactNumber: editForm.contactNumber,
@@ -181,8 +201,9 @@ export default function OrderManagement({ transactions, onAddTransaction, onDele
                     delete updatedDetails.previousFulfillmentStatus;
                 }
             });
-            await persistOrder(result.changes);
+            const saved = await persistOrder(result.changes);
             showToast('Order updated!', 'success');
+            announceEmail(saved);
 
             if (textTracking) {
                 await handleSendTrackingSms(order, trackingNumber);
@@ -209,10 +230,11 @@ export default function OrderManagement({ transactions, onAddTransaction, onDele
             const order = groupedOrders.find(o => o.id === orderId);
             if (!order) throw new Error('Order not found. Reload before retrying.');
             const bookingNumber = normalizeLbcNumber(value);
-            await persistOrder(buildOrderDetailChanges(order, details => withBookingNumber(details, bookingNumber)));
+            const saved = await persistOrder(buildOrderDetailChanges(order, details => withBookingNumber(details, bookingNumber)));
             if (!bookingNumber) showToast('Booking number removed', 'success');
             else if (plainLabelCode(bookingNumber)) showToast('Booking number saved. Print staff can see it for the package label.', 'success');
             else showToast('Booking number saved for you only. Print staff see plain codes, not links or notes.', 'info');
+            announceEmail(saved);
             if (refetch) await refetch();
         } catch (err) {
             console.error(err);
@@ -222,7 +244,8 @@ export default function OrderManagement({ transactions, onAddTransaction, onDele
         }
     };
 
-    // Corrects the tracking number of an order that already shipped; a new number is texted again.
+    // Corrects the tracking number of an order that already shipped; a new number is texted again
+    // (and emailed again by the server when the order has an email).
     const handleSaveTracking = async (orderId, value) => {
         if (isReseller) return;
         setLoading(true);
@@ -231,8 +254,9 @@ export default function OrderManagement({ transactions, onAddTransaction, onDele
             if (!order) throw new Error('Order not found. Reload before retrying.');
             const trackingNumber = normalizeLbcNumber(value);
             const previous = order.items[0]?.details?.trackingNumber || '';
-            await persistOrder(buildOrderDetailChanges(order, details => withTrackingNumber(details, trackingNumber)));
+            const saved = await persistOrder(buildOrderDetailChanges(order, details => withTrackingNumber(details, trackingNumber)));
             showToast(trackingNumber ? 'Tracking number saved' : 'Tracking number removed', 'success');
+            announceEmail(saved);
             if (trackingNumber && trackingNumber !== previous && order.fulfillmentStatus === 'shipped') {
                 await handleSendTrackingSms(order, trackingNumber);
             }
@@ -247,7 +271,7 @@ export default function OrderManagement({ transactions, onAddTransaction, onDele
 
     // LBC's tracking number arrives once the parcel ships, so it is saved with Shipped in one save
     // (print-queue orders still need finished QA and the packing confirmation). Only this number
-    // is texted, never the booking number; shipping without one texts nothing.
+    // is texted (and emailed by the server), never the booking number; shipping without one sends nothing.
     const handleShip = async (orderId, value) => {
         if (isReseller) return;
         setLoading(true);
@@ -255,8 +279,9 @@ export default function OrderManagement({ transactions, onAddTransaction, onDele
             const order = groupedOrders.find(o => o.id === orderId);
             if (!order) throw new Error('Order not found. Reload before retrying.');
             const trackingNumber = normalizeLbcNumber(value);
-            await persistOrder(buildOrderDetailChanges(order, details => shippedWith(details, trackingNumber)));
+            const saved = await persistOrder(buildOrderDetailChanges(order, details => shippedWith(details, trackingNumber)));
             showToast(trackingNumber ? 'Marked as shipped' : 'Marked as shipped without a tracking number', 'success');
+            announceEmail(saved);
             if (trackingNumber) await handleSendTrackingSms(order, trackingNumber);
             if (refetch) await refetch();
         } catch (err) {
@@ -328,6 +353,8 @@ export default function OrderManagement({ transactions, onAddTransaction, onDele
         if (isReseller) return;
         if (!confirm(`Update ${selectedOrderIds.size} orders?`)) return;
         setLoading(true);
+        const emailed = [];
+        const notEmailed = [];
         try {
             for (const orderId of selectedOrderIds) {
                 const order = groupedOrders.find(o => o.id === orderId);
@@ -351,9 +378,16 @@ export default function OrderManagement({ transactions, onAddTransaction, onDele
 
                     return newDetails;
                 });
-                await persistOrder(changes);
+                const saved = await persistOrder(changes);
+                if (saved?.email?.status === 'sent') emailed.push(order);
+                else if (saved?.email?.status === 'failed') notEmailed.push(order);
             }
             showToast('Bulk update complete', 'success');
+            // Only orders with a saved tracking number and an email get one when bulk-shipped.
+            if (emailed.length) showToast(`Tracking emailed to ${emailed.length} customer${emailed.length === 1 ? '' : 's'}`, 'success');
+            if (notEmailed.length) {
+                showToast(`Tracking email not sent for ${notEmailed.map(order => order.customerName || order.id).join(', ')}. Save those orders again to retry.`, 'error', 8000);
+            }
             setIsSelectionMode(false);
             setSelectedOrderIds(new Set());
             setShowBulkEditModal(false);
@@ -386,8 +420,9 @@ export default function OrderManagement({ transactions, onAddTransaction, onDele
                 ...details,
                 comments: [...(details?.comments || []), newComment]
             }));
-            await persistOrder(changes);
+            const saved = await persistOrder(changes);
             showToast('Comment added', 'success');
+            announceEmail(saved);
             if (refetch) await refetch();
             return true;
         } catch (err) {
@@ -641,6 +676,7 @@ export default function OrderManagement({ transactions, onAddTransaction, onDele
                         const barangayInputId = `barangay-${order.id}`;
                         const cityInputId = `city-${order.id}`;
                         const provinceInputId = `province-${order.id}`;
+                        const emailInputId = `customer-email-${order.id}`;
 
                         return (
                             <div
@@ -1179,6 +1215,29 @@ export default function OrderManagement({ transactions, onAddTransaction, onDele
                                                                         onChange={e => setEditForm({ ...editForm, province: e.target.value })}
                                                                     />
                                                                 </div>
+                                                                {!isReseller && (
+                                                                    <div className="md:col-span-2">
+                                                                        <label htmlFor={emailInputId} className="field-label">Email for order updates</label>
+                                                                        <input
+                                                                            id={emailInputId}
+                                                                            type="email"
+                                                                            inputMode="email"
+                                                                            autoComplete="off"
+                                                                            autoCapitalize="none"
+                                                                            spellCheck={false}
+                                                                            disabled={readOnly}
+                                                                            title={readOnly ? READ_ONLY_HINT : undefined}
+                                                                            className="field py-2 text-sm"
+                                                                            value={editForm.customerEmail || ''}
+                                                                            onChange={e => { setEditForm({ ...editForm, customerEmail: e.target.value }); setEmailFix(null); }}
+                                                                            onBlur={() => setEmailFix(suggestEmailFix(editForm.customerEmail))}
+                                                                            placeholder="Optional"
+                                                                            aria-describedby={`${emailInputId}-hint`}
+                                                                        />
+                                                                        <EmailFixHint suggestion={emailFix} onUse={value => { setEditForm({ ...editForm, customerEmail: value }); setEmailFix(null); }} />
+                                                                        <p id={`${emailInputId}-hint`} className="mt-1.5 text-xs text-ink-2">The customer gets the LBC tracking number here when the order ships.</p>
+                                                                    </div>
+                                                                )}
                                                             </div>
                                                         ) : (
                                                             <LbcBookingPanel

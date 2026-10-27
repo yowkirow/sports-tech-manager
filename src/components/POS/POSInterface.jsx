@@ -4,8 +4,10 @@ import clsx from 'clsx';
 import { Search, ShoppingCart, Trash2, CheckCircle, Package, Plus, Loader2, Edit, X, Upload, Ruler, GripVertical, Minus } from 'lucide-react';
 import { useToast } from '../ui/Toast';
 import Dialog from '../ui/Dialog';
+import EmailFixHint from '../ui/EmailFixHint';
 import { useReadOnly, READ_ONLY_HINT } from '../ui/ReadOnly';
 import { api, apiRequest } from '../../lib/apiClient';
+import { normalizeCustomerEmail, suggestEmailFix } from '../../lib/customerEmail';
 import { useRawInventory, useProducts, useColors, useBrands } from '../../hooks/useInventory';
 import useCustomers from '../../hooks/useCustomers';
 import { getMMCities, getAllProvinces, getCitiesByProvince, getBarangays } from '../../lib/phLocations';
@@ -60,6 +62,8 @@ export default function POSInterface({ transactions, onAddTransaction, onAddTran
     // Checkout Meta State
     const [customerName, setCustomerName] = useState('');
     const [customerContact, setCustomerContact] = useState('');
+    // Owner-only: the customer's email for the order received and shipped emails.
+    const [customerEmail, setCustomerEmail] = useState('');
     const [customerAddress, setCustomerAddress] = useState('');
     const [customerProvince, setCustomerProvince] = useState('');
     const [customerBarangay, setCustomerBarangay] = useState('');
@@ -289,13 +293,18 @@ export default function POSInterface({ transactions, onAddTransaction, onAddTran
             showToast('Enter customer name', 'error');
             return;
         }
+        const email = isReseller ? '' : normalizeCustomerEmail(customerEmail);
+        if (email === null) {
+            showToast('Check the customer email, or leave it blank.', 'error');
+            return;
+        }
 
         checkoutPending.current = true;
         setCheckoutLoading(true);
         try {
             const user = await api.getCurrentUser();
             if (!user) throw new Error('Sign in again before saving this order.');
-            const fingerprint = JSON.stringify([cart, customerName, customerContact, customerAddress, customerCity,
+            const fingerprint = JSON.stringify([cart, customerName, customerContact, email, customerAddress, customerCity,
                 customerProvince, customerBarangay, shippingRegion, paymentMode, paymentStatus, fulfillmentStatus, user.id]);
             if (checkoutAttempt.current && checkoutAttempt.current.fingerprint !== fingerprint) {
                 throw new Error('A previous checkout is unconfirmed. Restore that cart and retry, or reload Orders to verify it before starting another checkout.');
@@ -323,6 +332,7 @@ export default function POSInterface({ transactions, onAddTransaction, onAddTran
                     orderId,
                     customerName: customerName.trim(),
                     contactNumber: customerContact.trim(),
+                    ...(email ? { customerEmail: email } : {}),
                     itemName: item.name,
                     brand: item.brand || 'Sypik',
                     category: item.category || 'shirts',
@@ -364,6 +374,7 @@ export default function POSInterface({ transactions, onAddTransaction, onAddTran
             }, orderId);
 
             showToast('Order Processed!', 'success');
+            if (email) showToast(`Order confirmation going to ${email}`, 'info');
             try {
                 const fullAddress = `${customerAddress}${customerBarangay ? ', ' + customerBarangay : ''}${customerCity ? ', ' + customerCity : ''}${customerProvince ? ', ' + customerProvince : ''}`;
                 await upsertCustomer({
@@ -393,6 +404,7 @@ export default function POSInterface({ transactions, onAddTransaction, onAddTran
             setPaymentMode('Cash');
             setCustomerName('');
             setCustomerContact('');
+            setCustomerEmail('');
             setCustomerAddress('');
             setCustomerProvince('');
             setCustomerCity('');
@@ -668,6 +680,8 @@ export default function POSInterface({ transactions, onAddTransaction, onAddTran
                     setCustomerName={setCustomerName}
                     customerContact={customerContact}
                     setCustomerContact={setCustomerContact}
+                    customerEmail={customerEmail}
+                    setCustomerEmail={setCustomerEmail}
                     customerAddress={customerAddress}
                     setCustomerAddress={setCustomerAddress}
                     fulfillmentStatus={fulfillmentStatus}
@@ -717,6 +731,8 @@ export default function POSInterface({ transactions, onAddTransaction, onAddTran
                         setCustomerName={setCustomerName}
                         customerContact={customerContact}
                         setCustomerContact={setCustomerContact}
+                        customerEmail={customerEmail}
+                        setCustomerEmail={setCustomerEmail}
                         customerAddress={customerAddress}
                         setCustomerAddress={setCustomerAddress}
                         fulfillmentStatus={fulfillmentStatus}
@@ -948,8 +964,9 @@ const SizeSelectorModal = ({ activeProduct, onClose, onSelectSize, getStockForPr
     );
 };
 
-const CartContent = ({ idPrefix, cart, updateCartQuantity, handleCheckout, checkoutLoading, customerName, setCustomerName, customerContact, setCustomerContact, customerAddress, setCustomerAddress, shippingRegion, setShippingRegion, customerProvince, setCustomerProvince, customerCity, setCustomerCity, customerBarangay, setCustomerBarangay, provinceCode, setProvinceCode, cityCode, setCityCode, provincesList, citiesList, barangaysList, fulfillmentStatus, setFulfillmentStatus, paymentStatus, setPaymentStatus, paymentMode, setPaymentMode, showSuggestions, setShowSuggestions, customerSuggestions, handleSelectCustomer, isReseller }) => {
+const CartContent = ({ idPrefix, cart, updateCartQuantity, handleCheckout, checkoutLoading, customerName, setCustomerName, customerContact, setCustomerContact, customerEmail, setCustomerEmail, customerAddress, setCustomerAddress, shippingRegion, setShippingRegion, customerProvince, setCustomerProvince, customerCity, setCustomerCity, customerBarangay, setCustomerBarangay, provinceCode, setProvinceCode, cityCode, setCityCode, provincesList, citiesList, barangaysList, fulfillmentStatus, setFulfillmentStatus, paymentStatus, setPaymentStatus, paymentMode, setPaymentMode, showSuggestions, setShowSuggestions, customerSuggestions, handleSelectCustomer, isReseller }) => {
     const readOnly = useReadOnly();
+    const [emailFix, setEmailFix] = useState(null);
     const total = cart.reduce((a, b) => a + (getCartUnitPrice(b) * b.quantity), 0);
 
     return (
@@ -1016,6 +1033,16 @@ const CartContent = ({ idPrefix, cart, updateCartQuantity, handleCheckout, check
                             <label htmlFor={`${idPrefix}-customer-contact`} className="field-label">Contact Number</label>
                             <input id={`${idPrefix}-customer-contact`} className="field" placeholder="Contact Number" value={customerContact} disabled={readOnly} onChange={e => setCustomerContact(e.target.value)} />
                         </div>
+                        {!isReseller && (
+                            <div className="sm:col-span-2 lg:col-span-1 xl:col-span-2">
+                                <label htmlFor={`${idPrefix}-customer-email`} className="field-label">Email (optional)</label>
+                                <input id={`${idPrefix}-customer-email`} type="email" inputMode="email" autoComplete="off" autoCapitalize="none" spellCheck={false}
+                                    className="field" placeholder="For order and tracking emails" value={customerEmail} disabled={readOnly}
+                                    onChange={e => { setCustomerEmail(e.target.value); setEmailFix(null); }}
+                                    onBlur={() => setEmailFix(suggestEmailFix(customerEmail))} />
+                                <EmailFixHint suggestion={emailFix} onUse={value => { setCustomerEmail(value); setEmailFix(null); }} />
+                            </div>
+                        )}
                     </div>
 
                     <div className="flex gap-2" role="group" aria-label="Shipping region">

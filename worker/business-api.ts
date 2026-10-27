@@ -6,6 +6,9 @@ import { saveResellerOrderChanges } from './reseller-order-store.ts';
 import {
     canonical, decimal, detailsOrderId, OrderStoreError, PRODUCTION_READY_CONDITION, saveOrderChanges, timestamp
 } from './order-store.ts';
+import { background, savesShipped, sendOrderReceived, sendShippedEmail, sendTestEmail } from './notifications.ts';
+import type { Background } from './notifications.ts';
+import { normalizeCustomerEmail } from '../src/lib/customerEmail.js';
 
 type Bind = string | number | null;
 type Data = Record<string, unknown>;
@@ -62,6 +65,14 @@ function bounded(value: unknown): string {
 
 function allow(member: Member, roles: Role[]): void {
     if (!roles.includes(member.role)) throw new HttpError(403, 'forbidden', 'This membership cannot perform that action.');
+}
+
+// The customer's email for order updates is blank or exactly the address the app sends to. The
+// browser normalizes it first, so the saved order and the browser's copy never differ.
+function checkCustomerEmail(details: unknown): void {
+    if (!isObject(details) || !Object.hasOwn(details, 'customerEmail')) return;
+    const email = normalizeCustomerEmail(details.customerEmail);
+    if (email === null || email !== details.customerEmail) invalid('Enter a valid customer email address, or leave it blank.');
 }
 
 function parameter(url: URL, name: string, fallback: number, maximum: number): number {
@@ -288,6 +299,7 @@ function newRows(input: unknown, member: Member): NewRow[] {
             ...(row.details as Data | undefined), createdBy: member.email, userRole: member.role
         };
         if (details !== null) bounded(details);
+        checkCustomerEmail(details);
         return {
             id, type, category: text(row.category, 'category', 128),
             amount: money(row.amount, type === 'sale'), date: timestamp(row.date),
@@ -822,7 +834,19 @@ async function resetMemberPin(db: D1Database, member: Member, id: string, body: 
     return mutation.finish(TEAM_MEMBER, [id], { id });
 }
 
-export async function handleBusinessRequest(request: Request, env: AppEnv, member: Member): Promise<Response | null> {
+// The confirmation email for each new owner order (a POS sale) that has a customer email. Resellers
+// can't set one, and a replayed insert finds the email already sent.
+async function sendReceivedEmails(env: AppEnv, inserted: Data): Promise<void> {
+    if (!env.EMAIL || !Array.isArray(inserted.rows)) return;
+    const orders = new Set<string>();
+    for (const row of inserted.rows) {
+        if (isObject(row) && row.type === 'sale' && typeof row.id === 'string' && isObject(row.details)
+            && normalizeCustomerEmail(row.details.customerEmail)) orders.add(detailsOrderId(row.details, row.id));
+    }
+    for (const orderId of orders) await sendOrderReceived(env, orderId);
+}
+
+export async function handleBusinessRequest(request: Request, env: AppEnv, member: Member, ctx?: Background): Promise<Response | null> {
     const url = new URL(request.url);
     const path = url.pathname;
     const method = request.method;
@@ -839,7 +863,9 @@ export async function handleBusinessRequest(request: Request, env: AppEnv, membe
             if (method === 'GET') return json(await history(env.DB, member, url));
             if (method === 'POST') {
                 const body = fields(await readJson(request), ['rows', 'requestId']);
-                return json(await insertTransactions(env.DB, member, body.rows, body.requestId, env.PRINT_QUEUE_ENABLED === 'true'));
+                const inserted = await insertTransactions(env.DB, member, body.rows, body.requestId, env.PRINT_QUEUE_ENABLED === 'true');
+                if (member.role === 'owner') await background(ctx, sendReceivedEmails(env, inserted));
+                return json(inserted);
             }
             if (method === 'DELETE') {
                 const body = fields(await readJson(request), ['confirmation', 'requestId']);
@@ -857,14 +883,24 @@ export async function handleBusinessRequest(request: Request, env: AppEnv, membe
             const body = fields(await readJson(request), ['orderId', 'expectedVersion', 'requestId', 'changes'], ['requirePending', 'packingConfirmed']);
             if (body.packingConfirmed !== undefined && typeof body.packingConfirmed !== 'boolean') invalid('Packing confirmation must be boolean.');
             const { packingConfirmed, ...input } = body;
+            if (Array.isArray(input.changes)) {
+                for (const change of input.changes) if (isObject(change) && isObject(change.updates)) checkCustomerEmail(change.updates.details);
+            }
             if (member.role === 'reseller') {
                 if (packingConfirmed === true) throw new HttpError(403, 'forbidden', 'Packing confirmation is owner-only.');
                 return json(await saveResellerOrderChanges(env.DB, member, input, validateReseller));
             }
-            return json(await saveOrderChanges(env.DB, member.id, input, {
+            const saved = await saveOrderChanges(env.DB, member.id, input, {
                 requireProductionReady: env.PRINT_QUEUE_ENABLED === 'true',
                 packingConfirmed: packingConfirmed === true
-            }));
+            });
+            // The customer's shipped email, reported back for the owner's toast. Sending never fails the save.
+            const email = savesShipped(input) ? await sendShippedEmail(env, saved.orderId) : null;
+            return json(email ? { ...saved, email } : saved);
+        }
+        if (path === '/api/notifications/test' && method === 'POST') {
+            allow(member, ['owner']);
+            return json({ email: await sendTestEmail(env, member) });
         }
         const deletePath = /^\/api\/orders\/([^/]+)$/.exec(path);
         if (deletePath && method === 'DELETE') {

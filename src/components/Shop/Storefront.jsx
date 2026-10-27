@@ -8,7 +8,9 @@ import { apiRequest } from '../../lib/apiClient';
 import { rememberTracking, trackOrder, uploadReceipt } from '../../lib/publicShopApi';
 import { useToast } from '../ui/Toast';
 import Dialog from '../ui/Dialog';
+import EmailFixHint from '../ui/EmailFixHint';
 import Logo from '../ui/Logo';
+import { normalizeCustomerEmail, suggestEmailFix } from '../../lib/customerEmail';
 import { getMMCities, getAllProvinces, getCitiesByProvince, getBarangays } from '../../lib/phLocations';
 import { getSizeGuideForBrand } from '../../data/sizeGuides';
 import { getStockKey } from '../../lib/inventory';
@@ -320,6 +322,9 @@ export default function Storefront({ catalog }) {
     const [firstName, setFirstName] = useState('');
     const [lastName, setLastName] = useState('');
     const [contactNumber, setContactNumber] = useState('');
+    const [customerEmail, setCustomerEmail] = useState('');
+    const [emailFix, setEmailFix] = useState(null);
+    const [lastOrderEmail, setLastOrderEmail] = useState('');
     const [shippingAddress, setShippingAddress] = useState(''); // Street
 
     // Address Selection State
@@ -554,6 +559,8 @@ export default function Storefront({ catalog }) {
         if (!firstName.trim()) return showToast('Please enter your first name', 'error');
         if (!lastName.trim()) return showToast('Please enter your last name', 'error');
         if (!contactNumber.trim()) return showToast('Please enter your contact number', 'error');
+        const email = normalizeCustomerEmail(customerEmail);
+        if (email === null) return showToast('Check your email address, or leave it blank.', 'error');
         if (!shippingAddress || !city || (shippingRegion === 'Provincial' && !province) || !barangay) return showToast('Please complete shipping details', 'error');
 
         const customerName = `${firstName.trim()} ${lastName.trim()}`;
@@ -571,7 +578,8 @@ export default function Storefront({ catalog }) {
                     productId: item.id, name: item.name, size: item.size,
                     color: item.linkedColor || 'Varied', quantity: item.quantity
                 })),
-                customerName, contactNumber, shippingDetails: { address: shippingAddress, city, province, barangay },
+                customerName, contactNumber, ...(email ? { customerEmail: email } : {}),
+                shippingDetails: { address: shippingAddress, city, province, barangay },
                 region: shippingRegion, rush: isRushOrder, voucherCode: appliedVoucher?.code || null, paymentMode,
                 ...(requiresProof ? { receipt: proofReceipt } : {})
             };
@@ -587,6 +595,7 @@ export default function Storefront({ catalog }) {
 
             setOrderComplete(true);
             setLastOrderId(result.orderId);
+            setLastOrderEmail(email);
             checkoutRequest.current = null;
             setCart([]);
             setProofUrl('');
@@ -638,6 +647,11 @@ export default function Storefront({ catalog }) {
                     <CheckCircle2 size={52} className="text-emerald-400" aria-hidden="true" />
                     <h1 className="display mt-5 text-5xl sm:text-6xl">Order placed</h1>
                     <p className="mt-3 text-lg text-ink-2">Thank you, {firstName}. We've received your order and will begin processing it shortly.</p>
+                    {lastOrderEmail && (
+                        <p className="mt-3 break-words text-ink-2">
+                            We're emailing your confirmation to <span className="font-semibold text-ink">{lastOrderEmail}</span>, and we'll email the LBC tracking number when your order ships.
+                        </p>
+                    )}
 
                     <section className="surface mt-8 p-5" aria-labelledby="tracking-link-title">
                         <h2 id="tracking-link-title" className="font-semibold">Your tracking link</h2>
@@ -852,6 +866,13 @@ export default function Storefront({ catalog }) {
                             </div>
                             <Field id="ck-phone" label="Mobile number" hint="We use this to verify your order when you track it.">
                                 <input id="ck-phone" type="tel" inputMode="tel" className="field" autoComplete="tel" placeholder="09123456789" required value={contactNumber} onChange={e => setContactNumber(e.target.value)} />
+                            </Field>
+                            <Field id="ck-email" label="Email (optional)" hint="For your order confirmation and LBC tracking number.">
+                                <input id="ck-email" type="email" inputMode="email" className="field" autoComplete="email" autoCapitalize="none" spellCheck={false}
+                                    placeholder="you@example.com" value={customerEmail}
+                                    onChange={e => { setCustomerEmail(e.target.value); setEmailFix(null); }}
+                                    onBlur={() => setEmailFix(suggestEmailFix(customerEmail))} />
+                                <EmailFixHint suggestion={emailFix} onUse={value => { setCustomerEmail(value); setEmailFix(null); }} />
                             </Field>
                         </section>
 

@@ -31,6 +31,9 @@
   "version_metadata": {
     "binding": "VERSION"
   },
+  "send_email": [
+    { "name": "EMAIL", "allowed_sender_addresses": ["no-reply@sportstechph.store"] }
+  ],
   "r2_buckets": [
     { "binding": "MEDIA", "bucket_name": "sportstech-production-media" }
   ],

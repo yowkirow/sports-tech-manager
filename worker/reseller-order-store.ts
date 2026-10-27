@@ -157,12 +157,16 @@ function commonDetails(order: Data, changes: Change[]): Data {
             if (Object.hasOwn(next.shippingDetails, key)) common.shippingDetails[key] = text(next.shippingDetails[key], key, 1024, true);
         }
     }
-    const defaults: Data = { fulfillmentStatus: 'pending', status: 'pending', paymentStatus: 'unpaid', paymentMode: 'Cash', trackingNumber: '', bookingNumber: '' };
+    // Owner-only details: payment and fulfillment, the LBC numbers, and the customer's email for order
+    // updates (resellers' customers never get SportsTech emails unless the owner adds an address).
+    const defaults: Data = {
+        fulfillmentStatus: 'pending', status: 'pending', paymentStatus: 'unpaid', paymentMode: 'Cash', trackingNumber: '', bookingNumber: '', customerEmail: ''
+    };
     for (const change of active) {
         for (const key of Object.keys(defaults)) {
             if (Object.hasOwn(change.updates.details, key)
                 && change.updates.details[key] !== (change.expected.details![key] ?? defaults[key])) {
-                invalid('Payment, fulfillment and LBC booking or tracking changes are owner-only.');
+                invalid('Payment, fulfillment, LBC booking or tracking, and customer email changes are owner-only.');
             }
         }
     }

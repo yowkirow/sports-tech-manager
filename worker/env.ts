@@ -9,6 +9,8 @@ export interface AppEnv extends AccessConfiguration {
     GUEST_TOKEN_SECRET: string;
     SMS_API_KEY?: string;
     SMS_DEVICE_ID?: string;
+    // Cloudflare Email Service binding for customer emails. Production only; without it nothing is sent.
+    EMAIL?: SendEmail;
     PRINT_QUEUE_ENABLED?: string;
     MUTATIONS_ENABLED?: string;
     CANONICAL_HOST?: string;

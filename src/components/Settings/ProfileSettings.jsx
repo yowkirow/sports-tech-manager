@@ -1,7 +1,7 @@
 import React, { useState, useEffect } from 'react';
 import { api, apiRequest } from '../../lib/apiClient';
 import { useToast } from '../ui/Toast';
-import { User, Lock, Save, LogOut, Shield, MessageSquare, Send } from 'lucide-react';
+import { User, Lock, Save, LogOut, Shield, MessageSquare, Send, Mail, Loader2 } from 'lucide-react';
 import ActivityLogViewer from './ActivityLogViewer';
 import ColorSettings from './ColorSettings';
 import BrandSettings from './BrandSettings';
@@ -50,6 +50,58 @@ function ChangePinForm() {
                 {busy ? 'Saving…' : 'Change PIN'}
             </button>
         </form>
+    );
+}
+
+// Customer emails go out on their own (order received, shipped with the LBC tracking number); this
+// card says when, and sends the owner a sample to check that sending works.
+function CustomerEmailSettings({ ownerEmail }) {
+    const { showToast } = useToast();
+    const readOnly = useReadOnly();
+    const [sending, setSending] = useState(false);
+    const sendTest = async () => {
+        setSending(true);
+        try {
+            const { email } = await apiRequest('/api/notifications/test', { method: 'POST', body: {} });
+            if (email?.status === 'sent') showToast(`Test email sent to ${email.recipient}. Check your inbox and spam folder.`, 'success', 6000);
+            else if (email?.reason === 'already_sent') showToast('A test email was just sent. Wait a minute before sending another.', 'info');
+            else if (email?.reason === 'not_configured') showToast('Email sending isn’t set up in this environment.', 'info');
+            else showToast(`Test email not sent: ${email?.message || 'The email service didn’t accept it.'}`, 'error', 8000);
+        } catch (error) {
+            showToast(`Test email not sent: ${error.message}`, 'error', 8000);
+        } finally {
+            setSending(false);
+        }
+    };
+    return (
+        <section className="surface space-y-5 p-5 sm:p-6 md:col-span-2" aria-labelledby="customer-email-title">
+            <div className="flex items-start gap-3 border-b border-line pb-4">
+                <Mail size={22} aria-hidden="true" className="mt-0.5 text-ink-3" />
+                <div>
+                    <h3 id="customer-email-title" className="section-title">Customer Emails</h3>
+                    <p className="mt-1 text-xs text-ink-2">Sent automatically from no-reply@sportstechph.store</p>
+                </div>
+            </div>
+            <div className="grid gap-6 md:grid-cols-2">
+                <div className="space-y-3 text-sm text-ink-2">
+                    <p>Orders that have a customer email get:</p>
+                    <ul className="list-disc space-y-2 pl-5">
+                        <li><span className="font-semibold text-ink">Order received</span>, right after a shop checkout or a POS sale.</li>
+                        <li><span className="font-semibold text-ink">Shipped</span>, with the LBC tracking number, when you mark the order shipped with one. A corrected number is emailed again.</li>
+                    </ul>
+                    <p>Customers can add an email at checkout. You can add or fix it in POS, or in an order’s Edit. Replies aren’t read, so the emails point customers to Facebook and Instagram.</p>
+                </div>
+                <div className="space-y-4 rounded-xl border border-line bg-raised p-4">
+                    <h4 className="font-semibold text-ink">Verification</h4>
+                    <p className="break-words text-xs text-ink-2">Send a sample order confirmation to {ownerEmail || 'your sign-in email'}.</p>
+                    <button type="button" onClick={sendTest} disabled={readOnly || sending}
+                        title={readOnly ? READ_ONLY_HINT : undefined} className="btn-secondary w-full">
+                        {sending ? <Loader2 size={18} className="animate-spin" aria-hidden="true" /> : <Send size={18} aria-hidden="true" />}
+                        {sending ? 'Sending…' : 'Send Test Email'}
+                    </button>
+                </div>
+            </div>
+        </section>
     );
 }
 
@@ -356,6 +408,8 @@ export default function ProfileSettings({ user, onLogout, onProfileChange, trans
                         </div>
                     </section>
                 )}
+
+                {isAdmin && <CustomerEmailSettings ownerEmail={user?.email} />}
             </div>
 
             {isAdmin && (

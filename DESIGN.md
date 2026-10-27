@@ -279,6 +279,11 @@ The form language is blunt athletic retail: rounded enough to be touchable, neve
 - **Owner line picker:** Waiting shirt lines are grouped by order, oldest first (customer name, then order number, order date and shirt count) in Raised Charcoal cards with hairline rows: checkbox, 56px media thumbnail, design and variant, quantity. Selected rows get a subtle white wash, never red. A divided summary bar ("3 lines · 4 shirts selected") holds Clear and the single red primary action.
 - **Accept all QA:** When printed shirts await QA, a Flat Charcoal panel above the job list states the total ("6 shirts printed across 2 jobs") beside one red "Accept all" pill, with a collapsed hairline list of the jobs (job code, design, customer, count). A confirmation dialog states the count and that rejections belong on each job's own quality check.
 
+### Customer Emails
+- **Surface:** Order emails ("We got your order", "It's on its way") are a light variant of the brand, because mail apps invert or strip dark designs unpredictably: a Ground (#0b0b0c) header band with the white-and-red logo mark, then a white 560px card with 16px corners on a #f4f4f5 page. Body text is #18181b, secondary text #52525b and hairlines #e4e4e7; these light-mode neutrals exist only here, for contrast on white.
+- **Type:** Headings are uppercase Barlow Condensed 800 (loaded from `/fonts/` where the mail app allows web fonts, otherwise Avenir Next Condensed, Arial Narrow or Roboto Condensed) at 32px, section titles 18px; body is the platform sans at 16px, labels and the footer 14px. No eyebrow above the heading; the order number sits in the opening sentence and never breaks across lines.
+- **Content:** Items with tabular totals, then Payment and Ship to as label/value rows. The LBC tracking number is a 32px condensed figure in a hairline card with one red "Track with LBC" pill; "View your order" is the only other call to action. Every value is HTML-escaped and every email has a plain-text part.
+
 ## Do's and Don'ts
 
 ### Do:

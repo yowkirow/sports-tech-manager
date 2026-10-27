@@ -77,7 +77,7 @@ function fixture(t, details = {}) {
     db.sqlite.prepare(`INSERT INTO transactions(id,type,category,amount,date,details,order_id)
         VALUES (?,'sale','Balls','25','2026-09-17T00:00:00Z',?,'ST-PRINT')`).run(SECOND,
         JSON.stringify({ orderId: 'ST-PRINT', itemName: 'Ball', quantity: 1, status: 'paid' }));
-    return { db, env: { DB: db, PRINT_QUEUE_ENABLED: 'true' } };
+    return { db, env: { DB: db, PRINT_QUEUE_ENABLED: 'true', GUEST_TOKEN_SECRET: 'production-fixture-secret-0123456789abcdef' } };
 }
 async function call(f, path = '/jobs', body, member = owner, method = body === undefined ? 'GET' : 'POST') {
     const response = await handleProductionRequest(new Request(`https://example.invalid${path.startsWith('/api/') ? path : `/api/production${path}`}`, {
@@ -183,6 +183,20 @@ test('staff jobs carry one stable package key per order, without the order numbe
     f.env.GUEST_TOKEN_SECRET = 'another-deployment-secret-0123456789abcdef';
     const rotated = (await call(f, '/jobs', undefined, printer)).jobs.map(job => job.packageKey);
     assert.notDeepEqual(rotated, keys, 'keyed by the deployment secret, so an order number cannot be confirmed from a key');
+});
+
+test('without a full-strength secret, staff jobs carry no package key at all', async t => {
+    const f = fixture(t);
+    const job = await prepare(f);
+    await release(f, job);
+    for (const secret of [undefined, '', 'k'.repeat(31)]) {
+        f.env.GUEST_TOKEN_SECRET = secret;
+        for (const member of [printer, owner]) {
+            const jobs = (await call(f, '/jobs', undefined, member)).jobs;
+            assert.equal(jobs.length, 1);
+            assert.ok(!Object.hasOwn(jobs[0], 'packageKey'), `no unkeyed hash for ${member.id} with ${JSON.stringify(secret)}`);
+        }
+    }
 });
 
 test('release requires explicit readiness and atomically moves every order row out of pending', async t => {

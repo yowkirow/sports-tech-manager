@@ -1,6 +1,7 @@
 import React, { useEffect, useRef, useState } from 'react';
 import { Check, ClipboardCopy, Copy, Send, Truck } from 'lucide-react';
 import { SHIPPABLE_STATUSES, lbcCopyText, lbcReceiver, mobileForLbc, normalizeLbcNumber, plainLabelCode } from '../../lib/lbcBooking';
+import { orderCustomerEmail } from '../../lib/customerEmail';
 import { useReadOnly, READ_ONLY_HINT } from '../ui/ReadOnly';
 
 // One LBC parcel, start to finish: copy the receiver into LBC's pickup booking, save the booking
@@ -13,6 +14,7 @@ export function LbcBookingPanel({ order, canEdit, busy, onCopy, onSaveBooking, o
     const details = order.items[0]?.details || {};
     const savedBooking = details.bookingNumber || '';
     const savedTracking = details.trackingNumber || '';
+    const email = orderCustomerEmail(order);
     const [booking, setBooking] = useState(savedBooking);
     const [tracking, setTracking] = useState(savedTracking);
     const [askTracking, setAskTracking] = useState(false);
@@ -115,9 +117,9 @@ export function LbcBookingPanel({ order, canEdit, busy, onCopy, onSaveBooking, o
                             {savedTracking && !nextTracking ? 'Remove' : 'Save'}
                         </button>}
                 </div>
-                <p id={`${trackingId}-help`} className="mt-2 text-xs text-ink-2">{shippable
-                    ? 'LBC gives it once the parcel ships. The customer sees it on their order page and gets it by text if SMS is on.'
-                    : 'The customer sees it on their order page. A changed number is texted again if SMS is on.'}</p>
+                <p id={`${trackingId}-help`} className="mt-2 break-words text-xs text-ink-2">{shippable
+                    ? `LBC gives it once the parcel ships. The customer sees it on their order page${email ? `, gets it by email at ${email},` : ''} and by text if SMS is on.`
+                    : `The customer sees it on their order page. A changed number is ${email && order.fulfillmentStatus === 'shipped' ? `emailed to ${email} again, and ` : ''}texted again if SMS is on.`}</p>
                 {askTracking && <div role="alert" className="mt-2 rounded-lg border border-amber-500/40 bg-amber-500/10 px-3 py-2 text-sm text-amber-100">
                     <p>Paste the tracking number LBC gave you, so the customer can follow the parcel.</p>
                     <button type="button" className="mt-1 min-h-11 font-semibold text-amber-200 underline underline-offset-4 hover:text-white"

@@ -9,6 +9,9 @@ import { getStockKey } from '../src/lib/inventory.js';
 import { createOrderId, groupOrders } from '../src/lib/orderItems.js';
 import { getCartUnitPrice, priceOrder } from '../src/lib/orderPricing.js';
 import { buildOrderChanges } from '../src/lib/orderEditingPure.js';
+import { normalizeCustomerEmail } from '../src/lib/customerEmail.js';
+import { background, sendOrderReceived, shippedTracking } from './notifications.ts';
+import type { Background } from './notifications.ts';
 
 type RecordData = Record<string, any>;
 type Transaction = RecordData & { id: string; type: string; category: string; amount: string; date: string; details: RecordData };
@@ -321,7 +324,7 @@ function checkedItems(catalog: Catalog, value: unknown) {
     });
 }
 function normalizeCheckout(body: unknown): RecordData {
-    fields(body, ['requestId', 'items', 'customerName', 'contactNumber', 'shippingDetails', 'region', 'rush', 'voucherCode', 'paymentMode', 'receipt']);
+    fields(body, ['requestId', 'items', 'customerName', 'contactNumber', 'customerEmail', 'shippingDetails', 'region', 'rush', 'voucherCode', 'paymentMode', 'receipt']);
     if (!Array.isArray(body.items)) failure('Choose the items for your order.');
     const normalized: RecordData = {
         requestId: requestId(body.requestId), items: body.items,
@@ -329,6 +332,10 @@ function normalizeCheckout(body: unknown): RecordData {
         contactNumber: normalizeContact(body.contactNumber), shippingDetails: address(body.shippingDetails),
         region: body.region, rush: body.rush ?? false, voucherCode: body.voucherCode ?? null, paymentMode: body.paymentMode
     };
+    // Optional, for the order received and shipped emails.
+    const email = normalizeCustomerEmail(body.customerEmail);
+    if (email === null) failure('Enter a valid email address, or leave it blank.');
+    if (email) normalized.customerEmail = email;
     if (!['MM', 'Provincial'].includes(normalized.region) || typeof normalized.rush !== 'boolean') failure('Choose a shipping region and rush option.');
     if (!['COD', 'Gcash', 'Bank Transfer'].includes(normalized.paymentMode)) failure('Choose a supported payment method.');
     if (body.receipt != null) {
@@ -360,7 +367,7 @@ async function trackingToken(env: AppEnv, key: string, contact: string) {
     ]);
     return token;
 }
-async function checkout(request: Request, env: AppEnv): Promise<Response> {
+async function checkout(request: Request, env: AppEnv, ctx?: Background): Promise<Response> {
     const limited = await rateLimit(request, env, 'checkout', 20);
     if (limited) return limited;
     const intent = normalizeCheckout(await readJson(request));
@@ -369,6 +376,8 @@ async function checkout(request: Request, env: AppEnv): Promise<Response> {
     if (prior) {
         if (prior.payload_hash !== hash) throw new HttpError(409, 'idempotency_conflict', 'This checkout request was already used for a different cart.');
         const saved = JSON.parse(prior.response);
+        // A retried checkout retries a confirmation that failed; one that was sent is never sent twice.
+        if (intent.customerEmail) await background(ctx, sendOrderReceived(env, saved.orderId));
         return json({ ...saved, token: await trackingToken(env, saved.orderId, intent.contactNumber) });
     }
     const { catalog, revision } = await loadCatalog(env);
@@ -394,6 +403,7 @@ async function checkout(request: Request, env: AppEnv): Promise<Response> {
         description: `Online Order: ${item.name} (${item.size})`, order_id: key,
         details: {
             orderId: key, customerName: intent.customerName, contactNumber: intent.contactNumber,
+            ...(intent.customerEmail ? { customerEmail: intent.customerEmail } : {}),
             productId: catalog.products.find(product => product.name === item.name)?.id,
             itemName: item.name, brand: item.brand, category: item.category, unitPrice: item.unitPrice,
             shippingShare: item.shippingShare, pricing, source: 'storefront', size: item.size,
@@ -436,6 +446,7 @@ async function checkout(request: Request, env: AppEnv): Promise<Response> {
         const saved = result.at(-1)?.results[0] as { response: string } | undefined;
         if (!saved) throw new HttpError(503, 'checkout_unconfirmed', 'Checkout could not be confirmed. Retry with the same cart.');
         const body = JSON.parse(saved.response);
+        if (intent.customerEmail) await background(ctx, sendOrderReceived(env, body.orderId));
         return json({ ...body, token: await trackingToken(env, body.orderId, intent.contactNumber) }, 201);
     } catch (error) { checkoutError(error); }
 }
@@ -482,14 +493,9 @@ function safeDetails(source: RecordData): RecordData {
     return result;
 }
 // Owner decision (2026-10-21): the tracking number LBC gives once the parcel ships belongs to the
-// customer, so their verified order page shows it from Shipped on. The booking number from the
-// pickup booking (for the package label) is never returned to customers.
-function shippedTracking(details: unknown): string | null {
-    if (!isObject(details)) return null;
-    const status = details.fulfillmentStatus ?? details.status;
-    const value = typeof details.trackingNumber === 'string' ? details.trackingNumber.trim() : '';
-    return status === 'shipped' && value && value.length <= 300 ? value : null;
-}
+// customer, so their verified order page shows it from Shipped on (shippedTracking, shared with the
+// shipped email). The booking number from the pickup booking (for the package label) is never
+// returned to customers, and neither is their email address.
 function publicOrder(order: RecordData): RecordData {
     const rows = order.transactions.map((row: Transaction) => {
         const details = safeDetails(row.details);
@@ -705,10 +711,10 @@ async function receiptDownload(request: Request, env: AppEnv, id: string) {
     } });
 }
 
-export async function handlePublicRequest(request: Request, env: AppEnv): Promise<Response | null> {
+export async function handlePublicRequest(request: Request, env: AppEnv, ctx?: Background): Promise<Response | null> {
     const path = new URL(request.url).pathname;
     if (path === '/api/public/catalog' && request.method === 'GET') return json((await loadCatalog(env)).catalog);
-    if (path === '/api/public/checkout' && request.method === 'POST') return checkout(request, env);
+    if (path === '/api/public/checkout' && request.method === 'POST') return checkout(request, env, ctx);
     if (path === '/api/public/track' && request.method === 'POST') return track(request, env);
     if (path === '/api/public/receipts' && request.method === 'POST') return uploadReceipt(request, env);
     const order = /^\/api\/public\/orders\/([^/]+)(\/save)?$/.exec(path);

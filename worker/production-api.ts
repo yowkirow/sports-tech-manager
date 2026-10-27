@@ -228,7 +228,9 @@ function events(db: D1Database, member: Member, ids: string, action: 'prepared' 
         FROM json_each(?) AS r JOIN production_jobs j ON j.id=r.value ORDER BY r.key`, [member.id, member.role, member.id, action, ids]);
 }
 // Print staff group their jobs into packages, one per order, without receiving the order number:
-// a keyed one-way hash of the order id, stable across refreshes (owner decision 2026-10-27).
+// a keyed one-way hash of the order id, stable across refreshes (owner decision 2026-10-27). Without
+// a full-strength secret there is no key at all (fail closed); the print queue then shows one
+// package per job.
 async function packageKey(secret: string, orderId: string): Promise<string> {
     return (await digest(`package\n${secret}\n${orderId}`)).slice(0, 20);
 }
@@ -249,8 +251,9 @@ async function getJobs(db: D1Database, member: Member, url: URL, secret = ''): P
         ORDER BY CASE WHEN j.status IN ('completed','superseded') THEN 1 ELSE 0 END,
             coalesce(src.date,j.created_at),j.created_at,j.id LIMIT 26 OFFSET ?`,
     [...values, member.id, member.role, offset]);
+    const keyed = secret.length >= 32;
     const jobs = await Promise.all(result.slice(0, 25).map(async row => ({
-        ...JSON.parse(row.payload), packageKey: await packageKey(secret, row.package_ref)
+        ...JSON.parse(row.payload), ...(keyed ? { packageKey: await packageKey(secret, row.package_ref) } : {})
     })));
     return json({ jobs, nextOffset: result.length > 25 ? offset + 25 : null });
 }

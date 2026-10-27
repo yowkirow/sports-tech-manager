@@ -298,6 +298,7 @@ for (const [label, mutate, status = 400] of [
     ['status', body => { body.changes[0].updates.details.status = 'ready'; }],
     ['tracking', body => { body.changes[0].updates.details.trackingNumber = 'TRACK'; }],
     ['booking', body => { body.changes[0].updates.details.bookingNumber = 'BOOK-1'; }],
+    ['customer email', body => { body.changes[0].updates.details.customerEmail = 'customer@example.com'; }],
     ['comments', body => { body.changes[0].updates.details.comments = [{ text: 'Injected' }]; }],
     ['private cost', body => { body.changes[0].updates.details.supplierCost = 1; }],
     ['createdBy', body => { body.changes[0].updates.details.createdBy = other.email; }],

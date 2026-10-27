@@ -198,6 +198,7 @@ owner still approves which identities to enable.
 | `/api/production/*` | Scoped partial print progress, owner release, QA, holds and reviewed job replacement |
 | `/api/media/*` | Validated uploads and public product/private receipt access |
 | `/api/settings/sms`, `/api/sms` | Owner-only encrypted gateway settings; actual SMS delivery disabled in staging |
+| `/api/notifications/test` | Owner-only sample customer email to the signed-in owner, at most once a minute; nothing is sent where the `EMAIL` binding is missing (staging) |
 
 `MUTATIONS_ENABLED` must explicitly be `true` before any HTTP mutation is accepted.
 Staging deliberately keeps it `false` while the imported financial snapshot is
@@ -217,6 +218,53 @@ including `/health`; do not weaken the policy just to make a health probe public
 After sign-in, `/api/session` confirms the app-level member and `/health` reports
 the deployed Worker version. Dashboard sign-in alone does not prove that this
 separate application login works.
+
+## Customer emails (migration 0017)
+
+Owner decision (October 27, 2026): orders with a customer email get two emails through
+Cloudflare Email Service, sent by the Worker itself (`worker/notifications.ts`):
+
+- **We got your order**: right after a storefront checkout, or an owner POS sale, that has
+  an email. Items, rush fee, shipping and total, payment method, ship-to address, "Order by
+  Thursday, ships Sunday via LBC", and a link to the contact-verified `/track` page. Once per
+  order; at most 10 a day to one address from the public checkout.
+- **It's on its way**: when an owner save leaves the order Shipped with an LBC tracking
+  number (Mark as shipped, Edit, or a bulk Shipped where a number is already saved). It shows
+  the number and a Track with LBC link built like the order page's. Once per tracking number
+  and address: a corrected number or a corrected email sends again, a replayed or unrelated
+  save never does, and shipping without a number sends nothing. Never the booking number.
+
+The email field is optional: "Email (optional)" at checkout, and owner-only in POS and an
+order's Edit. Resellers can't set or change it (server-enforced). It is stored as
+`details.customerEmail` on each order line, trimmed and lowercased. The customer's `/track`
+page, print staff and the production views never receive it.
+
+Sender and binding: production has `"send_email": [{ "name": "EMAIL",
+"allowed_sender_addresses": ["no-reply@sportstechph.store"] }]`; the code sends from
+`SportsTech PH <no-reply@sportstechph.store>` with no reply-to. Staging has no binding, so it
+never emails the real customers in its copied orders. Without the binding nothing is sent or
+logged. Removing the binding and redeploying production turns emails off.
+
+Requirements: Workers Paid (sending to any address; 3,000 emails a month included, then
+$0.35 per 1,000), and `sportstechph.store` onboarded under Compute > Email Service > Email
+Sending (the `cf-bounce` MX/SPF and `cf-bounce._domainkey` DKIM records; `_dmarc` is
+`p=reject`). If the domain isn't onboarded, sends fail with `E_SENDER_DOMAIN_NOT_AVAILABLE`.
+
+Delivery log: `customer_notifications` keeps one row per email (`received:{order}`,
+`shipped:{order}:{tracking}:{email}`, `test:{owner}:{minute}`) with the recipient, status
+(`sending`, `sent`, `failed`), attempts and the error code, never the message. A failed email
+is retried the next time it is due (a retried checkout, or any later owner save of the
+shipped order). The Orders screen shows "Tracking emailed to …" or why it wasn't sent.
+Check recent sends read-only with:
+
+```powershell
+node node_modules\wrangler\bin\wrangler.js d1 execute sportstech-production --remote --config wrangler.production.jsonc --json --command "SELECT kind, status, error, attempts, updated_at FROM customer_notifications ORDER BY updated_at DESC LIMIT 20"
+```
+
+Settings > Customer Emails > Send Test Email sends a sample confirmation to the signed-in
+owner. The emails load the logo (`/logo-mark.png`) and Barlow Condensed
+(`/fonts/barlow-condensed-latin-800-normal.woff2`, served with `Access-Control-Allow-Origin: *`)
+from the site; mail apps that block web fonts use a condensed system face.
 
 ## Validation and migration gates
 
@@ -312,11 +360,12 @@ gives two numbers per parcel, kept apart on the order:
   the customer's. The owner pastes it in the same panel and taps Mark as shipped, which
   saves it with Shipped in one save (print-queue orders still need finished QA, and the
   owner confirms packing, accessories and the package label at this step) and sends the
-  tracking text when SMS is on. If the field is empty,
+  tracking text when SMS is on. If the order has a customer email, the same save emails the
+  number too (see Customer emails). If the field is empty,
   the panel asks for the number; shipping without one (another courier, a pickup) is an
-  explicit choice and texts nothing. The customer's contact-verified `/track` page shows the
+  explicit choice and texts and emails nothing. The customer's contact-verified `/track` page shows the
   number with a "Track on LBC" link once the order is Shipped. Print staff never receive
-  it. Correcting it on a shipped order texts the new number.
+  it. Correcting it on a shipped order texts and emails the new number.
 
 Apply `0013` with `npm run db:staging` / `npm run db:production` right before deploying the
 code that shows it. Until both are live, the print queue shows "Not booked yet". Every
@@ -343,8 +392,9 @@ they match a search or are the only one shown, and can be searched by customer n
 booking number (with or without spaces), design, color, size or job code. Every job in
 `GET /api/production/jobs` carries `packageKey`, a keyed one-way hash of its order
 (HMAC-style with `GUEST_TOKEN_SECRET`), so staff can group a parcel without ever receiving
-the order number. Two orders under the same name stay two packages, with a warning to keep
-the parcels separate.
+the order number. If that secret is missing or shorter than 32 characters, jobs carry no key
+at all (never an unkeyed hash) and the queue shows one package per job. Two orders under the
+same name stay two packages, with a warning to keep the parcels separate.
 
 Design photos (migration `0009_production_design_photos.sql`): each job snapshots its
 order line's product photo when prepared. Only public product media is attached; the
