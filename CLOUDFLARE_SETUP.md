@@ -228,9 +228,11 @@ Cloudflare Email Service, sent by the Worker itself (`worker/notifications.ts`):
   an email. Items, rush fee, shipping and total, payment method, ship-to address, "Order by
   Thursday, ships Sunday via LBC", and a link to the contact-verified `/track` page. Once per
   order; at most 10 a day to one address from the public checkout.
-- **It's on its way**: when an owner save leaves the order Shipped with an LBC tracking
-  number (Mark as shipped, Edit, or a bulk Shipped where a number is already saved). It shows
-  the number and a Track with LBC link built like the order page's. Once per tracking number
+- **It's on its way**: when an owner save leaves the order Shipped with a tracking
+  number (Mark as shipped, Edit, or a bulk Shipped where a number is already saved). Worded
+  like the order page: a code shows as the LBC tracking number with a Track on LBC button; a
+  saved link (another courier's) is "the courier's tracking link" with Open tracking link, and
+  that email doesn't mention LBC. Once per tracking number
   and address: a corrected number or a corrected email sends again, a replayed or unrelated
   save never does, and shipping without a number sends nothing. Never the booking number.
 

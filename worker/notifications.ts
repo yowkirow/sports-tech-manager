@@ -328,26 +328,33 @@ function receivedMessage(env: AppEnv, summary: Summary, recipient: string, test 
         ...(test ? { banner: 'Test email from Settings: this is how customers see an order confirmation. No order was placed.' } : {})
     });
 }
+// Worded like the customer's order page: a code is LBC's tracking number with a Track on LBC
+// button; a saved link (another courier's, since pasted LBC links become codes) is the courier's
+// tracking link, opened as it is, and the email doesn't mention LBC.
 function shippedMessage(env: AppEnv, summary: Summary, tracking: string, recipient: string): Message {
     const url = parcelTrackingUrl(tracking);
     const isLink = /^https?:\/\//i.test(tracking);
-    const label = isLink ? 'LBC tracking link' : 'LBC tracking number';
+    const courierNote = 'Follow your parcel with the courier’s tracking link.';
+    const label = (text: string) => `<p style="margin:0 0 4px;font-family:${FONT};font-size:14px;line-height:18px;font-weight:700;letter-spacing:1px;text-transform:uppercase;color:${C.ink2};">${text}</p>`;
     const trackingHtml = `<table role="presentation" width="100%" cellpadding="0" cellspacing="0" border="0" style="border:1px solid ${C.line};border-radius:12px;"><tr><td style="padding:20px;">
-<p style="margin:0 0 4px;font-family:${FONT};font-size:14px;line-height:18px;font-weight:700;letter-spacing:1px;text-transform:uppercase;color:${C.ink2};">${label}</p>
-${isLink ? '' : `<p style="margin:0 0 16px;font-family:${DISPLAY};font-size:32px;line-height:36px;font-weight:800;letter-spacing:1px;color:${C.ground};word-break:break-all;">${escapeHtml(tracking)}</p>`}
-${url ? button(url, 'Track with LBC') : ''}
+${isLink
+        ? `${label('Tracking')}${paragraph(escapeHtml(courierNote))}${url ? '' : paragraph(escapeHtml(tracking), 'word-break:break-all;')}`
+        : `${label('LBC tracking number')}<p style="margin:0 0 16px;font-family:${DISPLAY};font-size:32px;line-height:36px;font-weight:800;letter-spacing:1px;color:${C.ground};word-break:break-all;">${escapeHtml(tracking)}</p>`}
+${url ? button(url, isLink ? 'Open tracking link' : 'Track on LBC') : ''}
 </td></tr></table>`;
+    const trackingText = isLink ? `${courierNote}\n${tracking}`
+        : `LBC tracking number: ${tracking}${url ? `\nTrack on LBC: ${url}` : ''}`;
     const blocks: Block[] = [
-        { html: trackingHtml, text: `${label}: ${tracking}${url && url !== tracking ? `\nTrack with LBC: ${url}` : ''}` },
+        { html: trackingHtml, text: trackingText },
         { html: subheading('In this parcel'), text: 'IN THIS PARCEL' },
         itemsBlock(summary, false),
         ...orderPageBlock(env, summary, false)
     ];
     return layout(env, {
         subject: `Your order ${summary.orderId} has shipped`,
-        preheader: isLink ? 'Follow your parcel with LBC.' : `LBC tracking number ${tracking}.`,
+        preheader: isLink ? courierNote : `LBC tracking number ${tracking}.`,
         heading: 'It’s on its way',
-        intro: `Hi ${greeting(summary)}, your SportsTech PH order ${summary.orderId} is on its way via LBC.`,
+        intro: `Hi ${greeting(summary)}, your SportsTech PH order ${summary.orderId} is on its way${isLink ? '' : ' via LBC'}.`,
         blocks,
         sentTo: `Sent to ${recipient} for updates on order ${summary.orderId}.`,
         keep: [summary.orderId]

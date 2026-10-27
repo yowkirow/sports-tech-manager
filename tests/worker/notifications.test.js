@@ -230,7 +230,8 @@ test('shipping with a tracking number emails it once per number and address; boo
     assert.equal(mail.to, 'juan@example.com');
     assert.equal(mail.subject, `Your order ${orderId} has shipped`);
     assert.ok(mail.text.includes('LBC tracking number: 1224 8001-5678'));
-    assert.ok(mail.text.includes('Track with LBC: https://www.lbcexpress.com/track/?tracking_no=122480015678'));
+    assert.ok(mail.text.includes('Track on LBC: https://www.lbcexpress.com/track/?tracking_no=122480015678'));
+    assert.ok(mail.text.includes('is on its way via LBC.'));
     assert.ok(mail.html.includes('href="https://www.lbcexpress.com/track/?tracking_no=122480015678"'));
     assert.ok(mail.text.includes('2 × Team Shirt (M · Black)') && !mail.text.includes('₱'), 'the parcel list has no prices');
     assert.ok(!mail.text.includes('BK-PRIVATE-77') && !mail.html.includes('BK-PRIVATE-77'), 'the booking number is the print staff label, never emailed');
@@ -245,7 +246,7 @@ test('shipping with a tracking number emails it once per number and address; boo
     const corrected = await save(env, orderId, { trackingNumber: 'LBC <9999>' });
     assert.equal(corrected.response.email.status, 'sent', 'a corrected number is emailed again, like the tracking text');
     assert.ok(EMAIL.sent[2].html.includes('LBC &lt;9999&gt;') && !EMAIL.sent[2].html.includes('<9999>'));
-    assert.ok(!EMAIL.sent[2].html.includes('Track with LBC'), 'no LBC link for a value that is not a plain code or link');
+    assert.ok(!EMAIL.sent[2].html.includes('Track on LBC'), 'no LBC link for a value that is not a plain code or link');
 
     const readdressed = await save(env, orderId, { customerEmail: 'juan.new@example.com' });
     assert.equal(readdressed.response.email.status, 'sent', 'a corrected address gets the tracking email');
@@ -261,10 +262,15 @@ test('shipping without a number, an order without an email, or a link-only numbe
     assert.equal(noNumber.response.version, 1);
     assert.equal(EMAIL.sent.length, 1);
 
-    const linked = await save(env, withEmail, { trackingNumber: 'https://www.lbcexpress.com/track/?tracking_no=55550000' });
+    const courier = 'https://www.jtexpress.ph/trajectoryQuery?waybillNo=JT0001&flag=1';
+    const linked = await save(env, withEmail, { trackingNumber: courier });
     assert.equal(linked.response.email.status, 'sent');
-    assert.ok(EMAIL.sent[1].html.includes('href="https://www.lbcexpress.com/track/?tracking_no=55550000"'));
-    assert.ok(EMAIL.sent[1].text.includes('LBC tracking link: https://www.lbcexpress.com/track/?tracking_no=55550000'));
+    const [, mail] = EMAIL.sent;
+    assert.ok(mail.html.includes('href="https://www.jtexpress.ph/trajectoryQuery?waybillNo=JT0001&amp;flag=1"'));
+    assert.ok(mail.html.includes('Open tracking link'));
+    assert.ok(mail.text.includes(`Follow your parcel with the courier’s tracking link.\n${courier}`));
+    assert.ok(mail.text.includes('is on its way.'));
+    assert.ok(!/LBC/.test(mail.text) && !/LBC/.test(mail.html), 'another courier’s link is never called LBC, like the order page');
 
     const noEmail = (await checkout(env, cart())).body.orderId;
     assert.ok(!('email' in (await save(env, noEmail, shipped('7777 0000 1111'))).response));
