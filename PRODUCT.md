@@ -19,9 +19,10 @@ web
   vouchers, ad reporting, the Downtown Dinks club ledger, production releases and settings, on phone
   and desktop.
 - **Resellers**: sell at fixed ₱400 pricing; may edit only their own unpaid pending orders.
-- **One print employee**: uses `/print` on a phone and must see only owner-released print jobs, with no
-  customer or financial data, plus their own shirt counter and pay wallet (₱1,000 per complete 30
-  owner-accepted shirts; the owner records payouts).
+- **One print employee**: uses `/print` on a phone and must see only owner-released print jobs, grouped
+  into one package per order, with only the customer's name and LBC booking number for the package label
+  (no contacts, addresses, order numbers or money), plus their own shirt counter and pay wallet (₱1,000
+  per complete 30 owner-accepted shirts; the owner records payouts).
 
 ## Product Purpose
 
@@ -98,7 +99,8 @@ prints, not an anonymous merch store.
 1. The phone shopper comes first: every storefront step must work one-handed on a 390px screen.
 2. Money is never ambiguous: totals, fees and discounts are shown exactly as the server will
    charge them.
-3. Each role sees only what it needs; the print screen never shows customer or financial data.
+3. Each role sees only what it needs; the print screen shows only the package label (customer name and
+   LBC booking number), never contacts, addresses, order numbers or financial data.
 4. The back office is a daily tool: speed and scanability beat decoration.
 5. Read-only and maintenance states are always visible, never hidden.
 

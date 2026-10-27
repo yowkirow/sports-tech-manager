@@ -227,7 +227,12 @@ function events(db: D1Database, member: Member, ids: string, action: 'prepared' 
         SELECT j.id,?,${actorName},?,0,0,0,'',j.version,NULL
         FROM json_each(?) AS r JOIN production_jobs j ON j.id=r.value ORDER BY r.key`, [member.id, member.role, member.id, action, ids]);
 }
-async function getJobs(db: D1Database, member: Member, url: URL): Promise<Response> {
+// Print staff group their jobs into packages, one per order, without receiving the order number:
+// a keyed one-way hash of the order id, stable across refreshes (owner decision 2026-10-27).
+async function packageKey(secret: string, orderId: string): Promise<string> {
+    return (await digest(`package\n${secret}\n${orderId}`)).slice(0, 20);
+}
+async function getJobs(db: D1Database, member: Member, url: URL, secret = ''): Promise<Response> {
     const owner = member.role === 'owner';
     const order = url.searchParams.get('orderId');
     const offsetValue = url.searchParams.get('offset') || '0';
@@ -237,13 +242,17 @@ async function getJobs(db: D1Database, member: Member, url: URL): Promise<Respon
     const values = owner ? (order ? [order] : []) : [member.id];
     // First in, first out: unfinished work by the date the order came in (oldest first), then
     // accepted or retired jobs. The order date is only a sort key; it is not returned to staff.
-    const result = await rows<{ payload: string }>(db, `SELECT ${owner ? ownerPayload : 'p.payload'} AS payload
+    const result = await rows<{ payload: string; package_ref: string }>(db, `SELECT ${owner ? ownerPayload : 'p.payload'} AS payload,
+            j.order_id AS package_ref
         FROM production_jobs j JOIN production_job_public p ON p.id=j.id LEFT JOIN transactions src ON src.id=j.source_id
         WHERE ${filter} AND EXISTS(SELECT 1 FROM members WHERE id=? AND role=? AND active=1)
         ORDER BY CASE WHEN j.status IN ('completed','superseded') THEN 1 ELSE 0 END,
             coalesce(src.date,j.created_at),j.created_at,j.id LIMIT 26 OFFSET ?`,
     [...values, member.id, member.role, offset]);
-    return json({ jobs: result.slice(0, 25).map(row => JSON.parse(row.payload)), nextOffset: result.length > 25 ? offset + 25 : null });
+    const jobs = await Promise.all(result.slice(0, 25).map(async row => ({
+        ...JSON.parse(row.payload), packageKey: await packageKey(secret, row.package_ref)
+    })));
+    return json({ jobs, nextOffset: result.length > 25 ? offset + 25 : null });
 }
 async function getSources(db: D1Database, url: URL): Promise<Response> {
     const order = url.searchParams.get('orderId');
@@ -724,7 +733,7 @@ export async function handleProductionRequest(request: Request, env: AppEnv, mem
     const ownerOnly = !!memberMutation || url.pathname === '/api/production/sources' || request.method === 'POST' && !url.pathname.endsWith('/progress');
     await activeActor(env.DB, member, ownerOnly);
     if (request.method === 'GET') {
-        if (url.pathname === '/api/production/jobs') return getJobs(env.DB, member, url);
+        if (url.pathname === '/api/production/jobs') return getJobs(env.DB, member, url, env.GUEST_TOKEN_SECRET);
         if (url.pathname === '/api/production/sources') return getSources(env.DB, url);
         if (url.pathname === '/api/production/wallet') return getWallet(env.DB, member, url);
     }

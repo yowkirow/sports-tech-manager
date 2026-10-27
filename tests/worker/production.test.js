@@ -152,10 +152,37 @@ test('employees see only their released jobs, safe explicit fields and safe acto
     }
     assert.deepEqual(Object.keys(response.jobs[0]).sort(), [
         'accepted', 'assignee', 'awaitingQA', 'brand', 'color', 'customerName', 'designImageUrl', 'designName', 'events', 'id', 'instructions',
-        'jobCode', 'rejected', 'releasedAt', 'remainingToPrint', 'required', 'reworkRemaining', 'size', 'status', 'bookingNumber', 'updatedAt', 'version'
+        'jobCode', 'packageKey', 'rejected', 'releasedAt', 'remainingToPrint', 'required', 'reworkRemaining', 'size', 'status', 'bookingNumber', 'updatedAt', 'version'
     ].sort());
+    // An opaque grouping key, never the order number.
+    assert.match(response.jobs[0].packageKey, /^[0-9a-f]{20}$/);
     // No LBC booking number on this order yet.
     assert.equal(response.jobs[0].bookingNumber, null);
+});
+
+test('staff jobs carry one stable package key per order, without the order number', async t => {
+    const f = fixture(t);
+    f.env.GUEST_TOKEN_SECRET = 'package-secret-for-tests-0123456789abcdef';
+    const SAME = '00000000-0000-4000-8000-000000000003';
+    const OTHER = '00000000-0000-4000-8000-000000000004';
+    shirtOrder(f, SAME, 'ST-PRINT');
+    shirtOrder(f, OTHER, 'ST-OTHER');
+    const lines = (await call(f, '/sources')).sources.map(lineOf);
+    await call(f, '/jobs/batch', { lines, assigneeId: printer.id, release: true, artworkReady: true, blanksReady: true, requestId: requestId() });
+    const staff = (await call(f, '/jobs', undefined, printer)).jobs;
+    assert.equal(staff.length, 3);
+    const keys = staff.map(job => job.packageKey);
+    assert.equal(new Set(keys).size, 2, 'two orders, two packages');
+    const courtShirtKey = staff.find(job => job.designName === 'Court shirt').packageKey;
+    assert.equal(staff.filter(job => job.packageKey === courtShirtKey).length, 2, 'both ST-PRINT shirts share one package');
+    assert.ok(keys.every(key => /^[0-9a-f]{20}$/.test(key)));
+    assert.ok(!JSON.stringify(staff).includes('ST-PRINT') && !JSON.stringify(staff).includes('ST-OTHER'));
+    assert.deepEqual((await call(f, '/jobs', undefined, printer)).jobs.map(job => job.packageKey), keys, 'stable across refreshes');
+    const owner = (await call(f)).jobs;
+    assert.deepEqual(new Set(owner.map(job => `${job.orderId}:${job.packageKey}`)).size, 2, 'owner keys follow the order too');
+    f.env.GUEST_TOKEN_SECRET = 'another-deployment-secret-0123456789abcdef';
+    const rotated = (await call(f, '/jobs', undefined, printer)).jobs.map(job => job.packageKey);
+    assert.notDeepEqual(rotated, keys, 'keyed by the deployment secret, so an order number cannot be confirmed from a key');
 });
 
 test('release requires explicit readiness and atomically moves every order row out of pending', async t => {

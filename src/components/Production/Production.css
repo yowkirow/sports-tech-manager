@@ -454,6 +454,28 @@
     user-select: all;
 }
 .production-booking-missing { color: var(--color-ink-2); font-size: .875rem; }
+/* Print staff packages: one customer's parcel per entry (owner request 2026-10-27). The header
+   reuses the package label block; the job cards below it are the unchanged print cards, tied to
+   their header by a hairline rail rather than nested inside another card. */
+.print-queue-count { margin-block: 0 12px; font-variant-numeric: tabular-nums; }
+.print-packages { list-style: none; margin: 0; padding: 0; display: grid; gap: 20px; }
+.print-package-head {
+    background: var(--color-surface);
+    border: 1px solid var(--color-line);
+    border-radius: 16px;
+    padding: 16px;
+}
+.print-package-head .production-customer { margin-top: 0; }
+.print-package-head .production-rework { margin: 10px 0 0; }
+.print-package-summary { display: flex; align-items: center; flex-wrap: wrap; gap: 8px 12px; margin-top: 12px; }
+.print-package-summary p { color: var(--color-ink); font-weight: 600; font-variant-numeric: tabular-nums; }
+.print-package-items { margin-top: 6px; color: var(--color-ink-2); font-size: .875rem; overflow-wrap: anywhere; }
+.print-package-toggle { margin-top: 14px; }
+.print-package-toggle svg { transition: transform 200ms var(--ease-out-expo, ease-out); }
+.print-package-toggle[aria-expanded="true"] svg { transform: rotate(180deg); }
+.print-package-jobs { margin: 12px 0 0 10px; padding-left: 14px; border-left: 1px solid var(--color-line); }
+.print-package-jobs[hidden] { display: none; }
+.print-queue-clear { margin-top: 16px; }
 @media (max-width: 640px) {
     .production-header { gap: 12px; flex-wrap: wrap; }
     .production-header .production-button { width: 100%; }
@@ -470,8 +492,10 @@
     .production-actions > .production-button:last-child { grid-column: 1 / -1; }
     .production-quantity { max-width: none; }
     .production-form-grid { display: block; }
-    .production-toolbar { display: block; }
+    .production-toolbar { display: grid; gap: 12px; }
     .production-filter { max-width: none; }
+    .print-package-toggle { width: 100%; }
+    .print-package-jobs { margin-left: 4px; padding-left: 10px; }
     .production-employees li { flex-wrap: wrap; }
     .production-employees .production-button { width: 100%; }
     .production-employee { width: 100%; }

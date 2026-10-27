@@ -1,7 +1,7 @@
-import React, { useCallback, useState } from 'react';
-import { AlertCircle, Check, Printer } from 'lucide-react';
+import React, { useCallback, useMemo, useState } from 'react';
+import { AlertCircle, Check, CheckCircle2, ChevronDown, Printer } from 'lucide-react';
 import LoadingState from '../ui/LoadingState.jsx';
-import { productionQuantity } from '../../lib/production.js';
+import { packageItems, packageStatus, packageSummary, printPackages, productionQuantity, visiblePrintPackages } from '../../lib/production.js';
 import { useProductionData, useProductionMutation, useProductionWallet } from './productionHooks.js';
 import { JobActivity, JobCounts, JobCustomer, JobHeading, JobInstructions, JobPhoto, MutationNotice, ProductionHeader, ProductionNotice } from './ProductionParts.jsx';
 import { MyShirts } from './PrintWallet.jsx';
@@ -32,7 +32,6 @@ function PrintJob({ job, reload, online, stale }) {
     };
     return <li className="production-job">
         <JobHeading job={job} />
-        <JobCustomer job={job} />
         <JobPhoto job={job} large />
         <JobCounts job={job} />
         {job.status !== 'completed' && <>
@@ -67,8 +66,38 @@ function PrintJob({ job, reload, online, stale }) {
     </li>;
 }
 
+const PACKAGE_STATUS_STYLE = { ready_to_pack: 'completed', problem: 'problem', awaiting_qa: 'awaiting_qa', to_print: 'released' };
+
+// One customer's parcel: what to write on it, where it stands, and its shirts. The job cards stay
+// mounted while collapsed, so a typed quantity or note survives closing and reopening.
+function PrintPackage({ pkg, open, onToggle, reload, online, stale }) {
+    const listId = `print-package-${pkg.key}`;
+    const count = pkg.visibleJobs.length;
+    return <li className="print-package">
+        <section aria-label={`Package for ${pkg.customerName || 'a customer without a name'}`}>
+            <div className="print-package-head">
+                <JobCustomer job={pkg} />
+                {pkg.sharedName && <p className="production-rework">Another package has the same name. Keep the two parcels separate.</p>}
+                <div className="print-package-summary">
+                    <span className={`production-status production-status-${PACKAGE_STATUS_STYLE[pkg.state]}`}>
+                        {pkg.state === 'ready_to_pack' && <CheckCircle2 size={16} aria-hidden="true" />}
+                        {packageStatus[pkg.state]}
+                    </span>
+                    <p>{packageSummary(pkg)}</p>
+                </div>
+                <p className="print-package-items">{packageItems(pkg)}</p>
+                <button type="button" className="production-button print-package-toggle" aria-expanded={open} aria-controls={listId} onClick={onToggle}>
+                    {open ? 'Hide jobs' : `Show ${count} job${count === 1 ? '' : 's'}`}<ChevronDown size={18} aria-hidden="true" />
+                </button>
+            </div>
+            <ul id={listId} className="production-jobs print-package-jobs" hidden={!open}>
+                {pkg.visibleJobs.map(job => <PrintJob key={job.id} job={job} reload={reload} online={online} stale={stale} />)}
+            </ul>
+        </section>
+    </li>;
+}
+
 export default function PrintQueue({ userRole }) {
-    const readOnly = useReadOnly();
     const data = useProductionData();
     const showWallet = userRole === 'print_operator';
     const wallet = useProductionWallet(showWallet);
@@ -76,7 +105,18 @@ export default function PrintQueue({ userRole }) {
     const { load: loadWallet } = wallet;
     const reload = useCallback(() => Promise.all([loadJobs(), loadWallet()]), [loadJobs, loadWallet]);
     const [filter, setFilter] = useState('active');
-    const jobs = data.jobs.filter(job => filter === 'all' || (filter === 'completed' ? job.status === 'completed' : job.status !== 'completed'));
+    const [query, setQuery] = useState('');
+    // Packages start collapsed, like Orders. A search opens every match, and a lone package opens
+    // by itself; after that, the printer's own open/close choice wins until the search changes.
+    const [opened, setOpened] = useState(() => new Map());
+    const packages = useMemo(() => printPackages(data.jobs), [data.jobs]);
+    const shown = useMemo(() => visiblePrintPackages(packages, filter, query), [packages, filter, query]);
+    const searching = query.trim() !== '';
+    const isOpen = pkg => opened.has(pkg.key) ? opened.get(pkg.key) : searching || shown.length === 1;
+    const toggle = pkg => setOpened(current => new Map(current).set(pkg.key, !isOpen(pkg)));
+    const search = value => { setQuery(value); setOpened(new Map()); };
+    const toPrint = shown.reduce((total, pkg) => total + pkg.visibleJobs.reduce((sum, job) => sum + job.remainingToPrint, 0), 0);
+    const plural = (count, word) => `${count} ${word}${count === 1 ? '' : 's'}`;
     return <section className="production" aria-label="Employee print queue">
         <ProductionHeader title="Print queue" subtitle="Only jobs assigned and released to you appear here."
             loading={data.loading} onReload={reload} />
@@ -86,17 +126,31 @@ export default function PrintQueue({ userRole }) {
                 {showWallet && <MyShirts data={wallet} />}
                 {data.error && <ProductionNotice error>Queue could not be refreshed. {data.error.message} Saving is paused; use Reload to try again.</ProductionNotice>}
                 {data.loading && !data.jobs.length ? <LoadingState label="Loading your print jobs…" /> : <>
-                    <label className="production-field production-filter">Show jobs
-                        <select value={filter} onChange={event => setFilter(event.target.value)}>
-                            <option value="active">In progress</option><option value="completed">Accepted</option><option value="all">All recent jobs</option>
-                        </select>
-                    </label>
-                    {!jobs.length && !data.error && <div className="production-empty">
+                    <div className="production-toolbar">
+                        <label className="production-field production-filter">Show jobs
+                            <select value={filter} onChange={event => setFilter(event.target.value)}>
+                                <option value="active">In progress</option><option value="completed">Accepted</option><option value="all">All recent jobs</option>
+                            </select>
+                        </label>
+                        <label className="production-field">Find customer, booking number or design
+                            <input type="search" value={query} autoComplete="off" spellCheck={false} enterKeyHint="search"
+                                onChange={event => search(event.target.value)} />
+                        </label>
+                    </div>
+                    {shown.length > 0 && <p className="production-help print-queue-count" role="status">
+                        {searching ? `${plural(shown.length, 'package')} ${shown.length === 1 ? 'matches' : 'match'} “${query.trim()}”`
+                            : `${plural(shown.length, 'package')} · ${plural(toPrint, 'shirt')} to print`}
+                    </p>}
+                    {!shown.length && !data.error && (searching ? <div className="production-empty" role="status">
+                        <h3>No packages match “{query.trim()}”</h3>
+                        <p>Search by customer name, LBC booking number, design, color, size or job code.</p>
+                        <button type="button" className="production-button print-queue-clear" onClick={() => search('')}>Clear search</button>
+                    </div> : <div className="production-empty">
                         <h3>{filter === 'completed' ? 'No accepted jobs yet' : 'No released jobs to print'}</h3>
                         <p>{filter === 'completed' ? 'Owner-accepted jobs will appear here.' : 'Wait for the owner to assign and release a shirt job. Do not print unreleased orders.'}</p>
-                    </div>}
-                    <ul className="production-jobs">{jobs.map(job => <PrintJob key={job.id} job={job}
-                        reload={reload} online={data.online} stale={!!data.error} />)}</ul>
+                    </div>)}
+                    <ul className="print-packages">{shown.map(pkg => <PrintPackage key={pkg.key} pkg={pkg} open={isOpen(pkg)}
+                        onToggle={() => toggle(pkg)} reload={reload} online={data.online} stale={!!data.error} />)}</ul>
                     {data.jobs.length === 100 && <p className="production-help">Showing the latest 100 available jobs.</p>}
                 </>}
             </>}

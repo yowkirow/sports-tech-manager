@@ -335,6 +335,17 @@ after the same artwork and blanks confirmations as a single release. Job lists f
 owner and print staff are first in, first out: unfinished jobs by order date, oldest first,
 then accepted jobs. The order date is a sort key only; it is not returned to staff.
 
+Print staff see their jobs as packages, one per order (owner request, October 27, 2026):
+each package shows the package label (customer name and LBC booking number), its status
+(To print, Awaiting owner QA, Problem reported, Ready to pack), shirt counts and design
+list, and opens to the usual job cards. Packages start collapsed, open by themselves when
+they match a search or are the only one shown, and can be searched by customer name, LBC
+booking number (with or without spaces), design, color, size or job code. Every job in
+`GET /api/production/jobs` carries `packageKey`, a keyed one-way hash of its order
+(HMAC-style with `GUEST_TOKEN_SECRET`), so staff can group a parcel without ever receiving
+the order number. Two orders under the same name stay two packages, with a warning to keep
+the parcels separate.
+
 Design photos (migration `0009_production_design_photos.sql`): each job snapshots its
 order line's product photo when prepared. Only public product media is attached; the
 Worker resolves the id through `media_objects.visibility = 'public'`, so private receipt

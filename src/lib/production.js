@@ -93,6 +93,70 @@ export const acceptAllQueue = (jobs) => jobs.filter(job => job.awaitingQA > 0 &&
     && !['draft', 'completed', 'superseded'].includes(job.status));
 // Exactly the counts the owner saw; the server refuses the whole save if any job changed since.
 export const acceptAllPayload = (jobs) => jobs.map(job => ({ id: job.id, expectedVersion: job.version, accepted: job.awaitingQA }));
+
+// Print staff see their jobs as packages, one per order (owner request 2026-10-27). packageKey is
+// the server's opaque per-order key (staff never receive the order number); owner payloads fall
+// back to orderId. Packages keep the queue's first-in, first-out order, and their totals count
+// every job in the package, whatever the filter shows.
+export const packageStatus = {
+    ready_to_pack: 'Ready to pack', problem: 'Problem reported', awaiting_qa: 'Awaiting owner QA', to_print: 'To print'
+};
+export function printPackages(jobs) {
+    const packages = new Map();
+    for (const job of jobs) {
+        const key = job.packageKey || job.orderId || job.id;
+        if (!packages.has(key)) {
+            packages.set(key, { key, customerName: '', bookingNumber: '', jobs: [], required: 0, toPrint: 0, awaitingQA: 0, accepted: 0 });
+        }
+        const entry = packages.get(key);
+        entry.jobs.push(job);
+        if (!entry.customerName && job.customerName) entry.customerName = job.customerName;
+        if (!entry.bookingNumber && job.bookingNumber) entry.bookingNumber = job.bookingNumber;
+        entry.required += Number(job.required) || 0;
+        entry.toPrint += Number(job.remainingToPrint) || 0;
+        entry.awaitingQA += Number(job.awaitingQA) || 0;
+        entry.accepted += Number(job.accepted) || 0;
+    }
+    const names = new Map();
+    for (const entry of packages.values()) {
+        const name = entry.customerName.trim().toLowerCase();
+        if (name) names.set(name, (names.get(name) || 0) + 1);
+    }
+    return [...packages.values()].map(entry => ({
+        ...entry,
+        // Two orders from the same name are two parcels; the queue says so instead of merging them.
+        sharedName: (names.get(entry.customerName.trim().toLowerCase()) || 0) > 1,
+        state: entry.jobs.every(job => job.status === 'completed') ? 'ready_to_pack'
+            : entry.jobs.some(job => job.status === 'problem') ? 'problem'
+                : entry.toPrint === 0 && entry.awaitingQA > 0 ? 'awaiting_qa' : 'to_print'
+    }));
+}
+const plural = (count, word) => `${count} ${word}${count === 1 ? '' : 's'}`;
+export function packageSummary(pkg) {
+    if (pkg.state === 'ready_to_pack') return `${plural(pkg.required, 'shirt')} · all accepted`;
+    return [plural(pkg.required, 'shirt'), pkg.toPrint && `${pkg.toPrint} to print`,
+        pkg.awaitingQA && `${pkg.awaitingQA} awaiting QA`, pkg.accepted && `${pkg.accepted} accepted`].filter(Boolean).join(' · ');
+}
+export const packageItems = (pkg) => pkg.jobs.map(job => `${job.designName} · ${job.size} ×${job.required}`).join(', ');
+
+const fold = value => String(value ?? '').normalize('NFD').replace(/[\u0300-\u036f]/g, '').toLowerCase();
+const squeeze = value => value.replace(/[^a-z0-9]+/g, '');
+// Every word typed must appear in the package label (customer name, LBC booking number) or the job
+// (design, brand, color, size, job code). Spaces and dashes are optional, so "122480015678" finds
+// booking number "1224 8001 5678", and accents are ignored, so "pena" finds "Peña".
+export function printJobMatches(pkg, job, query) {
+    const words = fold(query).split(/\s+/).filter(Boolean);
+    if (!words.length) return true;
+    const text = [pkg.customerName, pkg.bookingNumber, job.designName, job.brand, job.color, job.size, job.jobCode].map(fold).join(' ');
+    const squeezed = squeeze(text);
+    return words.every(word => text.includes(word) || (squeeze(word) !== '' && squeezed.includes(squeeze(word))));
+}
+// Packages with at least one job that passes the status filter and the search, with those jobs.
+export function visiblePrintPackages(packages, filter, query) {
+    const shows = job => filter === 'all' || (filter === 'completed' ? job.status === 'completed' : job.status !== 'completed');
+    return packages.map(pkg => ({ ...pkg, visibleJobs: pkg.jobs.filter(job => shows(job) && printJobMatches(pkg, job, query)) }))
+        .filter(pkg => pkg.visibleJobs.length > 0);
+}
 // The batch payload: server-verified source references and tokens only.
 export const productionBatchLines = (candidates) => candidates.map(candidate => ({
     sourceId: candidate.sourceId, itemIndex: candidate.itemIndex, expectedSourceToken: candidate.sourceToken
