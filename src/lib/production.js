@@ -149,6 +149,20 @@ export function heldJobReview(job, sources) {
 }
 // "Club Crest Tee · Black · M ×2", for a shirt line or job.
 export const shirtLabel = line => `${[line.designName, line.color || 'No color', line.size].join(' · ')} ×${line.required}`;
+// What retiring a job with accepted shirts changes (LBC session review, 2026-11-03). The printer
+// sees a package through any other released job on the order, and Shipped asks for the packing
+// check while any other job on the order is active; only when neither is left does it all go.
+const PRINTER_VISIBLE = ['released', 'printing', 'awaiting_qa', 'problem', 'completed'];
+export function retireWarning(job, jobs, sameShirt = false) {
+    if (!(job.accepted > 0)) return '';
+    const others = jobs.filter(other => other.id !== job.id && other.orderId === job.orderId && other.status !== 'superseded');
+    const shown = others.some(other => other.releasedAt && PRINTER_VISIBLE.includes(other.status));
+    return `${plural(job.accepted, 'shirt')} here ${job.accepted === 1 ? 'is' : 'are'} already printed and accepted. `
+        + (shown ? 'This job leaves the printer’s list; the package and its label stay with the order’s other print jobs.'
+            : 'Retiring hides this package from the printer, so they no longer see its label (customer name and LBC booking number)'
+                + `${others.length ? '' : ', and shipping won’t ask for the packing check'}.`)
+        + (sameShirt ? '\n\nThe shirt is unchanged, so Keep this job is usually the right choice.' : '');
+}
 
 // Print staff see their jobs as packages, one per order (owner request 2026-10-27). packageKey is
 // the server's opaque per-order key (staff never receive the order number); owner payloads fall

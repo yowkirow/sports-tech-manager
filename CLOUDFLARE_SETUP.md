@@ -444,9 +444,11 @@ saved in the job's history):
   production counts; it never transfers old accepted work to a changed design or shifted
   legacy item index.
 - **Retire job**. A retired job no longer gates its order, so the owner can mark it Ready
-  or Shipped by hand. Retiring a job with accepted shirts also hides that package from the
-  printer, label included, and Shipped no longer asks for the packing check. The confirm
-  says so, and points to Keep when the shirt is unchanged.
+  or Shipped by hand. Retiring a job with accepted shirts takes it off the printer's list.
+  When no other released job is left on the order, the printer no longer sees that
+  package or its label. When no other job is left at all, Shipped no longer asks for the
+  packing check. The confirm says which applies, and points to Keep when the shirt is
+  unchanged.
 
 Shipping or marking Ready an order with a job held by an edit returns 409
 `ORDER_CONFLICT` saying the job is on hold because the order was edited, and to keep or

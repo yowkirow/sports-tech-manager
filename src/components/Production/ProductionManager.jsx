@@ -4,7 +4,7 @@ import LoadingState from '../ui/LoadingState.jsx';
 import {
     MAX_BATCH_JOBS, acceptAllPayload, acceptAllQueue, heldJobReview, orderDateLabel, packageReadiness, packageWaitingFor, productionBatchLines,
     productionCandidates, productionCustomerOf, productionGroupMatches, productionLineKey, productionOrderDateOf, productionOrderGroups,
-    productionQuantity, qaWaitingQueue, shirtLabel, walletPeso
+    productionQuantity, qaWaitingQueue, retireWarning, shirtLabel, walletPeso
 } from '../../lib/production.js';
 import { useProductionData, useProductionMutation, useProductionWallet } from './productionHooks.js';
 import { DesignThumb, JobActivity, JobCounts, JobHeading, JobInstructions, JobPhoto, MutationNotice, ProductionHeader, ProductionNotice } from './ProductionParts.jsx';
@@ -323,7 +323,7 @@ function HeldNotice({ review }) {
     return null;
 }
 
-function OwnerJob({ job, readiness, customer, orderDate, sources, employees, reload, online, stale }) {
+function OwnerJob({ job, jobs = [], readiness, customer, orderDate, sources, employees, reload, online, stale }) {
     const readOnly = useReadOnly();
     const [artwork, setArtwork] = useState(false);
     const [blanks, setBlanks] = useState(false);
@@ -344,13 +344,9 @@ function OwnerJob({ job, readiness, customer, orderDate, sources, employees, rel
         const source = replacements.find(source => productionLineKey(source) === chosenLine);
         if (!retireOnly && !source) { setValidation('Choose the shirt now on the order first.'); return; }
         setValidation('');
-        // A retired job leaves the printer's list, label included, and Shipped no longer asks for the packing check.
-        const printed = job.accepted > 0 ? `\n\n${job.accepted} ${job.accepted === 1 ? 'shirt here is' : 'shirts here are'} already printed and accepted. `
-            + 'Retiring hides this package from the printer, so they no longer see its label (customer name and LBC booking number), '
-            + 'and shipping won’t ask for the packing check.'
-            + (review?.reason === 'same' ? '\n\nThe shirt is unchanged, so Keep this job is usually the right choice.' : '') : '';
+        const printed = retireWarning(job, jobs, review?.reason === 'same');
         if (!window.confirm(retireOnly
-            ? `Retire this job?\n\nIt leaves the print queue and no longer holds this order. Its print and QA history and the printer’s pay stay.${printed}`
+            ? `Retire this job?\n\nIt leaves the print queue and no longer holds this order. Its print and QA history and the printer’s pay stay.${printed ? `\n\n${printed}` : ''}`
             : 'Replace this job with a new draft for the chosen shirt?\n\nThe new job starts at zero. This job’s printed and accepted counts stay in its history and don’t transfer.')) return;
         mutation.run(`/api/production/jobs/${job.id}/revise`, {
             expectedVersion: job.version, confirmed: true, retireOnly,
@@ -528,7 +524,7 @@ export default function ProductionManager({ transactions = [], refetch }) {
                         <h3>{search ? 'No matching print jobs' : 'No print jobs in this view'}</h3>
                         <p>{search ? 'Try another customer name, order reference or job code.' : 'Prepare shirt lines above. Employees see nothing until you release a job.'}</p>
                     </div>}
-                    <ul className="production-jobs">{jobs.map(job => <OwnerJob key={job.id} job={job} readiness={readiness.get(job.orderId)} customer={customerOf(job)} orderDate={orderDateOf(job)} sources={data.sources} employees={employees}
+                    <ul className="production-jobs">{jobs.map(job => <OwnerJob key={job.id} job={job} jobs={data.jobs} readiness={readiness.get(job.orderId)} customer={customerOf(job)} orderDate={orderDateOf(job)} sources={data.sources} employees={employees}
                         reload={reload} online={data.online} stale={!!data.error} />)}</ul>
                 </>}
             </>}

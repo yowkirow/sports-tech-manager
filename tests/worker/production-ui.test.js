@@ -1,7 +1,7 @@
 import assert from 'node:assert/strict';
 import { test } from 'node:test';
 import { MAX_BATCH_JOBS as WORKER_MAX_BATCH_JOBS } from '../../worker/production-api.ts';
-import { MAX_BATCH_JOBS, acceptAllPayload, acceptAllQueue, groupHistory, heldJobReview, historyDayLabel, historyJobLabel, orderDateLabel, packageItems, packageReadiness, packageStatus, packageSummary, packageWaitingFor, printJobMatches, printPackages, qaWaitingQueue, shirtLabel, visiblePrintPackages, payoutSteps, productionBatchLines, productionCandidates, productionCustomerOf, productionGroupMatches, productionLineKey, productionOrderDateOf, productionOrderGroups, productionQuantity, productionError, walletPeso } from '../../src/lib/production.js';
+import { MAX_BATCH_JOBS, acceptAllPayload, acceptAllQueue, groupHistory, heldJobReview, historyDayLabel, historyJobLabel, orderDateLabel, packageItems, packageReadiness, packageStatus, packageSummary, packageWaitingFor, printJobMatches, printPackages, qaWaitingQueue, retireWarning, shirtLabel, visiblePrintPackages, payoutSteps, productionBatchLines, productionCandidates, productionCustomerOf, productionGroupMatches, productionLineKey, productionOrderDateOf, productionOrderGroups, productionQuantity, productionError, walletPeso } from '../../src/lib/production.js';
 
 test('production UI sends only normalized shirt source references and server snapshot tokens', () => {
     const transactions = [
@@ -229,4 +229,18 @@ test('a held job offers only what can work: keep the same shirt, replace a chang
     assert.deepEqual(heldJobReview(job({ sourceChanged: false }), [line()]), { reason: 'hold', lines: [line()], current: null });
     assert.equal(shirtLabel(line()), 'Club Crest Tee · Black · M ×2');
     assert.equal(shirtLabel(line({ color: '' })), 'Club Crest Tee · No color · M ×2');
+});
+
+test('the retire warning says what retiring printed shirts changes, given the order’s other jobs', () => {
+    const job = (id, patch) => ({ id, orderId: 'ST-A', status: 'held', accepted: 3, releasedAt: '2026-10-21T00:00:00Z', ...patch });
+    const held = job('held');
+    const sole = 'Retiring hides this package from the printer, so they no longer see its label (customer name and LBC booking number)';
+    assert.equal(retireWarning(job('new', { accepted: 0 }), [held]), '');
+    assert.equal(retireWarning(held, [held, job('gone', { status: 'superseded' }), job('other-order', { orderId: 'ST-B', status: 'completed' })]),
+        `3 shirts here are already printed and accepted. ${sole}, and shipping won’t ask for the packing check.`);
+    assert.equal(retireWarning(held, [held, job('draft', { status: 'draft', releasedAt: null })]),
+        `3 shirts here are already printed and accepted. ${sole}.`, 'another active job keeps the packing check');
+    assert.equal(retireWarning(job('one', { accepted: 1 }), [job('kept', { status: 'completed' })]),
+        '1 shirt here is already printed and accepted. This job leaves the printer’s list; the package and its label stay with the order’s other print jobs.');
+    assert.match(retireWarning(held, [held], true), /packing check\.\n\nThe shirt is unchanged, so Keep this job is usually the right choice\.$/);
 });

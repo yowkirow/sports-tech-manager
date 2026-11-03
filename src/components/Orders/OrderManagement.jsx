@@ -355,10 +355,12 @@ export default function OrderManagement({ transactions, onAddTransaction, onDele
         setLoading(true);
         const emailed = [];
         const notEmailed = [];
+        let current = null;
         try {
             for (const orderId of selectedOrderIds) {
                 const order = groupedOrders.find(o => o.id === orderId);
                 if (!order) throw new Error('Order not found. Reload before retrying.');
+                current = order;
 
                 const changes = buildOrderDetailChanges(order, details => {
                     const newDetails = { ...details, ...updates };
@@ -394,7 +396,9 @@ export default function OrderManagement({ transactions, onAddTransaction, onDele
             if (refetch) await refetch();
         } catch (err) {
             console.error(err);
-            showToast('Bulk update stopped. Earlier orders may be saved; reload before retrying.', 'error');
+            // Name the order and say why, for example a print job on hold (LBC session review, 2026-11-03).
+            const where = current ? ` at ${current.customerName || current.id}` : '';
+            showToast(`Bulk update stopped${where}. ${err?.message || 'The save could not be confirmed.'} Earlier orders may be saved; reload before retrying.`, 'error', 12000);
             if (refetch) await refetch();
         } finally {
             setLoading(false);
