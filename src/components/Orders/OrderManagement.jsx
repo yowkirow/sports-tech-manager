@@ -355,9 +355,20 @@ export default function OrderManagement({ transactions, onAddTransaction, onDele
         setLoading(true);
         const emailed = [];
         const notEmailed = [];
+        const total = selectedOrderIds.size;
         let current = null;
+        let savedCount = 0;
+        // Only orders with a saved tracking number and an email get one when bulk-shipped. Reported
+        // after a stop too, for the orders saved before it.
+        const announceEmails = () => {
+            if (emailed.length) showToast(`Tracking emailed to ${emailed.length} customer${emailed.length === 1 ? '' : 's'}`, 'success');
+            if (notEmailed.length) {
+                showToast(`Tracking email not sent for ${notEmailed.map(order => order.customerName || order.id).join(', ')}. Save those orders again to retry.`, 'error', 8000);
+            }
+        };
         try {
             for (const orderId of selectedOrderIds) {
+                current = { id: orderId };
                 const order = groupedOrders.find(o => o.id === orderId);
                 if (!order) throw new Error('Order not found. Reload before retrying.');
                 current = order;
@@ -381,24 +392,27 @@ export default function OrderManagement({ transactions, onAddTransaction, onDele
                     return newDetails;
                 });
                 const saved = await persistOrder(changes);
+                savedCount += 1;
                 if (saved?.email?.status === 'sent') emailed.push(order);
                 else if (saved?.email?.status === 'failed') notEmailed.push(order);
             }
+            current = null;
             showToast('Bulk update complete', 'success');
-            // Only orders with a saved tracking number and an email get one when bulk-shipped.
-            if (emailed.length) showToast(`Tracking emailed to ${emailed.length} customer${emailed.length === 1 ? '' : 's'}`, 'success');
-            if (notEmailed.length) {
-                showToast(`Tracking email not sent for ${notEmailed.map(order => order.customerName || order.id).join(', ')}. Save those orders again to retry.`, 'error', 8000);
-            }
+            announceEmails();
             setIsSelectionMode(false);
             setSelectedOrderIds(new Set());
             setShowBulkEditModal(false);
             if (refetch) await refetch();
         } catch (err) {
             console.error(err);
-            // Name the order and say why, for example a print job on hold (LBC session review, 2026-11-03).
+            // Name the order, say why (for example a print job on hold) and exactly how far it got; it
+            // stays until dismissed because it is long (LBC session review, 2026-11-03).
             const where = current ? ` at ${current.customerName || current.id}` : '';
-            showToast(`Bulk update stopped${where}. ${err?.message || 'The save could not be confirmed.'} Earlier orders may be saved; reload before retrying.`, 'error', 12000);
+            const remaining = total - savedCount - (current ? 1 : 0);
+            const progress = current ? `Saved ${savedCount} of ${total} before it${remaining > 0 ? `; ${remaining} not attempted` : ''}.`
+                : `Saved ${savedCount} of ${total}.`;
+            showToast(`Bulk update stopped${where}. ${err?.message || 'The save could not be confirmed.'} ${progress}`, 'error', 0);
+            announceEmails();
             if (refetch) await refetch();
         } finally {
             setLoading(false);
