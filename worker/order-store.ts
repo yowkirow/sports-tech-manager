@@ -378,9 +378,15 @@ export async function saveOrderChanges(
     if (gated && options.packingConfirmed !== true) {
         // Advisory preflight for a clear message; the batch guard below is authoritative for QA.
         const queue = (await db.prepare(`SELECT count(*) AS jobs, coalesce(sum(CASE WHEN status <> 'completed'
-                OR accepted <> required OR source_changed <> 0 THEN 1 ELSE 0 END), 0) AS open
+                OR accepted <> required OR source_changed <> 0 THEN 1 ELSE 0 END), 0) AS open,
+                coalesce(sum(CASE WHEN source_changed <> 0 THEN 1 ELSE 0 END), 0) AS held
             FROM production_jobs WHERE order_id = ? AND status <> 'superseded'`)
-            .bind(key).all<{ jobs: number; open: number }>()).results[0];
+            .bind(key).all<{ jobs: number; open: number; held: number }>()).results[0];
+        // A job held by an order edit can have every shirt printed and accepted (owner report 2026-11-03).
+        if (queue?.held) {
+            throw new OrderStoreError('ORDER_CONFLICT', 'A print job on this order is on hold because the order was edited. '
+                + 'Open Production and keep it if the shirt is the same, or retire it, before Ready or Shipped.', 409);
+        }
         if (queue?.open) {
             throw new OrderStoreError('ORDER_CONFLICT', 'This order is in the print queue. Finish its print jobs and accept them in QA before Ready or Shipped.', 409);
         }

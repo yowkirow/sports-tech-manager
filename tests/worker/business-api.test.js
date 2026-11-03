@@ -659,6 +659,20 @@ test('orders without print jobs ship without a packing prompt', async t => {
     assert.equal((await call(db, 'owner', '/api/orders/save', 'POST', input)).version, 1);
 });
 
+test('shipping an order whose printed job is held by an edit says to keep or retire the job, not to finish printing', async t => {
+    const db = new LocalD1(t);
+    const saved = await insert(db, [sale(1)]);
+    enableProduction(db);
+    productionJob(db, id(1));
+    db.sqlite.exec("UPDATE production_jobs SET status = 'held', source_changed = 1");
+    const shipped = orderInput(saved.rows, 'held-shipped', { fulfillmentStatus: 'shipped', status: 'shipped', trackingNumber: '123456789012' });
+    delete shipped.packingConfirmed;
+    const before = state(db);
+    await assert.rejects(call(db, 'owner', '/api/orders/save', 'POST', shipped),
+        err => err.code === 'ORDER_CONFLICT' && err.status === 409 && /on hold because the order was edited.*keep it.*retire it/.test(err.message));
+    assert.deepEqual(state(db), before);
+});
+
 test('the LBC booking number saves while print jobs are still open, without Ready and without holding the jobs', async t => {
     const db = new LocalD1(t);
     const saved = await insert(db, [sale(1, { details: { orderId: ORDER, itemName: 'Team Shirt', category: 'shirts', quantity: 1,

@@ -344,8 +344,13 @@ function OwnerJob({ job, readiness, customer, orderDate, sources, employees, rel
         const source = replacements.find(source => productionLineKey(source) === chosenLine);
         if (!retireOnly && !source) { setValidation('Choose the shirt now on the order first.'); return; }
         setValidation('');
+        // A retired job leaves the printer's list, label included, and Shipped no longer asks for the packing check.
+        const printed = job.accepted > 0 ? `\n\n${job.accepted} ${job.accepted === 1 ? 'shirt here is' : 'shirts here are'} already printed and accepted. `
+            + 'Retiring hides this package from the printer, so they no longer see its label (customer name and LBC booking number), '
+            + 'and shipping won’t ask for the packing check.'
+            + (review?.reason === 'same' ? '\n\nThe shirt is unchanged, so Keep this job is usually the right choice.' : '') : '';
         if (!window.confirm(retireOnly
-            ? 'Retire this job?\n\nIt leaves the print queue and no longer holds this order. Its print and QA history and the printer’s pay stay.'
+            ? `Retire this job?\n\nIt leaves the print queue and no longer holds this order. Its print and QA history and the printer’s pay stay.${printed}`
             : 'Replace this job with a new draft for the chosen shirt?\n\nThe new job starts at zero. This job’s printed and accepted counts stay in its history and don’t transfer.')) return;
         mutation.run(`/api/production/jobs/${job.id}/revise`, {
             expectedVersion: job.version, confirmed: true, retireOnly,
