@@ -1,6 +1,7 @@
 import { useCallback, useEffect, useRef, useState } from 'react';
-import { apiRequest } from '../../lib/apiClient.js';
+import { api, apiRequest } from '../../lib/apiClient.js';
 import { newProductionRequest, productionError } from '../../lib/production.js';
+import { prepareReceiptImage } from '../../lib/receiptImage.js';
 import { useToast } from '../ui/Toast.jsx';
 
 async function loadPages(path, key) {
@@ -141,4 +142,81 @@ export function useProductionMutation(reload, { serverErrors = false } = {}) {
         return execute(operation);
     };
     return { busy, error, uncertain, run, retry: () => pending.current && execute(pending.current) };
+}
+
+// A print operator's history (owner request 2026-11-03), 40 entries a page, newest first. Staff
+// read their own (no memberId); the owner passes the operator's memberId. Loads when enabled, so a
+// tab or dialog fetches fresh entries each time it opens.
+export function usePrintHistory({ memberId = null, enabled = true } = {}) {
+    const [state, setState] = useState({ entries: [], next: null, loaded: false });
+    const [loading, setLoading] = useState(false);
+    // The last failed read, and whether it was for older entries, so the screen retries that read.
+    const [failure, setFailure] = useState(null);
+    const generation = useRef(0);
+    const cursor = useRef(null);
+    const fetchPage = useCallback(async before => {
+        const params = new URLSearchParams();
+        if (memberId) params.set('memberId', memberId);
+        if (before) params.set('before', before);
+        const query = params.toString();
+        const page = await apiRequest(`/api/production/history${query ? `?${query}` : ''}`);
+        if (!page || !Array.isArray(page.entries) || (page.next !== null && typeof page.next !== 'string')) {
+            throw new Error('History could not be verified. Reload to try again.');
+        }
+        return page;
+    }, [memberId]);
+    const read = useCallback(async before => {
+        const current = ++generation.current;
+        setLoading(true);
+        try {
+            const page = await fetchPage(before);
+            if (current !== generation.current) return;
+            cursor.current = page.next;
+            setState(previous => {
+                if (!before) return { entries: page.entries, next: page.next, loaded: true };
+                const seen = new Set(previous.entries.map(entry => entry.id));
+                return { entries: [...previous.entries, ...page.entries.filter(entry => !seen.has(entry.id))], next: page.next, loaded: true };
+            });
+            // Older entries clear only their own error; a failed refresh stays until a refresh works.
+            setFailure(previous => (!before || previous?.older ? null : previous));
+        } catch (error) {
+            if (current === generation.current) setFailure({ error, older: !!before });
+        } finally {
+            if (current === generation.current) setLoading(false);
+        }
+    }, [fetchPage]);
+    const load = useCallback(() => (enabled ? read(null) : Promise.resolve()), [enabled, read]);
+    const more = useCallback(() => (cursor.current ? read(cursor.current) : Promise.resolve()), [read]);
+    useEffect(() => {
+        if (!enabled) return undefined;
+        load();
+        // A read still in flight is ignored from here on; it must not leave Reload stuck on "Refreshing…".
+        return () => { ++generation.current; setLoading(false); };
+    }, [enabled, load]);
+    return { ...state, loading, error: failure?.error ?? null, olderFailed: !!failure?.older, load, more };
+}
+
+// Prepares (see receiptImage.js) and uploads one payout receipt image. The upload is private and
+// unattached until a payout save references it.
+export function useReceiptUpload() {
+    const [busy, setBusy] = useState(false);
+    const [error, setError] = useState('');
+    const clearError = useCallback(() => setError(''), []);
+    const upload = useCallback(async file => {
+        setBusy(true);
+        setError('');
+        try {
+            const image = await prepareReceiptImage(file);
+            const saved = await api.uploadPayoutReceipt(image);
+            if (!saved?.id || !saved?.url) throw new Error('The upload could not be confirmed. Choose the receipt again.');
+            return { id: saved.id, url: saved.url, preview: URL.createObjectURL(image) };
+        } catch (failure) {
+            setError(failure?.status === 413 ? 'This image is too large. Choose a screenshot or a smaller photo.'
+                : failure?.message || 'The receipt could not be uploaded. Try again.');
+            return null;
+        } finally {
+            setBusy(false);
+        }
+    }, []);
+    return { busy, error, upload, clearError };
 }

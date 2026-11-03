@@ -1,7 +1,7 @@
 import assert from 'node:assert/strict';
 import { test } from 'node:test';
 import { MAX_BATCH_JOBS as WORKER_MAX_BATCH_JOBS } from '../../worker/production-api.ts';
-import { MAX_BATCH_JOBS, acceptAllPayload, acceptAllQueue, orderDateLabel, packageItems, packageStatus, packageSummary, printJobMatches, printPackages, visiblePrintPackages, payoutSteps, productionBatchLines, productionCandidates, productionCustomerOf, productionGroupMatches, productionLineKey, productionOrderDateOf, productionOrderGroups, productionQuantity, productionError, walletPeso } from '../../src/lib/production.js';
+import { MAX_BATCH_JOBS, acceptAllPayload, acceptAllQueue, groupHistory, historyDayLabel, historyJobLabel, orderDateLabel, packageItems, packageReadiness, packageStatus, packageSummary, packageWaitingFor, printJobMatches, printPackages, qaWaitingQueue, visiblePrintPackages, payoutSteps, productionBatchLines, productionCandidates, productionCustomerOf, productionGroupMatches, productionLineKey, productionOrderDateOf, productionOrderGroups, productionQuantity, productionError, walletPeso } from '../../src/lib/production.js';
 
 test('production UI sends only normalized shirt source references and server snapshot tokens', () => {
     const transactions = [
@@ -110,6 +110,54 @@ test('accept all QA picks only released, current jobs with shirts awaiting QA, o
         { id: 'old', expectedVersion: 3, accepted: 2 }, { id: 'held', expectedVersion: 3, accepted: 1 }, { id: 'new', expectedVersion: 7, accepted: 5 }
     ]);
     assert.deepEqual(acceptAllQueue([]), []);
+});
+
+test('QA waits for whole packages: readiness mirrors the Worker rule per order and explains what is missing', () => {
+    const job = (id, orderId, patch) => ({ id, orderId, version: 1, required: 4, awaitingQA: 4, remainingToPrint: 0, reworkRemaining: 0,
+        sourceChanged: false, releasedAt: '2026-11-01T00:00:00Z', status: 'awaiting_qa', ...patch });
+    const jobs = [
+        job('ready', 'ST-READY'),
+        job('rework', 'ST-REWORK', { awaitingQA: 1, remainingToPrint: 2, reworkRemaining: 2 }),
+        job('partly', 'ST-PARTLY', { awaitingQA: 2, remainingToPrint: 2 }),
+        job('printed', 'ST-WAIT'), job('draft', 'ST-WAIT', { status: 'draft', releasedAt: null, awaitingQA: 0, remainingToPrint: 4 }),
+        job('lonely', 'ST-UNQUEUED'),
+        job('first', 'ST-CHANGED'), job('changed', 'ST-CHANGED', { sourceChanged: true, status: 'held' }),
+        job('old', 'ST-RETIRED'), job('retired', 'ST-RETIRED', { status: 'superseded', remainingToPrint: 4 })
+    ];
+    const candidates = [{ orderId: 'ST-UNQUEUED', designName: 'Plain tee', size: 'L', required: 1 }];
+    const readiness = packageReadiness(jobs, candidates);
+    const printed = [...readiness.values()].filter(entry => entry.printed).map(entry => entry.orderId).sort();
+    assert.deepEqual(printed, ['ST-READY', 'ST-RETIRED', 'ST-REWORK'], 'reprints and retired jobs never hold a package');
+    assert.equal(packageWaitingFor(readiness.get('ST-PARTLY')), '2 shirts still to print');
+    assert.equal(packageWaitingFor(readiness.get('ST-WAIT')), '1 job not released');
+    assert.equal(packageWaitingFor(readiness.get('ST-UNQUEUED')), '1 shirt line not in the print queue yet');
+    assert.deepEqual(readiness.get('ST-UNQUEUED').notPrepared, candidates);
+    assert.equal(packageWaitingFor(readiness.get('ST-CHANGED')), '1 job changed and on hold');
+    assert.equal(packageWaitingFor(readiness.get('ST-READY')), '');
+    assert.deepEqual(acceptAllQueue(jobs, readiness).map(item => item.id), ['ready', 'rework', 'old']);
+    assert.deepEqual(qaWaitingQueue(jobs, readiness).map(item => item.id), ['partly', 'printed', 'lonely', 'first']);
+    assert.deepEqual(acceptAllQueue(jobs).map(item => item.id).length, 7, 'without readiness every awaiting job qualifies');
+    assert.equal(productionError({ status: 409, code: 'production_package_incomplete', message: 'QA waits until every shirt on this order is printed: 2 shirts still to print.' }),
+        'QA waits until every shirt on this order is printed: 2 shirts still to print.');
+    assert.equal(productionError({ status: 409, code: 'production_receipt_invalid', message: 'Attach the receipt again.' }), 'Attach the receipt again.');
+});
+
+test('print history groups entries by Philippine day, newest first, with plain job labels', () => {
+    const now = new Date('2026-11-03T05:00:00Z');
+    assert.equal(historyDayLabel('2026-11-03T01:00:00Z', now), 'Today');
+    assert.equal(historyDayLabel('2026-11-02T15:59:00Z', now), 'Yesterday', '11:59 PM in Manila on Nov 2');
+    assert.equal(historyDayLabel('2026-11-02T16:00:00Z', now), 'Today', 'midnight in Manila starts Nov 3');
+    assert.match(historyDayLabel('2026-10-30T03:00:00Z', now), /^Fri,? Oct 30$/);
+    assert.match(historyDayLabel('2025-12-30T03:00:00Z', now), /2025/);
+    const days = groupHistory([
+        { id: 'a', at: '2026-11-03T04:00:00Z' }, { id: 'b', at: '2026-11-02T17:00:00Z' },
+        { id: 'c', at: '2026-11-02T10:00:00Z' }, { id: 'd', at: '2026-11-01T10:00:00Z' }
+    ], now);
+    assert.deepEqual(days.map(day => [day.label, day.entries.map(entry => entry.id)]).slice(0, 2), [['Today', ['a', 'b']], ['Yesterday', ['c']]]);
+    assert.equal(days.length, 3);
+    assert.equal(historyJobLabel({ designName: 'Court shirt', size: 'M', color: 'Black' }), 'Court shirt · M · Black');
+    assert.equal(historyJobLabel({ designName: 'Court shirt', size: 'M', color: '' }), 'Court shirt · M');
+    assert.equal(historyJobLabel(null), '');
 });
 
 test('print staff jobs group into packages, one per order, in queue order with whole-package totals', () => {

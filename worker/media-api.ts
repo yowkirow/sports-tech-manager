@@ -86,6 +86,19 @@ async function owner(env: AppEnv, member: Member | null): Promise<Member> {
     return member;
 }
 
+// Private files are the owner's. The one exception (owner request 2026-11-03): a print operator
+// can open the receipt of a payout made to them, and no other private file.
+async function privateReader(env: AppEnv, member: Member, mediaId: string): Promise<void> {
+    if (member.role === 'print_operator') {
+        const receipt = await env.DB.prepare(`SELECT 1 AS ok FROM print_payout_receipts r
+            JOIN print_payouts p ON p.id = r.payout_id
+            JOIN members m ON m.id = p.operator_id AND m.role = 'print_operator' AND m.active = 1
+            WHERE r.media_id = ? AND p.operator_id = ?`).bind(mediaId, member.id).first();
+        if (receipt) return;
+    }
+    await owner(env, member);
+}
+
 export function imageType(bytes: Uint8Array): string | null {
     if (bytes.length >= 8 && [137, 80, 78, 71, 13, 10, 26, 10].every((byte, index) => bytes[index] === byte)) return 'image/png';
     if (bytes.length >= 3 && bytes[0] === 255 && bytes[1] === 216 && bytes[2] === 255) return 'image/jpeg';
@@ -104,7 +117,7 @@ export async function handleMediaRequest(request: Request, env: AppEnv, member: 
         if (!row) throw new HttpError(404, 'not_found', 'File not found.');
         if (row.visibility === 'private') {
             const requester = member || await authorizedMember(request, env);
-            await owner(env, requester);
+            await privateReader(env, requester, row.id);
         }
         const object = await env.MEDIA.get(row.object_key);
         if (!object) throw new HttpError(404, 'not_found', 'File not found.');
@@ -117,27 +130,35 @@ export async function handleMediaRequest(request: Request, env: AppEnv, member: 
             'Referrer-Policy': 'no-referrer'
         } });
     }
+    // Payout receipts (owner request 2026-11-03) are private: only the owner and the paid print
+    // operator can open one, once it is attached to their payout.
+    if (path === '/api/media/payout-receipts' && request.method === 'POST') return storeImage(request, env, member, 'payout-receipts');
     if (path !== '/api/media/products' || request.method !== 'POST') return null;
+    return storeImage(request, env, member, 'products');
+}
+
+async function storeImage(request: Request, env: AppEnv, member: Member | null, prefix: 'products' | 'payout-receipts'): Promise<Response> {
     const actor = await owner(env, member);
+    const visibility = prefix === 'products' ? 'public' : 'private';
     const bytes = await readBytes(request, 5 * 1024 * 1024);
     const type = imageType(bytes);
     if (!type) throw new HttpError(415, 'invalid_image', 'Upload a PNG, JPEG, GIF or WebP image.');
     const id = crypto.randomUUID();
-    const key = `products/${id}`;
+    const key = `${prefix}/${id}`;
     const digest = await crypto.subtle.digest('SHA-256', bytes);
     const hash = Array.from(new Uint8Array(digest), byte => byte.toString(16).padStart(2, '0')).join('');
-    await env.MEDIA.put(key, bytes, { httpMetadata: { contentType: type } });
+    await env.MEDIA.put(key, bytes, { httpMetadata: { contentType: type, ...(visibility === 'private' ? { cacheControl: 'private, no-store' } : {}) } });
     try {
         await env.DB.batch([
             env.DB.prepare(`INSERT INTO _settings_write_guards(ok)
                 VALUES (CASE WHEN EXISTS (SELECT 1 FROM members WHERE id=? AND role='owner' AND active=1) THEN 1 ELSE 0 END)`).bind(actor.id),
             env.DB.prepare(`INSERT INTO media_objects(id,object_key,visibility,content_type,byte_size,sha256,owner_id)
-                VALUES (?,?,'public',?,?,?,?)`).bind(id, key, type, bytes.length, hash, actor.id),
+                VALUES (?,?,?,?,?,?,?)`).bind(id, key, visibility, type, bytes.length, hash, actor.id),
             env.DB.prepare('DELETE FROM _settings_write_guards')
         ]);
     } catch (error) {
         try { await env.MEDIA.delete(key); }
-        catch { console.error(JSON.stringify({ code: 'orphaned_product_upload', objectId: id })); }
+        catch { console.error(JSON.stringify({ code: prefix === 'products' ? 'orphaned_product_upload' : 'orphaned_payout_receipt_upload', objectId: id })); }
         throw error;
     }
     return json({ id, url: `/api/media/objects/${id}` }, 201);

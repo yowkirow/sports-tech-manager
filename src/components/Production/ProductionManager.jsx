@@ -1,13 +1,15 @@
 import React, { useCallback, useMemo, useState } from 'react';
-import { CheckCheck, CheckCircle2, Pause, Send, UserPlus, UserX } from 'lucide-react';
+import { CheckCheck, CheckCircle2, Hourglass, Pause, Send, UserPlus, UserX } from 'lucide-react';
 import LoadingState from '../ui/LoadingState.jsx';
 import {
-    MAX_BATCH_JOBS, acceptAllPayload, acceptAllQueue, orderDateLabel, productionBatchLines, productionCandidates, productionCustomerOf, productionGroupMatches,
-    productionLineKey, productionOrderDateOf, productionOrderGroups, productionQuantity, walletPeso
+    MAX_BATCH_JOBS, acceptAllPayload, acceptAllQueue, orderDateLabel, packageReadiness, packageWaitingFor, productionBatchLines,
+    productionCandidates, productionCustomerOf, productionGroupMatches, productionLineKey, productionOrderDateOf, productionOrderGroups,
+    productionQuantity, qaWaitingQueue, walletPeso
 } from '../../lib/production.js';
 import { useProductionData, useProductionMutation, useProductionWallet } from './productionHooks.js';
 import { DesignThumb, JobActivity, JobCounts, JobHeading, JobInstructions, JobPhoto, MutationNotice, ProductionHeader, ProductionNotice } from './ProductionParts.jsx';
 import { OperatorPayout, OperatorWallet, UnattributedShirts } from './PrintWallet.jsx';
+import { OperatorHistory } from './PrintHistory.jsx';
 import { useReadOnly, READ_ONLY_HINT } from '../ui/ReadOnly';
 import './Production.css';
 
@@ -57,6 +59,7 @@ function EmployeeAccounts({ members, wallets, reload, online, stale }) {
                     </div>
                     <div className="production-employee-actions">
                         {wallet && <OperatorPayout wallet={wallet} reload={reload} online={online} stale={stale || !!wallets.error} />}
+                        <OperatorHistory memberId={member.id} name={employeeName(member)} wallet={wallet} online={online} />
                         <button type="button" className="production-button" disabled={blocked} title={readOnly ? READ_ONLY_HINT : undefined}
                             onClick={() => mutation.run(`/api/members/${member.id}`, { active: !isActive(member) },
                                 isActive(member) ? 'Employee access revoked; unfinished jobs are on hold.' : 'Employee account reactivated. Jobs stay on hold until re-released.',
@@ -222,11 +225,24 @@ function PrepareJobs({ candidates, transactions, employees, reload, online, stal
 
 // One tap to accept every printed shirt waiting for QA (owner request 2026-10-21). Rejections
 // stay on each job's own quality check, so problem shirts are sent back before accepting all.
-function AcceptAllQA({ jobs, customerOf, reload, online, stale }) {
+// Only whole printed packages qualify (owner decision 2026-11-03); printed shirts on an order that
+// still has shirts to print are listed below with what the package waits for.
+function AcceptAllQA({ jobs, readiness, customerOf, reload, online, stale }) {
     const readOnly = useReadOnly();
     const mutation = useProductionMutation(reload);
-    const queue = acceptAllQueue(jobs);
-    if (!queue.length && !mutation.error) return null;
+    const queue = acceptAllQueue(jobs, readiness);
+    const waiting = useMemo(() => {
+        const orders = new Map();
+        for (const job of qaWaitingQueue(jobs, readiness)) {
+            if (!orders.has(job.orderId)) {
+                orders.set(job.orderId, { orderId: job.orderId, customer: customerOf(job) || job.customerName || 'Unknown customer',
+                    printed: 0, readiness: readiness.get(job.orderId) });
+            }
+            orders.get(job.orderId).printed += job.awaitingQA;
+        }
+        return [...orders.values()];
+    }, [jobs, readiness, customerOf]);
+    if (!queue.length && !waiting.length && !mutation.error) return null;
     const batch = queue.slice(0, MAX_BATCH_JOBS);
     const later = queue.length - batch.length;
     const shirts = batch.reduce((total, job) => total + job.awaitingQA, 0);
@@ -239,12 +255,12 @@ function AcceptAllQA({ jobs, customerOf, reload, online, stale }) {
                 + (result?.readyOrders ? ` ${plural(result.readyOrders, 'order')} moved to Ready.` : '')
                 + (later ? ` ${plural(later, 'more job')} still ${later === 1 ? 'waits' : 'wait'} for QA.` : ''));
     };
-    return <section className="production-qa-all" aria-labelledby="production-qa-all-title">
+    return <section className="production-qa-all" aria-label="Quality check">
         {queue.length > 0 && <>
             <div className="production-qa-all-head">
                 <div>
-                    <h3 id="production-qa-all-title">Waiting for your QA</h3>
-                    <p><strong>{plural(queue.reduce((total, job) => total + job.awaitingQA, 0), 'shirt')}</strong> printed across <strong>{plural(queue.length, 'job')}</strong>.</p>
+                    <h3>Waiting for your QA</h3>
+                    <p><strong>{plural(queue.reduce((total, job) => total + job.awaitingQA, 0), 'shirt')}</strong> printed across <strong>{plural(queue.length, 'job')}</strong>, all from fully printed packages.</p>
                 </div>
                 <button type="button" className="production-button production-primary" disabled={blocked}
                     title={readOnly ? READ_ONLY_HINT : undefined} onClick={accept}>
@@ -263,12 +279,26 @@ function AcceptAllQA({ jobs, customerOf, reload, online, stale }) {
             </details>
             <p className="production-help">Check the shirts first. To send some back for rework, use Reject on that job below, then accept the rest here.</p>
         </>}
+        {waiting.length > 0 && <div className="production-qa-wait">
+            <h3><Hourglass size={18} aria-hidden="true" />Printed, not ready for QA</h3>
+            <p className="production-help">QA opens when every shirt on an order is printed, so you check each package at once.</p>
+            <ul>
+                {waiting.map(order => <li key={order.orderId}>
+                    <span className="production-qa-wait-name">{order.customer}<span className="production-order-ref">{order.orderId}</span></span>
+                    <span className="production-qa-wait-what"><strong className="num">{order.printed} printed</strong> · waiting for {packageWaitingFor(order.readiness)}</span>
+                    {order.readiness?.notPrepared.length > 0 && <span className="production-qa-wait-lines">
+                        Not in the print queue: {order.readiness.notPrepared.map(line => `${line.designName} · ${line.size} ×${line.required}`).join(', ')}.
+                        If it needs printing, prepare it under Prepare shirt jobs.
+                    </span>}
+                </li>)}
+            </ul>
+        </div>}
         <MutationNotice mutation={mutation} online={online} />
         {mutation.busy && <p role="status">Accepting shirts…</p>}
     </section>;
 }
 
-function OwnerJob({ job, customer, orderDate, sources, employees, reload, online, stale }) {
+function OwnerJob({ job, readiness, customer, orderDate, sources, employees, reload, online, stale }) {
     const readOnly = useReadOnly();
     const [artwork, setArtwork] = useState(false);
     const [blanks, setBlanks] = useState(false);
@@ -348,7 +378,15 @@ function OwnerJob({ job, customer, orderDate, sources, employees, reload, online
                     title={readOnly ? READ_ONLY_HINT : undefined}
                     onClick={() => submit('release')}><Send size={18} aria-hidden="true" />{job.status === 'held' ? 'Re-release job' : 'Release job'}</button>
             </div>}
-            {job.awaitingQA > 0 && !job.sourceChanged && <div className="production-qa">
+            {job.awaitingQA > 0 && !job.sourceChanged && readiness && !readiness.printed && <div className="production-qa production-qa-waiting">
+                <h4>Owner quality check</h4>
+                <p>Opens when every shirt on {customer || job.customerName ? `${customer || job.customerName}’s` : 'this'} order is printed, so you check the whole package at once.</p>
+                <p className="production-qa-waiting-for"><Hourglass size={18} aria-hidden="true" />Waiting for {packageWaitingFor(readiness)}</p>
+                {readiness.notPrepared.length > 0 && <p className="production-help">
+                    Not in the print queue: {readiness.notPrepared.map(line => `${line.designName} · ${line.size} ×${line.required}`).join(', ')}. If it needs printing, prepare it under Prepare shirt jobs.
+                </p>}
+            </div>}
+            {job.awaitingQA > 0 && !job.sourceChanged && (!readiness || readiness.printed) && <div className="production-qa">
                 <h4>Owner quality check</h4>
                 <div className="production-actions">
                     <label className="production-field production-quantity">Accept quantity
@@ -411,6 +449,7 @@ export default function ProductionManager({ transactions = [], refetch }) {
         catch { setOrderRefreshError(true); }
     }, [data.load, loadWallets, refetch]);
     const candidates = useMemo(() => productionCandidates(transactions, data.sources, data.jobs), [transactions, data.sources, data.jobs]);
+    const readiness = useMemo(() => packageReadiness(data.jobs, candidates), [data.jobs, candidates]);
     const customerOf = useMemo(() => productionCustomerOf(transactions), [transactions]);
     const orderDateOf = useMemo(() => productionOrderDateOf(transactions), [transactions]);
     const employees = data.members.filter(member => member.role === 'print_operator' && isActive(member));
@@ -427,7 +466,7 @@ export default function ProductionManager({ transactions = [], refetch }) {
                 {data.loading && !data.jobs.length && !data.members.length ? <LoadingState label="Loading print production…" /> : <>
                     <EmployeeAccounts members={data.members} wallets={wallets} reload={reload} online={data.online} stale={!!data.error} />
                     <PrepareJobs candidates={candidates} transactions={transactions} employees={employees} reload={reload} online={data.online} stale={!!data.error || orderRefreshError} />
-                    <AcceptAllQA jobs={data.jobs} customerOf={customerOf} reload={reload} online={data.online} stale={!!data.error} />
+                    <AcceptAllQA jobs={data.jobs} readiness={readiness} customerOf={customerOf} reload={reload} online={data.online} stale={!!data.error} />
                     <div className="production-toolbar">
                         <label className="production-field production-filter">Show jobs
                             <select value={filter} onChange={event => setFilter(event.target.value)}>
@@ -442,7 +481,7 @@ export default function ProductionManager({ transactions = [], refetch }) {
                         <h3>{search ? 'No matching print jobs' : 'No print jobs in this view'}</h3>
                         <p>{search ? 'Try another customer name, order reference or job code.' : 'Prepare shirt lines above. Employees see nothing until you release a job.'}</p>
                     </div>}
-                    <ul className="production-jobs">{jobs.map(job => <OwnerJob key={job.id} job={job} customer={customerOf(job)} orderDate={orderDateOf(job)} sources={data.sources} employees={employees}
+                    <ul className="production-jobs">{jobs.map(job => <OwnerJob key={job.id} job={job} readiness={readiness.get(job.orderId)} customer={customerOf(job)} orderDate={orderDateOf(job)} sources={data.sources} employees={employees}
                         reload={reload} online={data.online} stale={!!data.error} />)}</ul>
                 </>}
             </>}

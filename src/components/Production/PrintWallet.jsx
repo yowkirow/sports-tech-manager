@@ -1,32 +1,13 @@
-import React, { useId, useState } from 'react';
-import { Banknote, Hourglass } from 'lucide-react';
+import React, { useEffect, useId, useRef, useState } from 'react';
+import { Banknote, History, Hourglass, Paperclip, X } from 'lucide-react';
 import Dialog from '../ui/Dialog.jsx';
 import { payoutSteps, walletPeso } from '../../lib/production.js';
-import { useProductionMutation } from './productionHooks.js';
+import { useProductionMutation, useReceiptUpload } from './productionHooks.js';
 import { MutationNotice, ProductionNotice } from './ProductionParts.jsx';
 import { useReadOnly, READ_ONLY_HINT } from '../ui/ReadOnly';
 
-const when = at => new Date(at).toLocaleString('en-PH', { month: 'short', day: 'numeric', hour: 'numeric', minute: '2-digit' });
-
-function WalletActivity({ recent, rateShirts, rate }) {
-    if (!recent.length) return null;
-    return <details className="production-activity">
-        <summary>Wallet activity ({recent.length})</summary>
-        <p className="production-help">Pay is {rate} for each complete {rateShirts} shirts the owner accepts. A rejected shirt counts once its reprint is accepted.</p>
-        <ol>
-            {recent.map((entry, index) => <li key={`${entry.type}:${entry.at}:${index}`}>
-                <div>{entry.type === 'credit'
-                    ? <><strong className="num">+{entry.shirts} accepted</strong> · <span className="num">{entry.jobCode}</span></>
-                    : <strong className="num">Paid {walletPeso(entry.amountCentavos)}</strong>}</div>
-                {entry.note && <p>{entry.note}</p>}
-                <time dateTime={entry.at}>{when(entry.at)}</time>
-            </li>)}
-        </ol>
-    </details>;
-}
-
 /** The print employee's own counter and wallet. Counts and pay only; no order or customer data. */
-export function MyShirts({ data }) {
+export function MyShirts({ data, onShowHistory }) {
     const titleId = useId();
     const nextId = useId();
     const { wallet, loading, error } = data;
@@ -64,8 +45,10 @@ export function MyShirts({ data }) {
         <p className="production-wallet-waiting"><Hourglass size={18} aria-hidden="true" />
             Printed, waiting for owner check: <strong className="num">{wallet.awaitingQA}</strong></p>
         {wallet.acceptedShirts === 0 && <p className="production-wallet-empty">No accepted shirts yet.</p>}
-        <p className="production-help">Shirts count after the owner accepts them. Every complete {wallet.rateShirts} adds {rate}.</p>
-        <WalletActivity recent={wallet.recent} rateShirts={wallet.rateShirts} rate={rate} />
+        <p className="production-help">Shirts count once the owner accepts them. The owner checks each package when all its shirts are printed. Every complete {wallet.rateShirts} adds {rate}.</p>
+        {onShowHistory && <button type="button" className="production-button production-wallet-history" onClick={onShowHistory}>
+            <History size={18} aria-hidden="true" />See my history and payouts
+        </button>}
     </section>;
 }
 
@@ -79,6 +62,40 @@ export function OperatorWallet({ wallet }) {
     </dl>;
 }
 
+// The receipt for a payout being recorded: attach, preview, replace or remove before saving. The
+// image uploads privately on choice; it's linked to the payout only when the payout is recorded.
+function ReceiptField({ name, receipt, uploader, disabled, onChoose, onRemove }) {
+    const input = useRef(null);
+    const helpId = useId();
+    const choose = async event => {
+        const file = event.target.files?.[0];
+        event.target.value = '';
+        if (file) await onChoose(file);
+    };
+    return <div className="production-field production-receipt-field">
+        <span>Receipt (optional)</span>
+        <input ref={input} type="file" accept="image/*" hidden onChange={choose} />
+        {receipt
+            ? <div className="production-receipt">
+                <img src={receipt.preview} alt="Receipt to attach" />
+                <div className="production-receipt-actions">
+                    <button type="button" className="production-button" disabled={disabled || uploader.busy} onClick={() => input.current?.click()}>
+                        <Paperclip size={18} aria-hidden="true" />{uploader.busy ? 'Uploading…' : 'Replace'}
+                    </button>
+                    <button type="button" className="production-button" disabled={disabled || uploader.busy} onClick={onRemove}>
+                        <X size={18} aria-hidden="true" />Remove
+                    </button>
+                </div>
+            </div>
+            : <button type="button" className="production-button production-receipt-attach" disabled={disabled || uploader.busy}
+                aria-describedby={helpId} onClick={() => input.current?.click()}>
+                <Paperclip size={18} aria-hidden="true" />{uploader.busy ? 'Uploading…' : 'Attach receipt'}
+            </button>}
+        <p id={helpId} className="production-help">A photo or screenshot of the GCash or bank transfer. {name} can open it in their history.</p>
+        {uploader.error && <p className="production-validation" role="alert">{uploader.error}</p>}
+    </div>;
+}
+
 // The mutation lives here, not in the dialog, so an unconfirmed save can only be retried as the
 // same request even after the dialog is closed and reopened.
 export function OperatorPayout({ wallet, reload, online, stale }) {
@@ -88,24 +105,33 @@ export function OperatorPayout({ wallet, reload, online, stale }) {
     const [amount, setAmount] = useState('');
     const [note, setNote] = useState('');
     const [confirmed, setConfirmed] = useState(false);
+    const [receipt, setReceipt] = useState(null);
+    const uploader = useReceiptUpload();
     const mutation = useProductionMutation(reload, { serverErrors: true });
     const steps = payoutSteps(wallet.balanceCentavos, wallet.rateCentavos);
     const selected = steps.includes(Number(amount)) ? Number(amount) : steps[0];
     const locked = readOnly || !online || mutation.busy || mutation.uncertain;
+    // Previews are local object URLs; release each one when it is replaced or the payout closes.
+    useEffect(() => () => { if (receipt) URL.revokeObjectURL(receipt.preview); }, [receipt]);
     const start = () => {
-        if (!mutation.uncertain) { setAmount(String(steps[0] ?? '')); setNote(''); setConfirmed(false); }
+        if (!mutation.uncertain) { setAmount(String(steps[0] ?? '')); setNote(''); setConfirmed(false); setReceipt(null); uploader.clearError(); }
         setOpen(true);
     };
     const close = () => {
         if (mutation.uncertain) reload();
         setOpen(false);
     };
+    const attach = async file => {
+        const image = await uploader.upload(file);
+        if (image) setReceipt(image);
+    };
     const submit = event => {
         event.preventDefault();
-        if (!confirmed || !selected) return;
+        if (!confirmed || !selected || uploader.busy) return;
         mutation.run('/api/production/payouts', {
-            operatorId: wallet.memberId, amountCentavos: selected, ...(note.trim() ? { note: note.trim() } : {})
-        }, `${walletPeso(selected)} payout recorded for ${wallet.name}.`, () => setOpen(false));
+            operatorId: wallet.memberId, amountCentavos: selected, ...(note.trim() ? { note: note.trim() } : {}),
+            ...(receipt ? { receiptId: receipt.id } : {})
+        }, `${walletPeso(selected)} payout recorded for ${wallet.name}${receipt ? ' with the receipt' : ''}.`, () => setOpen(false));
     };
     return <>
         <button type="button" className="production-button"
@@ -118,7 +144,7 @@ export function OperatorPayout({ wallet, reload, online, stale }) {
             footer={<div className="flex flex-col-reverse gap-3 sm:flex-row sm:justify-end">
                 <button type="button" className="production-button" onClick={close}>Cancel</button>
                 <button type="submit" form={formId} className="production-button production-primary"
-                    disabled={locked || !confirmed || !selected} title={readOnly ? READ_ONLY_HINT : undefined}>
+                    disabled={locked || !confirmed || !selected || uploader.busy} title={readOnly ? READ_ONLY_HINT : undefined}>
                     <Banknote size={18} aria-hidden="true" />{selected ? `Record ${walletPeso(selected)}` : 'Record payout'}
                 </button>
             </div>}>
@@ -136,8 +162,10 @@ export function OperatorPayout({ wallet, reload, online, stale }) {
                         <input value={note} maxLength={200} autoComplete="off" placeholder="For example: GCash, 6 Oct"
                             onChange={event => setNote(event.target.value)} aria-describedby={`${formId}-note`} />
                     </label>
-                    <p id={`${formId}-note`} className="production-help">{wallet.name} sees this payout and note in their wallet.
+                    <p id={`${formId}-note`} className="production-help">{wallet.name} sees this payout and note in their history.
                         Payouts can’t be edited or deleted. Pay is {walletPeso(wallet.rateCentavos)} for each complete {wallet.rateShirts} accepted shirts.</p>
+                    {selected && <ReceiptField name={wallet.name} receipt={receipt} uploader={uploader} disabled={locked}
+                        onChoose={attach} onRemove={() => setReceipt(null)} />}
                     {selected && <label className="production-checkbox">
                         <input type="checkbox" checked={confirmed} onChange={event => setConfirmed(event.target.checked)} />
                         I have paid {wallet.name} {walletPeso(selected)} outside the app.

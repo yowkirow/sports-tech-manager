@@ -74,5 +74,9 @@ export const api = {
             headers: { 'Content-Type': file.type || 'application/octet-stream' }, body: file
         });
     },
+    // Private: only the owner and the paid print operator can open it once attached to a payout.
+    uploadPayoutReceipt: async image => requestJson('/api/media/payout-receipts', {
+        method: 'POST', headers: { 'Content-Type': image.type || 'application/octet-stream' }, body: image
+    }),
     sendSms: details => apiRequest('/api/sms', { method: 'POST', body: { requestId: crypto.randomUUID(), ...details } })
 };

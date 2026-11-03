@@ -203,6 +203,40 @@ function readyAfterQA(db: D1Database, ids: string): D1PreparedStatement[] {
 const ORDER_IS_READY = `EXISTS(SELECT 1 FROM transactions t WHERE t.type='sale'
     AND coalesce(nullif(json_extract(t.details,'$.orderId'),''),t.id)=j.order_id
     AND json_extract(t.details,'$.fulfillmentStatus')='ready')`;
+// Owner decision (2026-11-03): QA checks a customer's whole package at once. Shirts on an order can
+// be accepted or sent back only once every shirt on it is printed: every shirt line of the order
+// is in the print queue (an active job, like READY_ORDERS requires), every active job is released
+// and unchanged, and no active job still has a shirt that was never printed. Reprints of rejected
+// shirts don't count as unprinted, so the rest of a package can still be checked during rework.
+const packagePrinted = (order: string) => `(NOT EXISTS(SELECT 1 FROM production_order_shirt_lines line WHERE line.order_id=${order}
+        AND NOT EXISTS(SELECT 1 FROM production_jobs y WHERE y.source_id=line.source_id AND y.item_index=line.item_index
+            AND y.order_id=line.order_id AND y.status<>'superseded'))
+    AND NOT EXISTS(SELECT 1 FROM production_jobs x WHERE x.order_id=${order} AND x.status<>'superseded'
+        AND (x.released_at IS NULL OR x.status='draft' OR x.source_changed<>0 OR x.required-x.accepted-x.pending-x.rework>0)))`;
+type PackageGap = { order_id: string; not_prepared: number; not_released: number; changed: number; to_print: number };
+// What each listed job's order (JSON array of job ids) still waits for, for orders not fully printed.
+function packageGaps(db: D1Database, ids: string): Promise<PackageGap[]> {
+    return rows<PackageGap>(db, `SELECT o.order_id,
+            (SELECT count(*) FROM production_order_shirt_lines line WHERE line.order_id=o.order_id
+                AND NOT EXISTS(SELECT 1 FROM production_jobs y WHERE y.source_id=line.source_id AND y.item_index=line.item_index
+                    AND y.order_id=line.order_id AND y.status<>'superseded')) AS not_prepared,
+            (SELECT count(*) FROM production_jobs x WHERE x.order_id=o.order_id AND x.status<>'superseded'
+                AND x.source_changed=0 AND (x.released_at IS NULL OR x.status='draft')) AS not_released,
+            (SELECT count(*) FROM production_jobs x WHERE x.order_id=o.order_id AND x.status<>'superseded' AND x.source_changed<>0) AS changed,
+            (SELECT coalesce(sum(x.required-x.accepted-x.pending-x.rework),0) FROM production_jobs x WHERE x.order_id=o.order_id
+                AND x.status NOT IN ('superseded','draft') AND x.released_at IS NOT NULL AND x.source_changed=0) AS to_print
+        FROM (SELECT DISTINCT order_id FROM production_jobs WHERE id IN (SELECT value FROM json_each(?))) o
+        WHERE NOT ${packagePrinted('o.order_id')} ORDER BY o.order_id`, [ids]);
+}
+const plural = (count: number, word: string) => `${count} ${word}${count === 1 ? '' : 's'}`;
+function waitingFor(gap: PackageGap): string {
+    return [
+        gap.not_prepared && `${plural(gap.not_prepared, 'shirt line')} not in the print queue yet`,
+        gap.not_released && `${plural(gap.not_released, 'job')} not released`,
+        gap.changed && `${plural(gap.changed, 'job')} changed and on hold`,
+        gap.to_print && `${plural(gap.to_print, 'shirt')} still to print`
+    ].filter(Boolean).join(', ') || 'shirts still to print';
+}
 // The member who certainly printed every shirt now awaiting QA: each `printed` event since the
 // job's pending count was last zero has that same actor. Otherwise NULL, and nobody is credited.
 // Must stay identical to the rule in the print_wallet_credits view (migration 0007).
@@ -429,9 +463,16 @@ async function acceptAllQA(db: D1Database, member: Member, body: Row, requestId:
     if (new Set(jobs.map(job => job.id)).size !== jobs.length) fail('Choose each job only once.');
     const items = JSON.stringify(jobs);
     const ids = JSON.stringify(jobs.map(job => job.id));
+    const gaps = await packageGaps(db, ids);
+    if (gaps.length) {
+        fail(`QA waits until every shirt on an order is printed. Not ready: ${gaps.slice(0, 3).map(gap => `${gap.order_id} (${waitingFor(gap)})`).join('; ')}`
+            + `${gaps.length > 3 ? `; ${gaps.length - 3} more` : ''}. Nothing was accepted.`, 'production_package_incomplete', 409);
+    }
     const field = (name: string) => `json_extract(r.value,'$.${name}')`;
     const open = "released_at IS NOT NULL AND source_changed=0 AND status NOT IN ('draft','completed','superseded')";
     const writes = [
+        guard(db, 'conflict', `NOT EXISTS(SELECT 1 FROM json_each(?) AS r JOIN production_jobs j ON j.id=r.value
+            WHERE NOT ${packagePrinted('j.order_id')})`, [ids]),
         statement(db, `UPDATE production_jobs SET pending=0,accepted=accepted+pending,
                 status=CASE WHEN accepted+pending=required THEN 'completed'
                     WHEN status IN ('held','problem') THEN status ELSE 'released' END,
@@ -509,6 +550,12 @@ async function changeJob(db: D1Database, member: Member, id: string, action: str
         qty = accepted + rejected;
         if (!qty) fail('Enter a quantity to accept or send back for rework.');
         if (rejected && !note) fail('Describe what needs rework.');
+        const [gap] = await packageGaps(db, JSON.stringify([id]));
+        if (gap) {
+            fail(`QA waits until every shirt on this order is printed: ${waitingFor(gap)}. Check the whole package then. Nothing was saved.`,
+                'production_package_incomplete', 409);
+        }
+        writes.push(guard(db, 'conflict', `NOT EXISTS(SELECT 1 FROM production_jobs j WHERE j.id=? AND NOT ${packagePrinted('j.order_id')})`, [id]));
         set = `pending=pending-?,accepted=accepted+?,rejected=rejected+?,rework=rework+?,
             status=CASE WHEN accepted+?=required THEN 'completed'
                 WHEN status IN ('held','problem') THEN status
@@ -700,15 +747,17 @@ async function getWallet(db: D1Database, member: Member, url: URL): Promise<Resp
         recent: recent.map(row => ({ shirts: row.shirts, jobCode: row.job_code, at: row.created_at })) } });
 }
 async function recordPayout(db: D1Database, member: Member, body: Row, requestId: string, hash: string): Promise<Response> {
-    fields(body, ['operatorId', 'amountCentavos', 'requestId'], ['note']);
+    fields(body, ['operatorId', 'amountCentavos', 'requestId'], ['note', 'receiptId']);
     const operatorId = text(body.operatorId, 'Employee', 256, false);
     const amount = integer(body.amountCentavos, 'Payout amount', PRINT_PAYOUT_MAX_CENTAVOS);
     if (!amount || amount % PRINT_RATE_CENTAVOS) fail(`Record payouts in whole ${peso(PRINT_RATE_CENTAVOS)} steps.`);
     const note = text(body.note ?? '', 'Payout note', 200);
+    const receiptId = body.receiptId === undefined ? null : mediaId(body.receiptId);
     const [operator] = await operators(db, operatorId);
     if (!operator) fail('Payouts can only be recorded for a print-operator account.');
     let saved = await receipt(db, member, requestId, hash);
     if (!saved) {
+        if (receiptId) await usableReceipt(db, member, receiptId);
         const id = crypto.randomUUID();
         // The balance check lives inside the atomic batch, so concurrent payouts cannot overdraw.
         const writes = [
@@ -717,14 +766,132 @@ async function recordPayout(db: D1Database, member: Member, body: Row, requestId
                 [operator.id, operator.id, amount]),
             statement(db, 'INSERT INTO print_payouts(id,operator_id,amount_centavos,note,created_by) VALUES (?,?,?,?,?)',
                 [id, operator.id, amount, note, member.id]),
-            guard(db, 'write', 'changes()=1')
+            guard(db, 'write', 'changes()=1'),
+            ...(receiptId ? attachWrites(db, member, id, receiptId) : [])
         ];
-        saved = await (await mutation(db, member, requestId, hash, writes,
-            `SELECT json_object('payout',json_object('id',id,'operatorId',operator_id,'amountCentavos',amount_centavos,
-                'note',note,'createdAt',created_at)) FROM print_payouts WHERE id=?`, [id],
+        saved = await (await mutation(db, member, requestId, hash, writes, PAYOUT_RESPONSE, [id],
             'This payout is more than the balance due, or the balance just changed. Nothing was recorded; reload the wallet.')).json();
     }
     return json({ ...(saved as Row), wallet: await walletOf(db, operator, manilaWeekStart()) });
+}
+
+// Payout receipts (owner request 2026-11-03): a photo or screenshot of the transfer, uploaded through
+// /api/media/payout-receipts (private) and attached when recording the payout or later. The paid
+// operator sees it in their history. Replacing a receipt keeps the payout unchanged and removes
+// the replaced image.
+const PAYOUT_RESPONSE = `SELECT json_object('payout',json_object('id',p.id,'operatorId',p.operator_id,'amountCentavos',p.amount_centavos,
+        'note',p.note,'createdAt',p.created_at,
+        'receiptUrl',CASE WHEN r.media_id IS NULL THEN NULL ELSE '/api/media/objects/'||r.media_id END))
+    FROM print_payouts p LEFT JOIN print_payout_receipts r ON r.payout_id=p.id WHERE p.id=?`;
+// An unattached private upload of this owner, stored under payout-receipts/.
+const USABLE_RECEIPT = `EXISTS(SELECT 1 FROM media_objects m WHERE m.id=? AND m.visibility='private'
+        AND m.object_key='payout-receipts/'||m.id AND m.owner_id=?)
+    AND NOT EXISTS(SELECT 1 FROM print_payout_receipts WHERE media_id=?)`;
+function mediaId(value: unknown): string {
+    if (typeof value !== 'string' || !UUID.test(value)) fail('Attach the receipt again: the upload reference is not valid.');
+    return value.toLowerCase();
+}
+async function usableReceipt(db: D1Database, member: Member, receiptId: string): Promise<void> {
+    const [row] = await rows<{ ok: number }>(db, `SELECT (${USABLE_RECEIPT}) AS ok`, [receiptId, member.id, receiptId]);
+    if (!row?.ok) fail('Attach the receipt again: the upload was not found or is already on another payout.', 'production_receipt_invalid', 409);
+}
+function attachWrites(db: D1Database, member: Member, payoutId: string, receiptId: string): D1PreparedStatement[] {
+    return [
+        guard(db, 'conflict', USABLE_RECEIPT, [receiptId, member.id, receiptId]),
+        statement(db, `INSERT INTO print_payout_receipts(payout_id,media_id,attached_by) VALUES (?,?,?)
+            ON CONFLICT(payout_id) DO UPDATE SET media_id=excluded.media_id,attached_by=excluded.attached_by,attached_at=excluded.attached_at`,
+        [payoutId, receiptId, member.id]),
+        guard(db, 'write', 'changes()=1')
+    ];
+}
+async function attachReceipt(
+    db: D1Database, bucket: R2Bucket, member: Member, payoutId: string, body: Row, requestId: string, hash: string
+): Promise<Response> {
+    fields(body, ['receiptId', 'requestId']);
+    const receiptId = mediaId(body.receiptId);
+    const [payout] = await rows<{ id: string; media_id: string | null; object_key: string | null }>(db, `SELECT p.id,r.media_id,m.object_key
+        FROM print_payouts p LEFT JOIN print_payout_receipts r ON r.payout_id=p.id LEFT JOIN media_objects m ON m.id=r.media_id
+        WHERE p.id=?`, [payoutId]);
+    if (!payout) fail('This payout was not found. Reload the history.', 'not_found', 404);
+    await usableReceipt(db, member, receiptId);
+    const writes = [
+        // The receipt seen above is still the current one, so two replacements cannot cross.
+        guard(db, 'conflict', `EXISTS(SELECT 1 FROM print_payouts WHERE id=?)
+            AND (SELECT media_id FROM print_payout_receipts WHERE payout_id=?) IS ?`, [payoutId, payoutId, payout.media_id]),
+        ...attachWrites(db, member, payoutId, receiptId),
+        ...(payout.media_id ? [statement(db, "DELETE FROM media_objects WHERE id=? AND object_key='payout-receipts/'||id", [payout.media_id])] : [])
+    ];
+    const response = await mutation(db, member, requestId, hash, writes, PAYOUT_RESPONSE, [payoutId],
+        'This payout’s receipt changed while you were attaching it. Reload the history and try again.');
+    if (payout.object_key) {
+        try { await bucket.delete(payout.object_key); }
+        catch { console.error(JSON.stringify({ code: 'orphaned_payout_receipt', mediaId: payout.media_id })); }
+    }
+    return response;
+}
+
+// A print operator's own record, newest first (owner request 2026-11-03): shirts they recorded as
+// printed, the owner's QA results credited to them (with the rework note) and their payouts with
+// the receipt. Owners read any operator's history; staff read only their own. Pages of 40, keyed
+// on (time, kind, reference) so new entries never shift a page. Customer names are the ones staff
+// already see on their jobs; no order numbers, prices or contacts.
+const HISTORY_PAGE = 40;
+const HISTORY_KINDS = ['payout', 'printed', 'qa'];
+const HISTORY_AT = /^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}(?:\.\d{1,9})?Z$/;
+const historyJob = `j.job_code,j.design_name,j.size,j.color,(SELECT substr(coalesce(
+        nullif(trim(CASE WHEN json_type(t.details,'$.customerName')='text' THEN json_extract(t.details,'$.customerName') END),''),
+        nullif(trim(CASE WHEN json_type(t.details,'$.customer')='text' THEN json_extract(t.details,'$.customer') END),'')),1,120)
+    FROM transactions t WHERE t.id=j.source_id) AS customer_name`;
+type HistoryRow = {
+    kind: string; at: string; ref: string; quantity: number; accepted: number; rejected: number; note: string;
+    job_code: string | null; design_name: string | null; size: string | null; color: string | null; customer_name: string | null;
+    amount: number | null; receipt_id: string | null;
+};
+async function getHistory(db: D1Database, member: Member, url: URL): Promise<Response> {
+    const owner = member.role === 'owner';
+    const requested = url.searchParams.get('memberId');
+    if (!owner && requested !== null && requested !== member.id) fail('You can only see your own history.', 'production_forbidden', 403);
+    if (owner && !requested) fail('Choose a print operator.');
+    const [operator] = await operators(db, owner ? requested! : member.id);
+    if (!operator) {
+        if (owner) fail('No print-operator account matches this ID.', 'not_found', 404);
+        fail('This action is not available for your account.', 'production_forbidden', 403);
+    }
+    const before = url.searchParams.get('before');
+    const cursor = before === null ? null : before.split('|');
+    if (cursor && (cursor.length !== 3 || !HISTORY_AT.test(cursor[0]!) || !HISTORY_KINDS.includes(cursor[1]!)
+        || !/^[0-9a-f-]{1,40}$/i.test(cursor[2]!))) fail('This history page is not valid. Reload the history.');
+    const id = operator.id;
+    const page = await rows<HistoryRow>(db, `SELECT * FROM (
+            SELECT 'printed' AS kind,e.created_at AS at,printf('%012d',e.id) AS ref,e.quantity,0 AS accepted,0 AS rejected,'' AS note,
+                ${historyJob},NULL AS amount,NULL AS receipt_id
+            FROM production_events e JOIN production_jobs j ON j.id=e.job_id WHERE e.action='printed' AND e.actor_id=?
+            UNION ALL
+            SELECT 'qa',e.created_at,printf('%012d',e.id),0,c.shirts,e.rejected,e.note,${historyJob},NULL,NULL
+            FROM print_wallet_credits c JOIN production_events e ON e.id=c.event_id JOIN production_jobs j ON j.id=e.job_id
+            WHERE c.operator_id=?
+            UNION ALL
+            SELECT 'qa',e.created_at,printf('%012d',e.id),0,0,e.rejected,e.note,${historyJob},NULL,NULL
+            FROM production_events e JOIN production_jobs j ON j.id=e.job_id
+            WHERE e.action='qa' AND e.accepted=0 AND e.rejected>0 AND e.operator_id=?
+            UNION ALL
+            SELECT 'payout',p.created_at,p.id,0,0,0,p.note,NULL,NULL,NULL,NULL,NULL,p.amount_centavos,r.media_id
+            FROM print_payouts p LEFT JOIN print_payout_receipts r ON r.payout_id=p.id WHERE p.operator_id=?
+        ) ${cursor ? 'WHERE at<? OR (at=? AND (kind<? OR (kind=? AND ref<?)))' : ''}
+        ORDER BY at DESC,kind DESC,ref DESC LIMIT ${HISTORY_PAGE + 1}`,
+    [id, id, id, id, ...(cursor ? [cursor[0], cursor[0], cursor[1], cursor[1], cursor[2]] : [])]);
+    const entries = page.slice(0, HISTORY_PAGE).map(row => {
+        if (row.kind === 'payout') {
+            return { id: `payout:${row.ref}`, type: 'payout', at: row.at, payoutId: row.ref, amountCentavos: Number(row.amount),
+                note: row.note, receiptUrl: row.receipt_id ? `/api/media/objects/${row.receipt_id}` : null };
+        }
+        const job = { jobCode: row.job_code, designName: row.design_name, size: row.size, color: row.color, customerName: row.customer_name || null };
+        return row.kind === 'printed'
+            ? { id: `printed:${row.ref}`, type: 'printed', at: row.at, quantity: Number(row.quantity), job }
+            : { id: `qa:${row.ref}`, type: 'qa', at: row.at, accepted: Number(row.accepted), rejected: Number(row.rejected), note: row.note, job };
+    });
+    const last = page.length > HISTORY_PAGE ? page[HISTORY_PAGE - 1]! : null;
+    return json({ memberId: operator.id, name: operator.name, entries, next: last ? `${last.at}|${last.kind}|${last.ref}` : null });
 }
 
 export async function handleProductionRequest(request: Request, env: AppEnv, member: Member): Promise<Response | null> {
@@ -739,6 +906,7 @@ export async function handleProductionRequest(request: Request, env: AppEnv, mem
         if (url.pathname === '/api/production/jobs') return getJobs(env.DB, member, url, env.GUEST_TOKEN_SECRET);
         if (url.pathname === '/api/production/sources') return getSources(env.DB, url);
         if (url.pathname === '/api/production/wallet') return getWallet(env.DB, member, url);
+        if (url.pathname === '/api/production/history') return getHistory(env.DB, member, url);
     }
     if (request.method !== 'POST' && !memberMutation) fail('This print route does not exist.', 'not_found', 404);
     const input = await readJson(request, 16384);
@@ -757,6 +925,8 @@ export async function handleProductionRequest(request: Request, env: AppEnv, mem
     const saved = await receipt(env.DB, member, requestId, hash);
     if (saved) return json(saved);
     if (memberMutation) return changeMember(env.DB, member, memberPath?.[1], input, requestId, hash);
+    const payoutReceipt = /^\/api\/production\/payouts\/([0-9a-f-]{36})\/receipt$/i.exec(url.pathname);
+    if (payoutReceipt) return attachReceipt(env.DB, env.MEDIA, member, payoutReceipt[1]!.toLowerCase(), input, requestId, hash);
     if (url.pathname === '/api/production/jobs/batch') return createJobs(env.DB, member, input, requestId, hash);
     if (url.pathname === '/api/production/qa') return acceptAllQA(env.DB, member, input, requestId, hash);
     if (url.pathname === '/api/production/jobs') return createJob(env.DB, member, input, requestId, hash);

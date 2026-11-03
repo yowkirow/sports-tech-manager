@@ -88,11 +88,50 @@ export function orderDateLabel(value, now = new Date()) {
 export const MAX_BATCH_JOBS = 100;
 
 // Jobs whose printed shirts the owner can accept in one go: released, current (order line
-// unchanged) jobs with shirts awaiting QA, in the list's first-in, first-out order.
-export const acceptAllQueue = (jobs) => jobs.filter(job => job.awaitingQA > 0 && !job.sourceChanged && job.releasedAt
-    && !['draft', 'completed', 'superseded'].includes(job.status));
+// unchanged) jobs with shirts awaiting QA, in the list's first-in, first-out order. With package
+// readiness (below), only jobs whose whole package is printed qualify.
+const awaitingOwnerQA = job => job.awaitingQA > 0 && !job.sourceChanged && job.releasedAt
+    && !['draft', 'completed', 'superseded'].includes(job.status);
+export const acceptAllQueue = (jobs, readiness) => jobs.filter(job => awaitingOwnerQA(job)
+    && (!readiness || readiness.get(job.orderId)?.printed === true));
+// Printed shirts that wait for the rest of their package before QA.
+export const qaWaitingQueue = (jobs, readiness) => jobs.filter(job => awaitingOwnerQA(job)
+    && readiness.get(job.orderId)?.printed !== true);
 // Exactly the counts the owner saw; the server refuses the whole save if any job changed since.
 export const acceptAllPayload = (jobs) => jobs.map(job => ({ id: job.id, expectedVersion: job.version, accepted: job.awaitingQA }));
+
+// Owner decision (2026-11-03): QA checks a customer's whole package at once. Mirrors the Worker's
+// rule per order: every shirt line is in the print queue (owner candidates are the lines that are
+// not), every active job is released and unchanged, and no active job still has a shirt that was
+// never printed. Reprints of rejected shirts don't count, so a package in rework stays checkable.
+export function packageReadiness(jobs, candidates = []) {
+    const orders = new Map();
+    const order = orderId => {
+        if (!orders.has(orderId)) orders.set(orderId, { orderId, notPrepared: [], notReleased: 0, changed: 0, toPrint: 0, printed: false });
+        return orders.get(orderId);
+    };
+    for (const candidate of candidates) if (candidate.orderId) order(candidate.orderId).notPrepared.push(candidate);
+    for (const job of jobs) {
+        if (job.status === 'superseded' || !job.orderId) continue;
+        const entry = order(job.orderId);
+        if (job.sourceChanged) entry.changed += 1;
+        else if (!job.releasedAt || job.status === 'draft') entry.notReleased += 1;
+        else entry.toPrint += Math.max(0, (Number(job.remainingToPrint) || 0) - (Number(job.reworkRemaining) || 0));
+    }
+    for (const entry of orders.values()) {
+        entry.printed = !entry.notPrepared.length && !entry.notReleased && !entry.changed && !entry.toPrint;
+    }
+    return orders;
+}
+// "4 shirts still to print · 1 job not released", for an order whose package isn't printed yet.
+export function packageWaitingFor(readiness) {
+    if (!readiness || readiness.printed) return '';
+    const lines = readiness.notPrepared.length;
+    return [lines && `${plural(lines, 'shirt line')} not in the print queue yet`,
+        readiness.notReleased && `${plural(readiness.notReleased, 'job')} not released`,
+        readiness.changed && `${plural(readiness.changed, 'job')} changed and on hold`,
+        readiness.toPrint && `${plural(readiness.toPrint, 'shirt')} still to print`].filter(Boolean).join(' · ');
+}
 
 // Print staff see their jobs as packages, one per order (owner request 2026-10-27). packageKey is
 // the server's opaque per-order key (staff never receive the order number); owner payloads fall
@@ -179,8 +218,36 @@ export function payoutSteps(balanceCentavos, rateCentavos) {
     for (let amount = Math.floor(balanceCentavos / rateCentavos) * rateCentavos; amount >= rateCentavos; amount -= rateCentavos) steps.push(amount);
     return steps;
 }
-export const productionError = (error) => error?.status === 409
-    ? 'This job or shirt line changed. Latest data has been requested. Check the counts, then retry; your input is still here.'
-    : error?.status === 403
-        ? 'Your access or assignment changed. Reload the queue before continuing.'
-        : error?.message || 'The save could not be confirmed. Retry this same action when you are online.';
+export const productionError = (error) => error?.code === 'production_package_incomplete' || error?.code === 'production_receipt_invalid'
+    ? error.message
+    : error?.status === 409
+        ? 'This job or shirt line changed. Latest data has been requested. Check the counts, then retry; your input is still here.'
+        : error?.status === 403
+            ? 'Your access or assignment changed. Reload the queue before continuing.'
+            : error?.message || 'The save could not be confirmed. Retry this same action when you are online.';
+
+// Print history (owner request 2026-11-03), grouped by day in Philippine time, newest first:
+// "Today", "Yesterday", then "Mon, Nov 3" (with the year for older years).
+const manilaDay = value => new Intl.DateTimeFormat('en-CA', { timeZone: 'Asia/Manila', year: 'numeric', month: '2-digit', day: '2-digit' })
+    .format(new Date(value));
+export function historyDayLabel(value, now = new Date()) {
+    const day = manilaDay(value);
+    if (day === manilaDay(now)) return 'Today';
+    if (day === manilaDay(now.getTime() - 86_400_000)) return 'Yesterday';
+    const date = new Date(value);
+    const year = part => new Intl.DateTimeFormat('en-PH', { year: 'numeric', timeZone: 'Asia/Manila' }).format(part);
+    return date.toLocaleDateString('en-PH', { weekday: 'short', month: 'short', day: 'numeric', timeZone: 'Asia/Manila',
+        ...(year(date) !== year(now) ? { year: 'numeric' } : {}) });
+}
+export function groupHistory(entries, now = new Date()) {
+    const days = [];
+    for (const entry of entries) {
+        const key = manilaDay(entry.at);
+        if (days.at(-1)?.key !== key) days.push({ key, label: historyDayLabel(entry.at, now), entries: [] });
+        days.at(-1).entries.push(entry);
+    }
+    return days;
+}
+export const historyTime = value => new Date(value).toLocaleTimeString('en-PH', { hour: 'numeric', minute: '2-digit', timeZone: 'Asia/Manila' });
+// "Court shirt · M · Black", for a history entry's job.
+export const historyJobLabel = job => [job?.designName, job?.size, job?.color].filter(Boolean).join(' · ');

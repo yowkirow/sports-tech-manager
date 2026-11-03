@@ -213,19 +213,25 @@ test('release requires explicit readiness and atomically moves every order row o
     assert.equal(f.db.sqlite.prepare("SELECT count(*) AS n FROM production_events WHERE action='source_changed'").get().n, 0);
 });
 
-test('partial printing remains awaiting QA; rejection creates rework without duplicate acceptance', async t => {
+test('QA waits for the whole package; rejection creates rework without duplicate acceptance', async t => {
     const f = fixture(t);
     let job = await release(f, await prepare(f));
     job = await progress(f, job, 'start');
     assert.equal(job.status, 'printing');
     job = await progress(f, job, 'printed', { quantity: 6 });
     assert.deepEqual([job.awaitingQA, job.accepted, job.remainingToPrint], [6, 0, 4]);
+    const before = snapshot(f);
+    await assert.rejects(qa(f, job, 4, 2), error => error.status === 409 && error.code === 'production_package_incomplete'
+        && /every shirt on this order is printed: 4 shirts still to print/.test(error.message));
+    assert.deepEqual(snapshot(f), before);
+    job = await progress(f, job, 'printed', { quantity: 4 });
     job = await qa(f, job, 4, 2);
-    assert.deepEqual([job.awaitingQA, job.accepted, job.rejected, job.reworkRemaining, job.remainingToPrint], [0, 4, 2, 2, 6]);
-    job = await progress(f, job, 'printed', { quantity: 3 });
-    assert.deepEqual([job.awaitingQA, job.accepted, job.reworkRemaining, job.remainingToPrint], [3, 4, 0, 3]);
+    assert.deepEqual([job.awaitingQA, job.accepted, job.rejected, job.reworkRemaining, job.remainingToPrint], [4, 4, 2, 2, 2]);
+    // Reprints of rejected shirts don't hold the rest of the package.
     job = await qa(f, job, 3, 0);
-    job = await progress(f, job, 'printed', { quantity: 3 });
+    assert.deepEqual([job.awaitingQA, job.accepted, job.reworkRemaining], [1, 7, 2]);
+    job = await progress(f, job, 'printed', { quantity: 2 });
+    assert.deepEqual([job.awaitingQA, job.accepted, job.reworkRemaining, job.remainingToPrint], [3, 7, 0, 0]);
     job = await qa(f, job, 3, 0);
     assert.deepEqual([job.status, job.required, job.accepted, job.awaitingQA, job.remainingToPrint], ['completed', 10, 10, 0, 0]);
     assert.equal(job.events.filter(event => event.action === 'qa').length, 3);
@@ -234,10 +240,48 @@ test('partial printing remains awaiting QA; rejection creates rework without dup
     await assert.rejects(qa(f, job, 1, 0), failure(409));
 });
 
+test('QA waits until every shirt line of the order is queued, released and printed, for single QA and accept all', async t => {
+    const f = fixture(t);
+    const THIRD = '00000000-0000-4000-8000-000000000003';
+    shirtOrder(f, THIRD, 'ST-PRINT');
+    const first = await progress(f, await release(f, await prepare(f)), 'printed', { quantity: 10 });
+    const waiting = async pattern => {
+        const before = snapshot(f);
+        await assert.rejects(qa(f, first, 10, 0), error => error.status === 409 && error.code === 'production_package_incomplete'
+            && pattern.test(error.message));
+        await assert.rejects(call(f, '/qa', acceptAllBody([first])), error => error.status === 409
+            && error.code === 'production_package_incomplete' && /Not ready: ST-PRINT \(/.test(error.message) && pattern.test(error.message));
+        assert.deepEqual(snapshot(f), before);
+    };
+    await waiting(/1 shirt line not in the print queue yet/);
+    let second = await prepare(f, { sourceId: THIRD });
+    await waiting(/1 job not released/);
+    second = await release(f, second);
+    await waiting(/2 shirts still to print/);
+    second = await progress(f, second, 'printed', { quantity: 1 });
+    await waiting(/1 shirt still to print/);
+    await progress(f, second, 'printed', { quantity: 1 });
+    const result = await call(f, `/jobs/${first.id}/qa`, { expectedVersion: first.version, requestId: requestId(), accepted: 10, rejected: 0 });
+    assert.deepEqual([result.job.accepted, result.orderReady], [10, false]);
+
+    // A changed shirt line holds its job, and the package waits for the owner's review.
+    const g = fixture(t);
+    shirtOrder(g, THIRD, 'ST-PRINT');
+    const big = await progress(g, await release(g, await prepare(g)), 'printed', { quantity: 10 });
+    await progress(g, await release(g, await prepare(g, { sourceId: THIRD })), 'printed', { quantity: 2 });
+    changeSource(g, { size: 'XL' }, THIRD);
+    await assert.rejects(qa(g, big, 10, 0), error => error.code === 'production_package_incomplete' && /1 job changed and on hold/.test(error.message));
+    // An order whose only shirt line is printed is never held by other orders.
+    const h = fixture(t);
+    shirtOrder(h, THIRD, 'ST-OTHER');
+    const alone = await progress(h, await release(h, await prepare(h)), 'printed', { quantity: 10 });
+    assert.equal((await qa(h, alone, 10, 0)).status, 'completed');
+});
+
 test('reviewed replacement preserves old production counts and creates a fresh releasable draft', async t => {
     const f = fixture(t);
     let job = await release(f, await prepare(f));
-    job = await progress(f, job, 'printed', { quantity: 5 });
+    job = await progress(f, job, 'printed', { quantity: 10 });
     job = await qa(f, job, 4, 1);
     changeSource(f, { size: 'XL', quantity: 8 });
     const held = (await call(f)).jobs.find(item => item.id === job.id);
@@ -251,7 +295,7 @@ test('reviewed replacement preserves old production counts and creates a fresh r
     assert.notEqual(revised.id, job.id);
     assert.deepEqual([revised.status, revised.size, revised.required, revised.accepted, revised.awaitingQA], ['draft', 'XL', 8, 0, 0]);
     const old = f.db.sqlite.prepare('SELECT status,accepted,rejected,pending,superseded_by FROM production_jobs WHERE id=?').get(job.id);
-    assert.deepEqual({ ...old }, { status: 'superseded', accepted: 4, rejected: 1, pending: 0, superseded_by: revised.id });
+    assert.deepEqual({ ...old }, { status: 'superseded', accepted: 4, rejected: 1, pending: 5, superseded_by: revised.id });
     assert.equal((await call(f, `/jobs/${job.id}/revise`, input)).job.id, revised.id);
     assert.equal((await call(f, '/jobs', undefined, printer)).jobs.length, 0);
     const released = await release(f, revised);
@@ -490,7 +534,7 @@ test('problem status requires a note and does not consume quantity or inventory'
 test('QA receipt replay never accepts twice and employee cannot perform owner actions', async t => {
     const f = fixture(t);
     let job = await release(f, await prepare(f));
-    job = await progress(f, job, 'printed', { quantity: 4 });
+    job = await progress(f, job, 'printed', { quantity: 10 });
     const body = { expectedVersion: job.version, requestId: requestId(), accepted: 2, rejected: 1, note: 'Recheck alignment.' };
     await assert.rejects(call(f, `/jobs/${job.id}/qa`, body, printer), failure(403));
     await assert.rejects(call(f, `/jobs/${job.id}/hold`, {
@@ -500,7 +544,7 @@ test('QA receipt replay never accepts twice and employee cannot perform owner ac
     const before = snapshot(f);
     assert.deepEqual(await call(f, `/jobs/${job.id}/qa`, body), first);
     assert.deepEqual(snapshot(f), before);
-    assert.deepEqual([first.job.accepted, first.job.awaitingQA, first.job.reworkRemaining], [2, 1, 1]);
+    assert.deepEqual([first.job.accepted, first.job.awaitingQA, first.job.reworkRemaining], [2, 7, 1]);
 });
 
 test('late offboarding failure rolls back membership, withdrawal and audit together', async t => {
@@ -570,7 +614,8 @@ test('Ready guard requires coverage for every nested shirt, including blanks and
     ] });
     let first = await release(f, await prepare(f, { itemIndex: 0 }));
     first = await progress(f, first, 'printed', { quantity: 2 });
-    await qa(f, first, 2, 0);
+    // Accepted before QA waited for whole packages, while the second shirt line was never queued.
+    f.db.sqlite.prepare("UPDATE production_jobs SET pending=0,accepted=required,status='completed' WHERE id=?").run(first.id);
     await assert.rejects(readyBatch(f), /atomic batch failed/);
     let second = await release(f, await prepare(f, { itemIndex: 1 }));
     second = await progress(f, second, 'printed', { quantity: 3 });
@@ -871,14 +916,16 @@ test('the 0011 backfill attaches exactly the photo a newly prepared job gets, an
 });
 
 const acceptAllBody = jobs => ({ jobs: jobs.map(job => ({ id: job.id, expectedVersion: job.version, accepted: job.awaitingQA })), requestId: requestId() });
-async function twoPrintedJobs(f) {
+// Two orders, each a whole printed package: ST-PRINT (10 shirts, plus a ball) and ST-OTHER (2).
+// sendBack sends that many of the 10 back for reprinting first, so they stay awaiting rework.
+async function twoPrintedJobs(f, sendBack = 0) {
     const THIRD = '00000000-0000-4000-8000-000000000003';
     shirtOrder(f, THIRD, 'ST-OTHER');
     const lines = (await call(f, '/sources')).sources.map(lineOf);
     const released = (await call(f, '/jobs/batch', { lines, assigneeId: printer.id, release: true, artworkReady: true, blanksReady: true, requestId: requestId() })).jobs;
-    const big = released.find(job => job.required === 10);
-    const small = released.find(job => job.required === 2);
-    return [await progress(f, big, 'printed', { quantity: 4 }), await progress(f, small, 'printed', { quantity: 2 })];
+    let big = await progress(f, released.find(job => job.required === 10), 'printed', { quantity: 10 });
+    if (sendBack) big = await qa(f, big, 0, sendBack);
+    return [big, await progress(f, released.find(job => job.required === 2), 'printed', { quantity: 2 })];
 }
 const comparable = f => ({
     jobs: f.db.sqlite.prepare('SELECT required,pending,accepted,rejected,rework,status,version,source_changed FROM production_jobs ORDER BY required').all().map(row => ({ ...row })),
@@ -889,9 +936,9 @@ const comparable = f => ({
 
 test('accept all QA records exactly what single full acceptances record, including wallet credit', async t => {
     const single = fixture(t);
-    for (const job of await twoPrintedJobs(single)) await qa(single, job, job.awaitingQA, 0);
+    for (const job of await twoPrintedJobs(single, 6)) await qa(single, job, job.awaitingQA, 0);
     const bulk = fixture(t);
-    const printed = await twoPrintedJobs(bulk);
+    const printed = await twoPrintedJobs(bulk, 6);
     const result = await call(bulk, '/qa', acceptAllBody(printed));
     assert.deepEqual(result.jobs.map(job => [job.required, job.accepted, job.awaitingQA, job.status]), [[10, 4, 0, 'released'], [2, 2, 0, 'completed']]);
     assert.ok(result.jobs.every(job => job.orderId && job.customerName), 'owner payload');
@@ -910,15 +957,16 @@ test('accept all QA is owner-only, idempotent and all-or-nothing when anything c
         { ...body, jobs: Array.from({ length: 101 }, (_, index) => ({ id: `job-${index}`, expectedVersion: 1, accepted: 1 })) }]) {
         await assert.rejects(call(f, '/qa', { ...bad, requestId: requestId() }), failure(400));
     }
-    // The printer recorded more since the owner loaded the list: the counts no longer match.
-    await progress(f, printed[0], 'printed', { quantity: 1 });
+    // A shirt was sent back since the owner loaded the list: the counts no longer match.
+    const big = await qa(f, printed[0], 0, 1);
     const changed = snapshot(f);
     await assert.rejects(call(f, '/qa', body), failure(409));
     assert.deepEqual(snapshot(f), changed);
+    await progress(f, big, 'printed', { quantity: 1 });
     const fresh = (await call(f)).jobs.filter(job => job.awaitingQA > 0);
     const saved = acceptAllBody(fresh);
     const result = await call(f, '/qa', saved);
-    assert.deepEqual(result.jobs.map(job => job.accepted).sort((a, b) => a - b), [2, 5]);
+    assert.deepEqual(result.jobs.map(job => job.accepted).sort((a, b) => a - b), [2, 10]);
     const after = snapshot(f);
     assert.deepEqual(await call(f, '/qa', saved), result, 'replay returns the saved receipt');
     assert.deepEqual(snapshot(f), after);
@@ -929,7 +977,7 @@ test('accept all QA is owner-only, idempotent and all-or-nothing when anything c
 
 test('accept all QA keeps held jobs held, and refuses the whole batch if an order line changed', async t => {
     const f = fixture(t);
-    let [big] = await twoPrintedJobs(f);
+    let [big] = await twoPrintedJobs(f, 6);
     big = (await call(f, `/jobs/${big.id}/hold`, { expectedVersion: big.version, requestId: requestId(), note: 'Check ink first.' })).job;
     const result = await call(f, '/qa', acceptAllBody([big]));
     assert.deepEqual([result.jobs[0].status, result.jobs[0].accepted, result.jobs[0].awaitingQA], ['held', 4, 0]);
@@ -979,10 +1027,10 @@ test('an order stays open until every shirt line is accepted, and closed orders 
     const THIRD = '00000000-0000-4000-8000-000000000003';
     shirtOrder(f, THIRD, 'ST-PRINT');
     let first = await progress(f, await release(f, await prepare(f)), 'printed', { quantity: 10 });
-    let result = await qaCall(f, first, 10);
-    assert.equal(result.orderReady, false, 'the second shirt line is not printed yet');
-    assert.deepEqual([fulfillment(f, SOURCE), fulfillment(f, THIRD)], ['in_progress', 'in_progress']);
     let second = await progress(f, await release(f, await prepare(f, { sourceId: THIRD })), 'printed', { quantity: 2 });
+    let result = await qaCall(f, first, 10);
+    assert.equal(result.orderReady, false, 'the second shirt line is not accepted yet');
+    assert.deepEqual([fulfillment(f, SOURCE), fulfillment(f, THIRD)], ['in_progress', 'in_progress']);
     result = await qaCall(f, second, 2);
     assert.equal(result.orderReady, true);
     assert.deepEqual([fulfillment(f, SOURCE), fulfillment(f, SECOND), fulfillment(f, THIRD)], ['ready', 'ready', 'ready']);
@@ -997,25 +1045,24 @@ test('an order stays open until every shirt line is accepted, and closed orders 
 
 test('accept all moves completed orders to Ready exactly like single QA does', async t => {
     const f = fixture(t);
-    const printed = await twoPrintedJobs(f);
+    const printed = await twoPrintedJobs(f, 1);
     const result = await call(f, '/qa', acceptAllBody(printed));
     assert.equal(result.readyOrders, 1);
-    assert.equal(fulfillment(f, SOURCE), 'in_progress', '4 of 10 accepted');
+    assert.equal(fulfillment(f, SOURCE), 'in_progress', '9 of 10 accepted; 1 is being reprinted');
     assert.equal(fulfillment(f, '00000000-0000-4000-8000-000000000003'), 'ready');
     const statuses = g => ({
         rows: g.db.sqlite.prepare("SELECT id,json_extract(details,'$.fulfillmentStatus') AS s FROM transactions ORDER BY id").all().map(row => ({ ...row })),
         orders: g.db.sqlite.prepare('SELECT id,version FROM orders ORDER BY id').all().map(row => ({ ...row }))
     });
     const single = fixture(t);
-    for (const job of await twoPrintedJobs(single)) await qa(single, job, job.awaitingQA, 0);
+    for (const job of await twoPrintedJobs(single, 1)) await qa(single, job, job.awaitingQA, 0);
     assert.deepEqual(statuses(f), statuses(single));
 });
 
 test('the 0014 backfill moves exactly the orders the Worker would, and is safe to re-run', async t => {
     const f = fixture(t);
     const OTHER = '00000000-0000-4000-8000-000000000003';
-    const [big, small] = await twoPrintedJobs(f);
-    await progress(f, big, 'printed', { quantity: 6 });
+    await twoPrintedJobs(f);
     const fresh = (await call(f)).jobs.filter(job => job.awaitingQA > 0);
     await call(f, '/qa', acceptAllBody(fresh));
     const NEW = '00000000-0000-4000-8000-000000000004';
@@ -1044,5 +1091,4 @@ test('the 0014 backfill moves exactly the orders the Worker would, and is safe t
     assert.deepEqual([fulfillment(f, SOURCE), fulfillment(f, SECOND), fulfillment(f, OTHER), fulfillment(f, NEW)],
         ['in_progress', 'cancelled', 'ready', 'in_progress']);
     assert.equal(f.db.sqlite.prepare('SELECT count(*) AS n FROM production_jobs WHERE source_changed=1').get().n, 0);
-    void small;
 });

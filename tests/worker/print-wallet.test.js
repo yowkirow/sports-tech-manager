@@ -5,6 +5,7 @@ import { test } from 'node:test';
 import {
     handleProductionRequest, manilaWeekStart, PRINT_RATE_CENTAVOS, PRINT_RATE_SHIRTS
 } from '../../worker/production-api.ts';
+import { handleMediaRequest } from '../../worker/media-api.ts';
 import { HttpError } from '../../worker/errors.ts';
 import worker from '../../worker/index.ts';
 
@@ -40,7 +41,12 @@ class LocalD1 {
                 this.values = values;
                 return this;
             },
-            async all() { return db.execute(this); }
+            async all() { return db.execute(this); },
+            async run() { return db.execute(this); },
+            async first(column) {
+                const row = db.execute(this).results[0];
+                return column ? row?.[column] ?? null : row ?? null;
+            }
         };
     }
     execute(statement) {
@@ -80,7 +86,17 @@ function fixture(t, quantity = 100) {
         price: 950, total: 95000, customerName: 'PRIVATE CUSTOMER', contactNumber: 'PRIVATE CONTACT',
         customerAddress: 'PRIVATE ADDRESS', receiptUrl: 'PRIVATE RECEIPT', inventoryCost: 'PRIVATE COST'
     }));
-    return { db, env: { DB: db, PRINT_QUEUE_ENABLED: 'true' } };
+    return { db, env: { DB: db, MEDIA: bucket(), PRINT_QUEUE_ENABLED: 'true' } };
+}
+// In-memory stand-in for the R2 media bucket.
+function bucket() {
+    const objects = new Map();
+    return {
+        objects,
+        async put(key, bytes, options) { objects.set(key, { bytes: new Uint8Array(bytes), options }); },
+        async get(key) { const item = objects.get(key); return item ? { body: item.bytes, size: item.bytes.length } : null; },
+        async delete(key) { objects.delete(key); }
+    };
 }
 async function call(f, path, body, member = owner, method = body === undefined ? 'GET' : 'POST') {
     const response = await handleProductionRequest(new Request(`https://example.invalid${path.startsWith('/api/') ? path : `/api/production${path}`}`, {
@@ -129,13 +145,16 @@ test('only owner-accepted QA counts: printed, rejected and rework shirts never d
     current = await printed(f, current, 6);
     let mine = await wallet(f);
     assert.deepEqual([mine.acceptedShirts, mine.awaitingQA, mine.earnedCentavos], [0, 6, 0]);
+    // QA waits for the whole package (owner decision 2026-11-03).
+    current = await printed(f, current, 4);
     current = await qa(f, current, 4, 2);
     mine = await wallet(f);
-    assert.deepEqual([mine.acceptedShirts, mine.awaitingQA], [4, 0]);
+    assert.deepEqual([mine.acceptedShirts, mine.awaitingQA], [4, 4]);
     current = await printed(f, current, 2);
     current = await qa(f, current, 0, 2);
     assert.equal((await wallet(f)).acceptedShirts, 4);
-    current = await accept(f, current, 6);
+    current = await printed(f, current, 2);
+    current = await qa(f, current, 6);
     mine = await wallet(f);
     assert.equal(current.status, 'completed');
     assert.deepEqual([mine.acceptedShirts, mine.awaitingQA, mine.progress, mine.nextPayoutIn], [10, 0, 10, 20]);
@@ -144,23 +163,25 @@ test('only owner-accepted QA counts: printed, rejected and rework shirts never d
 });
 
 test('earned is floor(accepted / 30) x PHP 1,000 at 29, 30 and 61 shirts', async t => {
-    const f = fixture(t);
-    let current = await accept(f, await job(f), 29);
+    const f = fixture(t, 61);
+    let current = await printed(f, await job(f), 61);
+    current = await qa(f, current, 29);
     let mine = await wallet(f);
     assert.deepEqual([mine.acceptedShirts, mine.progress, mine.nextPayoutIn, mine.earnedCentavos, mine.balanceCentavos], [29, 29, 1, 0, 0]);
-    current = await accept(f, current, 1);
+    current = await qa(f, current, 1);
     mine = await wallet(f);
     assert.deepEqual([mine.acceptedShirts, mine.progress, mine.nextPayoutIn, mine.earnedCentavos, mine.balanceCentavos], [30, 0, 30, K, K]);
-    await accept(f, current, 31);
+    await qa(f, current, 31);
     mine = await wallet(f);
     assert.deepEqual([mine.acceptedShirts, mine.progress, mine.nextPayoutIn, mine.earnedCentavos], [61, 1, 29, 2 * K]);
     assert.deepEqual([mine.rateShirts, mine.rateCentavos], [30, 100000]);
 });
 
 test('credit goes to the certain printer, not the assignee; mixed printers stay unattributed', async t => {
-    const f = fixture(t);
-    let current = await job(f);
-    current = await accept(f, current, 5);
+    const f = fixture(t, 21);
+    // Sam prints the whole package; 5 pass and 16 go back for reprinting.
+    let current = await printed(f, await job(f), 21);
+    current = await qa(f, current, 5, 16);
     // Pending returned to zero, so the next batch is judged on its own.
     await call(f, '/api/members/printer', { active: false, requestId: requestId() }, owner, 'PATCH');
     current = (await call(f, `/jobs/${current.id}/release`, { expectedVersion: (await call(f, '/jobs')).jobs[0].version,
@@ -184,6 +205,7 @@ test('credit goes to the certain printer, not the assignee; mixed printers stay 
     assert.equal(qaOperators(f).at(-1), null);
     // Shirts the owner records as printed are not credited to any print operator.
     current = await accept(f, current, 4, owner);
+    assert.equal(current.status, 'completed');
     const after = await call(f, '/wallet');
     const next = Object.fromEntries(after.wallets.map(entry => [entry.memberId, entry]));
     assert.equal(next.printer.acceptedShirts, 5);
@@ -211,11 +233,10 @@ test('QA events written before 0007 are judged by the same certainty rule, never
 });
 
 test('the stored printer always matches the migration view rule', async t => {
-    const f = fixture(t);
-    let current = await job(f);
-    current = await accept(f, current, 3);
-    current = await printed(f, current, 4);
-    current = await qa(f, current, 2, 2);
+    const f = fixture(t, 10);
+    let current = await printed(f, await job(f), 10);
+    current = await qa(f, current, 3);
+    current = await qa(f, current, 2, 5);
     current = await printed(f, current, 2);
     current = await printed(f, current, 2, owner);
     current = await qa(f, current, 3, 1);
@@ -231,7 +252,7 @@ test('the stored printer always matches the migration view rule', async t => {
 });
 
 test('payouts are whole PHP 1,000 steps within the balance, immutable and recorded once', async t => {
-    const f = fixture(t);
+    const f = fixture(t, 95);
     await accept(f, await job(f), 95);
     assert.equal((await wallet(f)).balanceCentavos, 3 * K);
     for (const amount of [0, -K, K / 2, K + 1, 1.5, '100000', null, 100000001]) {
@@ -265,19 +286,20 @@ test('payouts are whole PHP 1,000 steps within the balance, immutable and record
 });
 
 test('concurrent payouts cannot overdraw and a duplicate request ID pays once', async t => {
-    const f = fixture(t, 200);
-    await accept(f, await job(f), 60);
+    const f = fixture(t, 120);
+    let current = await printed(f, await job(f), 120);
+    current = await qa(f, current, 60);
     const body = { operatorId: printer.id, amountCentavos: 2 * K, requestId: requestId() };
     const same = await Promise.all([call(f, '/payouts', body), call(f, '/payouts', body)]);
     assert.deepEqual(same[0].payout, same[1].payout);
     assert.equal(payoutRows(f).length, 1);
 
-    await accept(f, (await call(f, '/jobs')).jobs[0], 30);
+    current = await qa(f, current, 30);
     const race = await Promise.allSettled([payout(f, printer.id, K), payout(f, printer.id, K)]);
     assert.equal(race.filter(result => result.status === 'fulfilled').length, 1);
     assert.equal(race.find(result => result.status === 'rejected').reason.status, 409);
     // The balance is enforced inside the batch, even when it changes after the request is read.
-    await accept(f, (await call(f, '/jobs')).jobs[0], 30);
+    await qa(f, current, 30);
     f.db.beforeBatch = () => f.db.sqlite.prepare(`INSERT INTO print_payouts(id,operator_id,amount_centavos,created_by)
         VALUES ('late','printer',100000,'owner')`).run();
     await assert.rejects(payout(f, printer.id, K), failure(409));
@@ -287,7 +309,7 @@ test('concurrent payouts cannot overdraw and a duplicate request ID pays once', 
 });
 
 test('payouts are owner-only and only to print-operator accounts; offboarded operators can still be paid', async t => {
-    const f = fixture(t);
+    const f = fixture(t, 30);
     await accept(f, await job(f), 30);
     await assert.rejects(payout(f, owner.id, K), failure(400));
     await assert.rejects(payout(f, reseller.id, K), failure(400));
@@ -307,7 +329,7 @@ test('payouts are owner-only and only to print-operator accounts; offboarded ope
 });
 
 test('an operator sees only their own wallet; other, inactive and owner-only access is refused', async t => {
-    const f = fixture(t);
+    const f = fixture(t, 31);
     await accept(f, await job(f), 31);
     assert.equal((await wallet(f)).memberId, 'printer');
     assert.equal((await wallet(f, printer, '?memberId=printer')).acceptedShirts, 31);
@@ -325,9 +347,10 @@ test('an operator sees only their own wallet; other, inactive and owner-only acc
 });
 
 test('the operator wallet response is an allowlist with no customer, order, price or other-employee data', async t => {
-    const f = fixture(t);
-    let current = await accept(f, await job(f), 30);
+    const f = fixture(t, 32);
+    let current = await printed(f, await job(f), 30);
     current = await printed(f, current, 2);
+    await qa(f, current, 30);
     await payout(f, printer.id, K, { note: 'Cash' });
     const jobCode = f.db.sqlite.prepare('SELECT job_code FROM production_jobs').get().job_code;
     const response = await call(f, '/wallet', undefined, printer);
@@ -348,7 +371,7 @@ test('the operator wallet response is an allowlist with no customer, order, pric
 });
 
 test('owner sees every print operator, one by memberId, and unattributed shirts', async t => {
-    const f = fixture(t);
+    const f = fixture(t, 45);
     await accept(f, await job(f), 45);
     const all = await call(f, '/wallet');
     assert.deepEqual(Object.keys(all).sort(), ['unattributed', 'wallets']);
@@ -367,7 +390,7 @@ test('shirts this week use the Monday-Sunday week in Asia/Manila', async t => {
     assert.equal(manilaWeekStart(new Date('2026-10-04T15:59:59.999Z')), '2026-09-27T16:00:00.000Z');
     assert.equal(manilaWeekStart(new Date('2026-10-11T15:59:59.999Z')), '2026-10-04T16:00:00.000Z');
     assert.equal(manilaWeekStart(new Date('2026-10-11T16:00:00.000Z')), '2026-10-11T16:00:00.000Z');
-    const f = fixture(t);
+    const f = fixture(t, 12);
     const current = await accept(f, await job(f), 12);
     f.db.sqlite.prepare(`INSERT INTO production_events(job_id,actor_id,actor_name,action,quantity,accepted,rejected,version,operator_id,created_at)
         VALUES (?,'owner','Owner','qa',0,5,0,1,'printer','2020-01-06T00:00:00.000Z')`).run(current.id);
@@ -392,4 +415,128 @@ test('migration 0007 is additive and leaves earlier migrations untouched', () =>
     const code = walletMigration.replace(/--.*$/gm, '');
     assert.doesNotMatch(code, /\bDROP\b|\bRENAME\b|\bUPDATE\s+\w+\s+SET\b|\bDELETE\s+FROM\b/i);
     assert.doesNotMatch(code, /\bREAL\b|\bFLOAT\b|\bNUMERIC\b/i);
+});
+
+const PNG = new Uint8Array([137, 80, 78, 71, 13, 10, 26, 10, 0, 0, 0, 13]);
+async function uploadReceipt(f, member = owner) {
+    const response = await handleMediaRequest(new Request('https://example.invalid/api/media/payout-receipts', {
+        method: 'POST', headers: { 'Content-Type': 'image/png' }, body: PNG
+    }), f.env, member);
+    assert.equal(response.status, 201);
+    return response.json();
+}
+async function openMedia(f, url, member) {
+    try {
+        return (await handleMediaRequest(new Request(`https://example.invalid${url}`), f.env, member)).status;
+    } catch (error) {
+        if (error instanceof HttpError) return error.status;
+        throw error;
+    }
+}
+
+test('payout receipts are private uploads, attached once, opened only by the owner and the paid operator', async t => {
+    const f = fixture(t, 60);
+    await accept(f, await job(f), 60);
+    await assert.rejects(uploadReceipt(f, printer), failure(403));
+    const upload = await uploadReceipt(f);
+    assert.match(upload.url, /^\/api\/media\/objects\/[0-9a-f-]{36}$/);
+    const stored = f.db.sqlite.prepare('SELECT object_key,visibility,owner_id FROM media_objects WHERE id=?').get(upload.id);
+    assert.deepEqual({ ...stored }, { object_key: `payout-receipts/${upload.id}`, visibility: 'private', owner_id: 'owner' });
+    assert.equal(f.env.MEDIA.objects.get(`payout-receipts/${upload.id}`).options.httpMetadata.cacheControl, 'private, no-store');
+    // Until it is attached, only the owner can open it.
+    assert.equal(await openMedia(f, upload.url, owner), 200);
+    assert.equal(await openMedia(f, upload.url, printer), 403);
+    const paid = await payout(f, printer.id, K, { note: 'GCash', receiptId: upload.id });
+    assert.equal(paid.payout.receiptUrl, upload.url);
+    assert.equal(await openMedia(f, upload.url, printer), 200);
+    for (const member of [other, reseller, former]) assert.equal(await openMedia(f, upload.url, member), 403, member.id);
+    // One payout per receipt; product photos and other ids are never receipts.
+    await assert.rejects(payout(f, printer.id, K, { receiptId: upload.id }), failure(409, 'production_receipt_invalid'));
+    const PHOTO = 'aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa';
+    f.db.sqlite.prepare(`INSERT INTO media_objects(id,object_key,visibility,content_type,byte_size,sha256,owner_id)
+        VALUES (?,?,'public','image/png',1,'x','owner')`).run(PHOTO, `products/${PHOTO}`);
+    await assert.rejects(payout(f, printer.id, K, { receiptId: PHOTO }), failure(409, 'production_receipt_invalid'));
+    await assert.rejects(payout(f, printer.id, K, { receiptId: 'not-a-uuid' }), failure(400));
+    assert.equal(payoutRows(f).length, 1);
+    assert.equal(f.db.sqlite.prepare('SELECT count(*) AS n FROM print_payout_receipts').get().n, 1);
+});
+
+test('the owner can attach a receipt to an earlier payout or replace it; the replaced image is removed', async t => {
+    const f = fixture(t, 30);
+    await accept(f, await job(f), 30);
+    const { payout: earlier } = await payout(f, printer.id, K, { note: 'Cash' });
+    assert.equal(earlier.receiptUrl, null);
+    const first = await uploadReceipt(f);
+    const body = { receiptId: first.id, requestId: requestId() };
+    await assert.rejects(call(f, `/payouts/${earlier.id}/receipt`, body, printer), failure(403));
+    const attached = await call(f, `/payouts/${earlier.id}/receipt`, body);
+    assert.deepEqual([attached.payout.id, attached.payout.receiptUrl], [earlier.id, first.url]);
+    assert.deepEqual(await call(f, `/payouts/${earlier.id}/receipt`, body), attached, 'replay returns the saved receipt');
+    const second = await uploadReceipt(f);
+    const replaced = await call(f, `/payouts/${earlier.id}/receipt`, { receiptId: second.id, requestId: requestId() });
+    assert.equal(replaced.payout.receiptUrl, second.url);
+    assert.equal(f.db.sqlite.prepare('SELECT count(*) AS n FROM media_objects WHERE id=?').get(first.id).n, 0);
+    assert.ok(!f.env.MEDIA.objects.has(`payout-receipts/${first.id}`), 'the replaced image is deleted');
+    assert.ok(f.env.MEDIA.objects.has(`payout-receipts/${second.id}`));
+    assert.equal(await openMedia(f, first.url, owner), 404);
+    assert.equal(await openMedia(f, second.url, printer), 200);
+    // The payout itself never changes.
+    assert.deepEqual(payoutRows(f), [{ operator_id: 'printer', amount_centavos: K, note: 'Cash', created_by: 'owner' }]);
+    await assert.rejects(call(f, '/payouts/00000000-0000-4000-8000-00000000dead/receipt',
+        { receiptId: (await uploadReceipt(f)).id, requestId: requestId() }), failure(404));
+});
+
+test('print history lists the operator’s prints, QA results and payouts newest first, in stable pages', async t => {
+    const f = fixture(t, 30);
+    let current = await printed(f, await job(f), 30);
+    current = await qa(f, current, 27, 3);
+    current = await printed(f, current, 3);
+    current = await qa(f, current, 3);
+    const upload = await uploadReceipt(f);
+    await payout(f, printer.id, K, { note: 'GCash', receiptId: upload.id });
+    const mine = await call(f, '/history', undefined, printer);
+    assert.deepEqual(Object.keys(mine).sort(), ['entries', 'memberId', 'name', 'next']);
+    assert.deepEqual([mine.memberId, mine.name, mine.next], ['printer', 'Sam', null]);
+    const newestFirst = [...mine.entries].sort((a, b) => b.at.localeCompare(a.at) || b.type.localeCompare(a.type) || b.id.localeCompare(a.id));
+    assert.deepEqual(mine.entries.map(entry => entry.id), newestFirst.map(entry => entry.id));
+    const of = type => mine.entries.filter(entry => entry.type === type);
+    assert.deepEqual(of('printed').map(entry => entry.quantity).sort((a, b) => a - b), [3, 30]);
+    assert.deepEqual(of('qa').map(entry => `${entry.accepted}/${entry.rejected}`).sort(), ['27/3', '3/0']);
+    const sentBack = of('qa').find(entry => entry.rejected === 3);
+    assert.equal(sentBack.note, 'Reprint.');
+    assert.deepEqual(sentBack.job, { jobCode: current.jobCode, designName: 'Court shirt', size: 'M', color: 'Black', customerName: 'PRIVATE CUSTOMER' });
+    const [paid] = of('payout');
+    assert.deepEqual([paid.amountCentavos, paid.note, paid.receiptUrl, typeof paid.payoutId], [K, 'GCash', upload.url, 'string']);
+    const encoded = JSON.stringify(mine);
+    for (const forbidden of ['ST-PRINT', 'PRIVATE CONTACT', 'PRIVATE ADDRESS', 'PRIVATE RECEIPT', 'PRIVATE COST', '95000', 'orderId', 'Alex']) {
+        assert.ok(!encoded.includes(forbidden), forbidden);
+    }
+    // Staff read only their own; the owner names the operator.
+    await assert.rejects(call(f, '/history?memberId=other', undefined, printer), failure(403));
+    assert.deepEqual((await call(f, '/history?memberId=printer', undefined, printer)).entries, mine.entries);
+    assert.deepEqual((await call(f, '/history?memberId=printer')).entries, mine.entries);
+    await assert.rejects(call(f, '/history'), failure(400));
+    await assert.rejects(call(f, '/history?memberId=owner'), failure(404));
+    for (const member of [reseller, former]) await assert.rejects(call(f, '/history', undefined, member), failure(403));
+    assert.deepEqual((await call(f, '/history', undefined, other)).entries, []);
+    await assert.rejects(call(f, '/history?before=yesterday', undefined, printer), failure(400));
+    // Pages of 40, keyed on time, kind and reference: nothing repeats or goes missing.
+    const insert = f.db.sqlite.prepare(`INSERT INTO production_events(job_id,actor_id,actor_name,action,quantity,accepted,rejected,version,created_at)
+        VALUES (?,'printer','Sam','printed',1,0,0,1,?)`);
+    for (let index = 0; index < 45; index++) insert.run(current.id, `2026-01-01T00:00:${String(index).padStart(2, '0')}.000Z`);
+    const first = await call(f, '/history', undefined, printer);
+    assert.equal(first.entries.length, 40);
+    const second = await call(f, `/history?before=${encodeURIComponent(first.next)}`, undefined, printer);
+    assert.equal(second.next, null);
+    const all = [...first.entries, ...second.entries];
+    assert.equal(all.length, mine.entries.length + 45);
+    assert.equal(new Set(all.map(entry => entry.id)).size, all.length);
+    assert.equal(all.at(-1).at, '2026-01-01T00:00:00.000Z');
+});
+
+test('migration 0018 is additive: payout receipts in their own table, payouts stay append-only', () => {
+    assert.ok(names.includes('0018_print_payout_receipts.sql'));
+    const code = readFileSync(new URL('0018_print_payout_receipts.sql', directory), 'utf8').replace(/--.*$/gm, '');
+    assert.doesNotMatch(code, /\bDROP\b|\bRENAME\b|\bALTER\b|\bUPDATE\s+\w+\s+SET\b|\bDELETE\s+FROM\b/i);
+    assert.match(code, /CREATE TABLE print_payout_receipts/);
 });

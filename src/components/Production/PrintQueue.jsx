@@ -1,10 +1,11 @@
-import React, { useCallback, useMemo, useState } from 'react';
+import React, { useCallback, useMemo, useRef, useState } from 'react';
 import { AlertCircle, Check, CheckCircle2, ChevronDown, Printer } from 'lucide-react';
 import LoadingState from '../ui/LoadingState.jsx';
 import { packageItems, packageStatus, packageSummary, printPackages, productionQuantity, visiblePrintPackages } from '../../lib/production.js';
-import { useProductionData, useProductionMutation, useProductionWallet } from './productionHooks.js';
+import { usePrintHistory, useProductionData, useProductionMutation, useProductionWallet } from './productionHooks.js';
 import { JobActivity, JobCounts, JobCustomer, JobHeading, JobInstructions, JobPhoto, MutationNotice, ProductionHeader, ProductionNotice } from './ProductionParts.jsx';
 import { MyShirts } from './PrintWallet.jsx';
+import { PrintHistory } from './PrintHistory.jsx';
 import { useReadOnly, READ_ONLY_HINT } from '../ui/ReadOnly';
 import './Production.css';
 
@@ -49,7 +50,7 @@ function PrintJob({ job, reload, online, stale }) {
                     <button type="button" className="production-button production-primary" disabled={readOnly || !job.remainingToPrint} title={readOnly ? READ_ONLY_HINT : undefined}
                         onClick={() => submit('printed')}><Check size={18} aria-hidden="true" />Record printed</button>
                 </div>
-                <p id={`print-help-${job.id}`} className="production-help">Record only newly printed shirts. Partial quantities are welcome; the owner accepts them after QA.</p>
+                <p id={`print-help-${job.id}`} className="production-help">Record only newly printed shirts. Partial quantities are welcome; the owner checks the whole package once every shirt on it is printed.</p>
                 <label className="production-field">Print note or problem
                     <textarea rows="2" maxLength={1000} value={note} onChange={event => setNote(event.target.value)}
                         placeholder="For example: print alignment needs checking" />
@@ -97,13 +98,44 @@ function PrintPackage({ pkg, open, onToggle, reload, online, stale }) {
     </li>;
 }
 
+const VIEWS = [{ id: 'queue', label: 'Queue' }, { id: 'history', label: 'History' }];
+
+// Print staff switch between the queue and their history (owner request 2026-11-03). Both panels
+// stay mounted, so typed quantities and notes survive a look at the history.
+function ViewTabs({ view, onChange }) {
+    const tabs = useRef({});
+    const keyboard = (event, index) => {
+        const step = { ArrowRight: 1, ArrowLeft: -1 }[event.key];
+        const next = step ? (index + step + VIEWS.length) % VIEWS.length : event.key === 'Home' ? 0 : event.key === 'End' ? VIEWS.length - 1 : null;
+        if (next === null) return;
+        event.preventDefault();
+        onChange(VIEWS[next].id);
+        tabs.current[VIEWS[next].id]?.focus();
+    };
+    return <div className="print-views" role="tablist" aria-label="Print queue and history">
+        {VIEWS.map((item, index) => <button key={item.id} ref={node => { tabs.current[item.id] = node; }} type="button" role="tab"
+            id={`print-tab-${item.id}`} aria-controls={`print-panel-${item.id}`} aria-selected={view === item.id}
+            tabIndex={view === item.id ? 0 : -1} className="print-view-tab" onClick={() => onChange(item.id)} onKeyDown={event => keyboard(event, index)}>
+            {item.label}
+        </button>)}
+    </div>;
+}
+
 export default function PrintQueue({ userRole }) {
     const data = useProductionData();
     const showWallet = userRole === 'print_operator';
     const wallet = useProductionWallet(showWallet);
+    const [view, setView] = useState('queue');
+    const history = usePrintHistory({ enabled: showWallet && view === 'history' });
     const { load: loadJobs } = data;
     const { load: loadWallet } = wallet;
+    const { load: loadHistory } = history;
     const reload = useCallback(() => Promise.all([loadJobs(), loadWallet()]), [loadJobs, loadWallet]);
+    const reloadAll = useCallback(() => Promise.all([reload(), view === 'history' ? loadHistory() : null]), [reload, view, loadHistory]);
+    const showHistory = () => {
+        setView('history');
+        document.getElementById('print-tab-history')?.focus();
+    };
     const [filter, setFilter] = useState('active');
     const [query, setQuery] = useState('');
     // Packages start collapsed, like Orders. A search opens every match, and a lone package opens
@@ -118,12 +150,15 @@ export default function PrintQueue({ userRole }) {
     const toPrint = shown.reduce((total, pkg) => total + pkg.visibleJobs.reduce((sum, job) => sum + job.remainingToPrint, 0), 0);
     const plural = (count, word) => `${count} ${word}${count === 1 ? '' : 's'}`;
     return <section className="production" aria-label="Employee print queue">
-        <ProductionHeader title="Print queue" subtitle="Only jobs assigned and released to you appear here."
-            loading={data.loading} onReload={reload} />
+        <ProductionHeader title="Print queue" subtitle={view === 'history' ? 'Your prints, the owner’s checks and your payouts.' : 'Only jobs assigned and released to you appear here.'}
+            loading={data.loading || history.loading} onReload={reloadAll} />
+        {showWallet && <ViewTabs view={view} onChange={setView} />}
         {!data.online && <ProductionNotice error>You are offline. Notes stay on this screen. Reconnect and reload before saving.</ProductionNotice>}
+        <div role={showWallet ? 'tabpanel' : undefined} id="print-panel-queue" aria-labelledby={showWallet ? 'print-tab-queue' : undefined}
+            hidden={view !== 'queue'}>
         {data.error?.status === 404 ? <ProductionNotice>Print production is not enabled yet. The owner will release access after setup.</ProductionNotice>
             : <>
-                {showWallet && <MyShirts data={wallet} />}
+                {showWallet && <MyShirts data={wallet} onShowHistory={showHistory} />}
                 {data.error && <ProductionNotice error>Queue could not be refreshed. {data.error.message} Saving is paused; use Reload to try again.</ProductionNotice>}
                 {data.loading && !data.jobs.length ? <LoadingState label="Loading your print jobs…" /> : <>
                     <div className="production-toolbar">
@@ -154,5 +189,9 @@ export default function PrintQueue({ userRole }) {
                     {data.jobs.length === 100 && <p className="production-help">Showing the latest 100 available jobs.</p>}
                 </>}
             </>}
+        </div>
+        {showWallet && <div role="tabpanel" id="print-panel-history" aria-labelledby="print-tab-history" hidden={view !== 'history'}>
+            {view === 'history' && <PrintHistory history={history} wallet={wallet.wallet} online={data.online} />}
+        </div>}
     </section>;
 }

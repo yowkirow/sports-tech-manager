@@ -374,8 +374,8 @@ code that shows it. Until both are live, the print queue shows "Not booked yet".
 production order that had a tracking number on October 21 was already shipped, so no
 saved number needed moving.
 
-Customer contacts, addresses, order numbers, receipts, pricing, stock costs and management
-comments are not returned. Order numbers appear only on the owner's screens.
+Customer contacts, addresses, order numbers, customer receipts, pricing, stock costs and
+management comments are not returned. Order numbers appear only on the owner's screens.
 
 The owner prepares jobs under Production > Prepare shirt jobs: waiting shirt lines are
 grouped by the customer who ordered (oldest order first, with the order number), can be ticked one by
@@ -407,11 +407,25 @@ The employee records whole partial quantities as Printing, Printed or Problem.
 Printed quantities await owner QA. Accepted and rejected quantities are recorded
 atomically with immutable events; rejected shirts return to the rework count.
 **Accept all** (owner, October 21, 2026; `POST /api/production/qa`) accepts every shirt
-awaiting QA on up to 100 released, unchanged jobs (oldest first) in one atomic,
-idempotent save. Each job gets the same update and `qa` event as a single full
-acceptance, so wallet credit is identical; if any job's version or awaiting count
+awaiting QA on up to 100 released, unchanged jobs (oldest first) whose packages are fully
+printed, in one atomic, idempotent save. Each job gets the same update and `qa` event as a
+single full acceptance, so wallet credit is identical; if any job's version or awaiting count
 changed since the owner loaded the list, nothing is accepted. Rejections stay on each
 job's own quality check.
+
+**QA waits for the whole package** (owner decision, November 3, 2026): the owner checks a
+customer's package at once. Shirts on a job can be accepted or sent back, singly or with
+Accept all, only when every shirt line of its order has an active job, every active job is
+released and unchanged, and no active job still has a shirt that was never printed. Reprints
+of rejected shirts don't count, so a package in rework stays checkable. Otherwise the save
+returns 409 `production_package_incomplete` with what the package waits for (for example
+"2 shirts still to print" or "1 shirt line not in the print queue yet") and nothing is saved;
+Accept all names up to three such orders. Production lists those orders under "Printed, not
+ready for QA" with the same reasons, and their job cards say why in place of the QA form.
+A shirt line that never gets a job keeps its order out of QA, so the order can't reach Ready
+or Shipped. No production order was in that state on November 3, 2026. Don't queue a shirt
+that needs no printing just to unblock QA: the printer would be credited for shirts they
+didn't print. Add a "no print needed" option instead if it comes up.
 
 Physical order-line changes hold related jobs, retaining their original counts
 and immutable source fingerprints. The owner can explicitly prepare a reviewed
@@ -426,8 +440,9 @@ Shipped only when every such job is completed, fully accepted in QA and still ma
 its order line. **QA moves the order to Ready by itself**: the save (single QA or Accept
 all) that accepts the last shirt sets every active row of the order to Ready when every
 shirt line of the order has a completed, current job and no row is already Shipped,
-Returned or Cancelled. An order with a shirt line that was never queued stays In progress
-until that line is printed and accepted, or the owner marks it Ready. Only
+Returned or Cancelled. An order with a shirt line that was never queued stays In progress:
+under the package rule above its printed shirts can't pass QA either, so it can't reach
+Ready until that line is prepared, printed and accepted. Only
 `fulfillmentStatus` changes (never payment), the order version advances, and no job is held.
 Migration `0014_ready_after_qa.sql` applied the same rule once to the 28 orders that were
 already fully accepted on October 23. The owner confirms packing, accessories and the
@@ -438,7 +453,7 @@ gate. Historical already-ready orders are not given retroactive jobs for a payme
 change. Employees cannot release work, approve QA, change quantities on orders, mark
 payments or ship orders.
 
-### Print wallet (migration 0007)
+### Print wallet (migrations 0007 and 0018)
 
 The employee's `/print` dashboard shows a shirt counter and wallet; the owner sees each
 print operator's counts and records payouts under Production > Employee accounts.
@@ -455,15 +470,40 @@ print operator's counts and records payouts under Production > Employee accounts
 - **Money:** integer centavos only. Payouts are owner-only, whole PHP 1,000 steps,
   idempotent by request ID, capped at the balance due inside the atomic D1 batch, and
   append-only (no update or delete).
+- **History** (owner request, November 3, 2026): print staff open History on `/print` (a tab
+  next to Queue, or "See my history and payouts" under My shirts). Newest first, by
+  Philippine day, it lists every quantity they recorded as printed, each quality check of
+  their shirts (accepted, and sent back with the owner's note) and every payout with its
+  receipt. The owner sees the same for each operator under Production > Employee accounts >
+  History. Entries name the job's design, size, color, job code and customer, which staff
+  already see on their jobs; never order numbers, prices or contacts.
+- **Receipts** (migration 0018, same request): when recording a payout the owner can attach
+  a photo or screenshot of the GCash or bank transfer, or attach one later (or replace a
+  wrong one) from that operator's History. Phones scale large photos down to 2000 px JPEG
+  before upload. Receipts are private media under `payout-receipts/{id}` (`Cache-Control:
+  private, no-store`); `/api/media/objects/{id}` serves one only to the owner and to the
+  print operator who was paid (anyone else gets 403). `print_payout_receipts` links a payout
+  to one current receipt and a file to one payout, so `print_payouts` stays append-only. A
+  receipt chosen in the dialog but never saved stays an unlinked private file.
 - **API:** `GET /api/production/wallet` returns `{ wallet }` for a print operator (own
   counts only; another `memberId` is 403) or `{ wallets, unattributed }` for the owner
   (`?memberId=` returns one `{ wallet }`). `POST /api/production/payouts` takes
-  `{ operatorId, amountCentavos, note?, requestId }` and returns `{ payout, wallet }`.
-  Read-only environments refuse the POST like every other write.
+  `{ operatorId, amountCentavos, note?, receiptId?, requestId }` and returns
+  `{ payout, wallet }`, with `payout.receiptUrl` (null without a receipt).
+  `POST /api/media/payout-receipts` (owner only, image body) returns `{ id, url }` for
+  `receiptId`. `POST /api/production/payouts/{id}/receipt` takes `{ receiptId, requestId }`,
+  attaches or replaces the receipt (the replaced file is deleted) and returns `{ payout }`.
+  Both refuse a receipt this owner didn't upload there, or one already on a payout (409
+  `production_receipt_invalid`). `GET /api/production/history` returns
+  `{ memberId, name, entries, next }`, 40 entries a page; pass `next` as `?before=` for older
+  entries. Staff read only their own (another `memberId` is 403); the owner must pass
+  `?memberId=`. Read-only environments refuse the POSTs like every other write.
 
 Apply `0007_print_wallet.sql` with `npm run db:staging`, then `npm run db:production`,
 **before** deploying code that reads it. The cutover `load-target` preflight requires the
 target's applied migration count to match this repository, so land 0007 only after cutover.
+`0018_print_payout_receipts.sql` (the receipts table and two history indexes) is additive and
+applies the same way, before deploying the code that reads it.
 
 ## Protected import and production cutover
 
