@@ -8,7 +8,8 @@ import { normalizeDecimal, normalizeTimestamp } from '../../worker/order-store.t
 
 const migrations = ['0001_business.sql', '0002_transaction_date_pattern.sql', '0003_business_api.sql']
     .map(name => readFileSync(new URL(`../../worker/migrations/${name}`, import.meta.url), 'utf8'));
-const productionMigration = readFileSync(new URL('../../worker/migrations/0005_production.sql', import.meta.url), 'utf8');
+const productionMigrations = ['0005_production.sql', '0019_retire_deleted_order_jobs.sql']
+    .map(name => readFileSync(new URL(`../../worker/migrations/${name}`, import.meta.url), 'utf8'));
 const DATE = '2026-09-10T01:02:03.123456789Z';
 const ORDER = 'ST-BUSINESS01';
 const id = number => `10000000-0000-4000-8000-${String(number).padStart(12, '0')}`;
@@ -134,7 +135,7 @@ function state(db) {
 function revision(db) { return db.sqlite.prepare('SELECT revision FROM system_state').get().revision; }
 
 function enableProduction(db) {
-    db.sqlite.exec(productionMigration);
+    for (const migration of productionMigrations) db.sqlite.exec(migration);
     db.productionEnabled = true;
 }
 
@@ -552,9 +553,27 @@ test('existing production jobs block transaction reset without blocking financia
     await call(db, 'owner', `/api/transactions/${id(1)}`, 'DELETE', {
         expected: adjusted.row, requestId: 'delete-released'
     });
-    assert.equal(db.sqlite.prepare('SELECT status FROM production_jobs').get().status, 'held');
+    assert.equal(db.sqlite.prepare('SELECT status FROM production_jobs').get().status, 'superseded');
     assert.equal(db.sqlite.prepare('SELECT source_changed FROM production_jobs').get().source_changed, 1);
-    assert.equal(db.sqlite.prepare('SELECT action FROM production_events').get().action, 'source_deleted');
+    assert.deepEqual(db.sqlite.prepare('SELECT action FROM production_events ORDER BY id').all().map(row => row.action),
+        ['source_deleted', 'superseded']);
+});
+
+test('deleting a whole order retires its print jobs in the same atomic save', async t => {
+    const db = new LocalD1(t);
+    const inserted = await insert(db, [sale(1), sale(2)]);
+    enableProduction(db);
+    productionJob(db, id(1));
+    productionJob(db, id(2), -1, false);
+    const body = { expectedVersion: 0, requestId: 'delete-printed-order', sourceIds: inserted.rows.map(row => row.id) };
+    const jobs = () => db.sqlite.prepare('SELECT status,accepted FROM production_jobs ORDER BY id').all().map(row => ({ ...row }));
+    db.sqlite.exec("CREATE TRIGGER fail_delete_receipt BEFORE INSERT ON mutation_receipts BEGIN SELECT RAISE(ABORT,'late order deletion failure'); END");
+    await assert.rejects(call(db, 'owner', `/api/orders/${ORDER}`, 'DELETE', body), /late order deletion failure/);
+    assert.deepEqual(jobs(), [{ status: 'completed', accepted: 1 }, { status: 'released', accepted: 0 }], 'a failed delete changes no job');
+    db.sqlite.exec('DROP TRIGGER fail_delete_receipt');
+    await call(db, 'owner', `/api/orders/${ORDER}`, 'DELETE', body);
+    assert.deepEqual(jobs(), [{ status: 'superseded', accepted: 1 }, { status: 'superseded', accepted: 0 }]);
+    assert.equal(db.sqlite.prepare("SELECT count(*) AS n FROM production_events WHERE action='superseded' AND actor_name='System'").get().n, 2);
 });
 
 test('Ready gates only print-queued sources, with the same 14-statement primitive', async t => {

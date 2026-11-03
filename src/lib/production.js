@@ -133,6 +133,23 @@ export function packageWaitingFor(readiness) {
         readiness.toPrint && `${plural(readiness.toPrint, 'shirt')} still to print`].filter(Boolean).join(' · ');
 }
 
+// What a held job needs (owner report 2026-11-03). Order edits and deletions put jobs on hold, so
+// a held card offers only what can work: keep a job whose shirt is unchanged ('same'), replace it
+// with the shirt now on the order ('changed'), retire one whose shirt left the order ('gone'), or
+// re-release one held for another reason ('hold'). `sources` are the open orders' shirt lines,
+// described by the same server rule that prepared the job.
+const SAME_SHIRT = ['designName', 'brand', 'color', 'size', 'required'];
+export function heldJobReview(job, sources) {
+    if (job.status !== 'held') return null;
+    const lines = sources.filter(source => source.sourceId === job.sourceId);
+    if (!job.sourceChanged) return { reason: 'hold', lines, current: null };
+    const current = lines.find(source => (source.itemIndex ?? null) === (job.itemIndex ?? null)) || null;
+    if (current && SAME_SHIRT.every(key => current[key] === job[key])) return { reason: 'same', lines, current };
+    return { reason: lines.length ? 'changed' : 'gone', lines, current };
+}
+// "Club Crest Tee · Black · M ×2", for a shirt line or job.
+export const shirtLabel = line => `${[line.designName, line.color || 'No color', line.size].join(' · ')} ×${line.required}`;
+
 // Print staff see their jobs as packages, one per order (owner request 2026-10-27). packageKey is
 // the server's opaque per-order key (staff never receive the order number); owner payloads fall
 // back to orderId. Packages keep the queue's first-in, first-out order, and their totals count

@@ -1,10 +1,10 @@
 import React, { useCallback, useMemo, useState } from 'react';
-import { CheckCheck, CheckCircle2, Hourglass, Pause, Send, UserPlus, UserX } from 'lucide-react';
+import { Archive, CheckCheck, CheckCircle2, Hourglass, Pause, RefreshCw, Send, UserPlus, UserX } from 'lucide-react';
 import LoadingState from '../ui/LoadingState.jsx';
 import {
-    MAX_BATCH_JOBS, acceptAllPayload, acceptAllQueue, orderDateLabel, packageReadiness, packageWaitingFor, productionBatchLines,
+    MAX_BATCH_JOBS, acceptAllPayload, acceptAllQueue, heldJobReview, orderDateLabel, packageReadiness, packageWaitingFor, productionBatchLines,
     productionCandidates, productionCustomerOf, productionGroupMatches, productionLineKey, productionOrderDateOf, productionOrderGroups,
-    productionQuantity, qaWaitingQueue, walletPeso
+    productionQuantity, qaWaitingQueue, shirtLabel, walletPeso
 } from '../../lib/production.js';
 import { useProductionData, useProductionMutation, useProductionWallet } from './productionHooks.js';
 import { DesignThumb, JobActivity, JobCounts, JobHeading, JobInstructions, JobPhoto, MutationNotice, ProductionHeader, ProductionNotice } from './ProductionParts.jsx';
@@ -298,6 +298,31 @@ function AcceptAllQA({ jobs, readiness, customerOf, reload, online, stale }) {
     </section>;
 }
 
+// A held job's reason decides its notice, actions and default history note (owner report 2026-11-03).
+const HELD_HELP = {
+    same: 'Keeping clears the hold: nothing is reprinted and every count stays. Retire only if this shirt is no longer needed.',
+    changed: 'A revised job starts at zero for the shirt now on the order. This job’s printed and accepted counts stay in its history. Retire it if the shirt isn’t needed.',
+    gone: 'Retiring clears it from the queue. Its print and QA history and the printer’s pay stay.',
+    hold: 'Re-release it above to continue, prepare a revised job, or retire it. Its print and QA history stays.'
+};
+const RETIRE_REASON = {
+    changed: 'Retired after the shirt changed on the order.', gone: 'Retired: the shirt is no longer on an open order.'
+};
+function HeldNotice({ review }) {
+    if (review.reason === 'same') {
+        return <ProductionNotice>On hold because the order was edited. The shirt is still the same as when this job was prepared,
+            so nothing needs reprinting.</ProductionNotice>;
+    }
+    if (review.reason === 'changed') {
+        return <ProductionNotice error>On hold: this shirt changed on the order, so printing stopped.
+            {review.current ? ` On the order now: ${shirtLabel(review.current)}.` : ' Choose the shirt now on the order below.'}</ProductionNotice>;
+    }
+    if (review.reason === 'gone') {
+        return <ProductionNotice error>On hold: this shirt is no longer on an open order, so nothing here needs printing.</ProductionNotice>;
+    }
+    return null;
+}
+
 function OwnerJob({ job, readiness, customer, orderDate, sources, employees, reload, online, stale }) {
     const readOnly = useReadOnly();
     const [artwork, setArtwork] = useState(false);
@@ -310,22 +335,32 @@ function OwnerJob({ job, readiness, customer, orderDate, sources, employees, rel
     const [revisedLine, setRevisedLine] = useState('');
     const mutation = useProductionMutation(reload);
     const blocked = readOnly || !online || stale || mutation.busy || mutation.uncertain;
-    const canRelease = ['draft', 'held'].includes(job.status);
-    const replacements = sources.filter(source => source.sourceId === job.sourceId);
+    const review = useMemo(() => heldJobReview(job, sources), [job, sources]);
+    const canRelease = job.status === 'draft' || review?.reason === 'hold';
+    const replacements = review?.lines ?? [];
+    const chosenLine = revisedLine || (review?.current ? productionLineKey(review.current) : '');
+    const canReplace = (review?.reason === 'changed' || review?.reason === 'hold') && replacements.length > 0;
     const revise = retireOnly => {
-        const source = replacements.find(source => productionLineKey(source) === revisedLine);
-        if (!note.trim() || (!retireOnly && !source)) {
-            setValidation('Add a review reason and choose the current shirt variant before preparing a replacement.'); return;
-        }
+        const source = replacements.find(source => productionLineKey(source) === chosenLine);
+        if (!retireOnly && !source) { setValidation('Choose the shirt now on the order first.'); return; }
+        setValidation('');
         if (!window.confirm(retireOnly
-            ? 'Retire this held job? All original counts and events stay in history. It will no longer block this order.'
-            : 'Replace this held job with a new draft for the selected current variant? Original counts remain in history and will not transfer.')) return;
+            ? 'Retire this job?\n\nIt leaves the print queue and no longer holds this order. Its print and QA history and the printer’s pay stay.'
+            : 'Replace this job with a new draft for the chosen shirt?\n\nThe new job starts at zero. This job’s printed and accepted counts stay in its history and don’t transfer.')) return;
         mutation.run(`/api/production/jobs/${job.id}/revise`, {
-            expectedVersion: job.version, confirmed: true, note: note.trim(), retireOnly,
+            expectedVersion: job.version, confirmed: true, retireOnly,
+            note: note.trim() || (retireOnly ? RETIRE_REASON[review?.reason] || 'Retired by the owner.' : 'Replaced after the order changed.'),
             ...(!retireOnly ? { itemIndex: source.itemIndex, expectedSourceToken: source.sourceToken,
                 assigneeId: assignee || job.assignee.id, instructions: job.instructions } : {})
-        }, retireOnly ? 'Job retired; original production history is preserved.' : 'Revised draft prepared. Review and release it before printing.',
+        }, retireOnly ? 'Job retired. Its print and QA history stays.' : 'Revised draft prepared. Review and release it before printing.',
         () => { setNote(''); setRevisedLine(''); });
+    };
+    const keep = () => {
+        setValidation('');
+        if (!window.confirm('Keep this job?\n\nThe shirt is the same, so nothing is reprinted and its counts stay. If every shirt on the order is accepted, the order is Ready again.')) return;
+        mutation.run(`/api/production/jobs/${job.id}/keep`, { expectedVersion: job.version, confirmed: true, ...(note.trim() ? { note: note.trim() } : {}) },
+            result => result?.orderReady ? 'Job kept. Every shirt on this order is accepted, so the order is Ready again.' : 'Job kept. Nothing needs reprinting.',
+            () => setNote(''));
     };
     const submit = action => {
         setValidation('');
@@ -354,10 +389,7 @@ function OwnerJob({ job, readiness, customer, orderDate, sources, employees, rel
         <JobPhoto job={job} />
         <JobCounts job={job} />
         <JobInstructions job={job} />
-        {job.sourceChanged && <ProductionNotice error>
-            The source shirt line changed or was removed. Printing is stopped. Review the original variant and quantity shown above.
-            Prepare an explicitly reviewed replacement or retire the old job. Original print and quality counts remain in its history.
-        </ProductionNotice>}
+        {review && <HeldNotice review={review} />}
         {!['completed', 'superseded'].includes(job.status) && <fieldset className="production-work" disabled={blocked}>
             <legend className="production-sr-only">Manage {job.jobCode}</legend>
             {canRelease && <div className="production-release">
@@ -403,25 +435,35 @@ function OwnerJob({ job, readiness, customer, orderDate, sources, employees, rel
                 </div>
                 <p className="production-help">Accepted shirts count toward completion. Rejected shirts need printing again; the original print event stays in the audit.</p>
             </div>}
-            <label className="production-field">QA, rework or hold note
+            {job.status !== 'held' && <label className="production-field">QA, rework or hold note
                 <textarea rows="2" maxLength={1000} value={note} onChange={event => setNote(event.target.value)}
                     placeholder="Print details only. No contact or payment information" />
-            </label>
-            {job.status === 'held' && <div className="production-release">
-                <h4>Replace or retire this job</h4>
-                <label className="production-field">Current source variant
-                    <select value={revisedLine} onChange={event => setRevisedLine(event.target.value)}>
-                        <option value="">Choose the reviewed current variant</option>
-                        {replacements.map(source => <option key={productionLineKey(source)} value={productionLineKey(source)}>
-                            {source.designName} / {source.color || 'No color'} / {source.size} / {source.required} shirts
-                        </option>)}
+            </label>}
+            {review && <div className="production-release production-held">
+                <h4>{review.reason === 'hold' ? 'Replace or retire this job' : 'Clear the hold'}</h4>
+                {canReplace && <label className="production-field">{review.reason === 'changed' ? 'Shirt now on the order' : 'Replace with'}
+                    <select value={chosenLine} onChange={event => setRevisedLine(event.target.value)}>
+                        <option value="">Choose the shirt</option>
+                        {replacements.map(source => <option key={productionLineKey(source)} value={productionLineKey(source)}>{shirtLabel(source)}</option>)}
                     </select>
+                </label>}
+                <label className="production-field">Note for the job history (optional)
+                    <textarea rows="2" maxLength={1000} value={note} onChange={event => setNote(event.target.value)}
+                        placeholder="Print details only. No contact or payment information" />
                 </label>
-                <p className="production-help">Replacement starts a fresh draft with zero accepted shirts. Do not transfer completed work to a different design or variant.</p>
                 <div className="production-actions">
-                    <button type="button" className="production-button" disabled={readOnly || !revisedLine || !note.trim()} title={readOnly ? READ_ONLY_HINT : undefined} onClick={() => revise(false)}>Prepare revised job</button>
-                    <button type="button" className="production-button production-warning" disabled={readOnly || !note.trim()} title={readOnly ? READ_ONLY_HINT : undefined} onClick={() => revise(true)}>Retire held job</button>
+                    {review.reason === 'same' && <button type="button" className="production-button production-primary" disabled={readOnly}
+                        title={readOnly ? READ_ONLY_HINT : undefined} onClick={keep}><CheckCircle2 size={18} aria-hidden="true" />Keep this job</button>}
+                    {canReplace && <button type="button" className={`production-button${review.reason === 'changed' ? ' production-primary' : ''}`}
+                        disabled={readOnly} title={readOnly ? READ_ONLY_HINT : undefined} onClick={() => revise(false)}>
+                        <RefreshCw size={18} aria-hidden="true" />Prepare revised job
+                    </button>}
+                    <button type="button" className={`production-button ${review.reason === 'gone' ? 'production-primary' : 'production-warning'}`}
+                        disabled={readOnly} title={readOnly ? READ_ONLY_HINT : undefined} onClick={() => revise(true)}>
+                        <Archive size={18} aria-hidden="true" />Retire job
+                    </button>
                 </div>
+                <p className="production-help">{HELD_HELP[review.reason]}</p>
             </div>}
             {job.status !== 'held' && <button type="button" className="production-button production-warning" disabled={readOnly} title={readOnly ? READ_ONLY_HINT : undefined} onClick={() => submit('hold')}>
                 <Pause size={18} aria-hidden="true" />Hold and withdraw

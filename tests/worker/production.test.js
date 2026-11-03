@@ -3,6 +3,7 @@ import { readFileSync, readdirSync } from 'node:fs';
 import { DatabaseSync } from 'node:sqlite';
 import { test } from 'node:test';
 import { handleProductionRequest, MAX_BATCH_JOBS, productionReadyGuard } from '../../worker/production-api.ts';
+import { PRODUCTION_READY_CONDITION } from '../../worker/order-store.ts';
 import { HttpError } from '../../worker/errors.ts';
 
 const directory = new URL('../../worker/migrations/', import.meta.url);
@@ -317,18 +318,74 @@ test('physical edits of accepted work revoke Ready while unrelated financial met
     assert.deepEqual({ ...original }, { status: 'held', accepted: 10, source_changed: 1 });
 });
 
-test('owner may retire a held deleted-source job without erasing its event history', async t => {
+test('owner may retire a held changed-source job without erasing its event history', async t => {
     const f = fixture(t);
     const job = await release(f, await prepare(f));
-    f.db.sqlite.prepare('DELETE FROM transactions WHERE id=?').run(SOURCE);
+    changeSource(f, { size: 'L' });
     const held = (await call(f)).jobs.find(item => item.id === job.id);
+    assert.equal(held.status, 'held');
     const result = await call(f, `/jobs/${job.id}/revise`, {
         expectedVersion: held.version, requestId: requestId(), confirmed: true,
-        note: 'Cancelled shirt line reviewed by owner.', retireOnly: true
+        note: 'Retired after the order changed.', retireOnly: true
     });
     assert.equal(result.job.status, 'superseded');
-    assert.ok(result.job.events.some(event => event.action === 'source_deleted'));
+    assert.ok(result.job.events.some(event => event.action === 'source_changed'));
+    // A retired job no longer gates the order: the owner can mark it Ready or Shipped by hand.
+    f.db.sqlite.prepare("UPDATE transactions SET details=json_set(details,'$.fulfillmentStatus','ready') WHERE order_id='ST-PRINT'").run();
+    assert.equal(f.db.sqlite.prepare(`SELECT (${PRODUCTION_READY_CONDITION}) AS ok`).get(JSON.stringify(['ST-PRINT'])).ok, 1);
+});
+
+test('keeping a job whose shirt is unchanged clears the hold, restores completion and makes the order Ready again', async t => {
+    const f = fixture(t);
+    let job = await release(f, await prepare(f));
+    job = await progress(f, job, 'printed', { quantity: 10 });
+    job = await qa(f, job, 10, 0);
+    const status = () => JSON.parse(f.db.sqlite.prepare('SELECT details FROM transactions WHERE id=?').get(SOURCE).details).fulfillmentStatus;
+    assert.equal(status(), 'ready');
+    // An older row gains the fields the order editor writes; the shirt itself is the same.
+    changeSource(f, { linkedColor: 'Black', category: 'shirts', name: 'Court shirt' });
+    const held = (await call(f)).jobs.find(item => item.id === job.id);
+    assert.deepEqual([held.status, held.sourceChanged, held.accepted, status()], ['held', true, 10, 'in_progress']);
+    const body = { expectedVersion: held.version, requestId: requestId(), confirmed: true };
+    const kept = await call(f, `/jobs/${job.id}/keep`, body);
+    assert.deepEqual([kept.job.status, kept.job.sourceChanged, kept.job.accepted, kept.orderReady], ['completed', false, 10, true]);
+    assert.deepEqual([kept.job.events[0].action, kept.job.events[0].note], ['kept', 'Same shirt as on the order; nothing to reprint.']);
+    assert.equal(status(), 'ready');
+    assert.deepEqual(await call(f, `/jobs/${job.id}/keep`, body), kept, 'a replay returns the saved result');
+    await assert.rejects(call(f, `/jobs/${job.id}/keep`, { ...body, requestId: requestId() }), failure(409, 'production_conflict'));
     await f.db.batch([productionReadyGuard(f.db, 'ST-PRINT'), f.db.prepare('DELETE FROM _production_guards')]);
+});
+
+test('keeping an unfinished job clears the hold so it can be released again with its counts', async t => {
+    const f = fixture(t);
+    let job = await release(f, await prepare(f));
+    job = await progress(f, job, 'printed', { quantity: 4 });
+    changeSource(f, { linkedColor: 'Black' });
+    const held = (await call(f)).jobs.find(item => item.id === job.id);
+    await assert.rejects(release(f, held), failure(409));
+    const kept = await call(f, `/jobs/${job.id}/keep`, { expectedVersion: held.version, requestId: requestId(), confirmed: true,
+        note: 'Only the color label was filled in.' });
+    assert.deepEqual([kept.job.status, kept.job.sourceChanged, kept.job.awaitingQA, kept.orderReady], ['held', false, 4, false]);
+    assert.equal(kept.job.events[0].note, 'Only the color label was filled in.');
+    const released = await release(f, kept.job);
+    assert.deepEqual([released.status, released.awaitingQA], ['released', 4]);
+});
+
+test('keep refuses a changed or removed shirt and stays owner-only', async t => {
+    const f = fixture(t);
+    const job = await release(f, await prepare(f));
+    changeSource(f, { size: 'L' });
+    let held = (await call(f)).jobs.find(item => item.id === job.id);
+    const keep = (extra = {}, member = owner) => call(f, `/jobs/${job.id}/keep`,
+        { expectedVersion: held.version, requestId: requestId(), confirmed: true, ...extra }, member);
+    await assert.rejects(keep(), error => failure(409, 'production_conflict')(error) && /\(size\)/.test(error.message));
+    await assert.rejects(keep({}, printer), failure(403));
+    await assert.rejects(keep({ confirmed: false }), failure(403));
+    await assert.rejects(keep({ status: 'completed' }), failure(400));
+    changeSource(f, { size: 'M', removedFromOrder: true });
+    held = (await call(f)).jobs.find(item => item.id === job.id);
+    await assert.rejects(keep(), error => failure(409)(error) && /no longer on an open order/.test(error.message));
+    assert.equal((await call(f)).jobs.find(item => item.id === job.id).status, 'held');
 });
 
 test('quantity validation, overprinting and excess QA rollback all writes', async t => {
@@ -451,18 +508,60 @@ test('source edits between source selection and creation cannot silently shift a
     await assert.rejects(release(f, held), failure(409));
 });
 
-test('deleting or removing a source preserves immutable jobs and events and withdraws printing', async t => {
+test('deleting a source retires its jobs at once, keeping counts, immutable history and pay', async t => {
     const f = fixture(t);
-    const job = await release(f, await prepare(f));
+    let job = await release(f, await prepare(f));
+    job = await progress(f, job, 'printed', { quantity: 10 });
+    job = await qa(f, job, 10, 0);
+    const credits = () => f.db.sqlite.prepare("SELECT coalesce(sum(shirts),0) AS n FROM print_wallet_credits WHERE operator_id='printer'").get().n;
+    assert.equal(credits(), 10);
     f.db.sqlite.prepare('DELETE FROM transactions WHERE id=?').run(SOURCE);
-    const held = (await call(f, '/jobs')).jobs[0];
-    assert.equal(held.status, 'held');
-    assert.equal(held.events[0].action, 'source_deleted');
+    const retired = (await call(f, '/jobs')).jobs.find(item => item.id === job.id);
+    assert.deepEqual([retired.status, retired.sourceChanged, retired.accepted], ['superseded', true, 10]);
+    assert.deepEqual(retired.events.slice(0, 2).map(event => [event.actorName, event.action]),
+        [['System', 'superseded'], ['System', 'source_deleted']]);
+    assert.equal(credits(), 10, 'retiring never changes print pay');
     assert.deepEqual((await call(f, '/jobs', undefined, printer)).jobs, []);
-    await assert.rejects(release(f, held), failure(409));
+    assert.equal(JSON.parse(f.db.sqlite.prepare('SELECT details FROM transactions WHERE id=?').get(SECOND).details).fulfillmentStatus,
+        'in_progress', 'the rest of the package is open again');
+    await assert.rejects(release(f, retired), failure(409));
+    await assert.rejects(call(f, `/jobs/${job.id}/revise`, { expectedVersion: retired.version, requestId: requestId(),
+        confirmed: true, note: 'Retire again.', retireOnly: true }), failure(409));
     assert.throws(() => f.db.sqlite.prepare('DELETE FROM production_jobs WHERE id=?').run(job.id), /immutable/);
     assert.throws(() => f.db.sqlite.prepare("UPDATE production_events SET note='changed'").run(), /immutable/);
     assert.throws(() => f.db.sqlite.prepare('DELETE FROM production_events').run(), /immutable/);
+});
+
+test('migration 0019 retires jobs already held for a deleted source and leaves every other job alone', () => {
+    const names = readdirSync(directory).filter(name => name.endsWith('.sql')).sort();
+    assert.ok(names.includes('0019_retire_deleted_order_jobs.sql'));
+    const db = new DatabaseSync(':memory:');
+    for (const name of names.filter(name => name < '0019')) db.exec(readFileSync(new URL(name, directory), 'utf8'));
+    db.exec("INSERT INTO members(id,email,role) VALUES ('printer','printer@example.invalid','print_operator')");
+    const sale = (id, orderId) => db.prepare(`INSERT INTO transactions(id,type,category,amount,date,details,order_id)
+        VALUES (?,'sale','Shirts','500','2026-10-01T00:00:00Z',?,?)`).run(id, JSON.stringify({ orderId, itemName: 'Court shirt',
+        quantity: 2, size: 'M', color: 'Black', fulfillmentStatus: 'in_progress' }), orderId);
+    const job = (id, sourceId, orderId, status, accepted) => db.prepare(`INSERT INTO production_jobs(id,job_code,source_id,item_index,
+        legacy_item_key,order_id,source_fingerprint,snapshot_id,design_name,brand,color,size,required,accepted,assignee_id,status,released_at)
+        VALUES (?,?,?,-1,?,?,(SELECT fingerprint FROM production_source_state WHERE source_id=?),'snapshot','Court shirt','Sypik','Black','M',2,?,'printer',?,'2026-10-02T00:00:00Z')`)
+        .run(id, id, sourceId, id, orderId, sourceId, accepted, status);
+    for (const [id, orderId] of [[SOURCE, 'ST-GONE'], [SECOND, 'ST-KEPT']]) {
+        db.prepare('INSERT INTO orders(id) VALUES (?)').run(orderId);
+        sale(id, orderId);
+    }
+    job('gone', SOURCE, 'ST-GONE', 'completed', 2);
+    job('open', SECOND, 'ST-KEPT', 'released', 0);
+    db.prepare('DELETE FROM transactions WHERE id=?').run(SOURCE);
+    const statusOf = id => db.prepare('SELECT status,source_changed,accepted,version FROM production_jobs WHERE id=?').get(id);
+    assert.deepEqual({ ...statusOf('gone') }, { status: 'held', source_changed: 1, accepted: 2, version: 1 }, 'the 0005 trigger only held it');
+    db.exec(readFileSync(new URL('0019_retire_deleted_order_jobs.sql', directory), 'utf8'));
+    assert.deepEqual({ ...statusOf('gone') }, { status: 'superseded', source_changed: 1, accepted: 2, version: 2 });
+    assert.deepEqual({ ...statusOf('open') }, { status: 'released', source_changed: 0, accepted: 0, version: 0 });
+    assert.deepEqual(db.prepare("SELECT actor_name,action,version FROM production_events WHERE job_id='gone' ORDER BY id").all().map(row => ({ ...row })),
+        [{ actor_name: 'System', action: 'source_deleted', version: 1 }, { actor_name: 'System', action: 'superseded', version: 2 }]);
+    db.prepare('DELETE FROM transactions WHERE id=?').run(SECOND);
+    assert.equal(statusOf('open').status, 'superseded', 'the new trigger retires on delete');
+    db.close();
 });
 
 test('one source variant gets one full-quantity job, never a ball or removed sale', async t => {

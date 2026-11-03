@@ -428,11 +428,42 @@ that needs no printing just to unblock QA: the printer would be credited for shi
 didn't print. Add a "no print needed" option instead if it comes up.
 
 Physical order-line changes hold related jobs, retaining their original counts
-and immutable source fingerprints. The owner can explicitly prepare a reviewed
-replacement draft or retire a held job. A replacement starts with zero production
-counts; it never transfers old accepted work to a changed design or shifted legacy
-item index. Payment/comment changes and returned tags do not restock inventory or
-consume blanks again.
+and immutable source fingerprints. A held job's card says why and offers only what can
+work (owner report, November 3, 2026; none needs a typed reason, which is optional and
+saved in the job's history):
+
+- **Keep this job**, when the shirt is still the same (design, brand, color, size and
+  quantity, judged by the rule that prepared the job). An edit can rewrite a line's stored
+  fields without changing the shirt, for example filling in a missing color label.
+  Keeping clears the hold with every count intact: a fully accepted job is complete again,
+  and the order moves to Ready when every shirt on it is accepted, as QA would have done
+  (`POST /api/production/jobs/{id}/keep` with `{ expectedVersion, confirmed: true, note?,
+  requestId }`, owner only; it returns `{ job, orderReady }` and refuses with 409 if the
+  shirt changed or left the order).
+- **Prepare revised job** for the shirt now on the order. A replacement starts with zero
+  production counts; it never transfers old accepted work to a changed design or shifted
+  legacy item index.
+- **Retire job**. A retired job no longer gates its order, so the owner can mark it Ready
+  or Shipped by hand.
+
+Deleting an order, or an order line, retires its print jobs at once (migration
+`0019_retire_deleted_order_jobs.sql`): nothing on a deleted line can be printed or
+replaced. Every count and event stays in the job's history, and print pay is unchanged,
+because the wallet counts QA events whatever the job's status. Other rows of the same
+order that were Ready or Shipped move back to In progress, with the packing confirmation
+cleared, because the package changed. 0019 also retired the 8 jobs that were already held
+for orders deleted on October 25, 27 and 28. Apply it with `npm run db:staging`, then
+`npm run db:production`, before deploying the code.
+
+The order editor (Orders > Edit > Save, the customer's Modify order, reseller edits)
+keeps a row's stored print fields whenever their meaning is unchanged and a reseller save
+can read them back (an empty name, size or color, a quoted quantity or a name taken only
+from the description is still written the way the editor shows it). Older rows lack
+fields the editor writes (`linkedColor`, `category`, `brand`, `itemName`), and those raw
+fields are in the 0005 fingerprint. So saving an older order without changing a shirt
+(for example to type an LBC booking number) no longer holds its printed jobs or reopens
+it. Payment/comment changes and returned tags do not restock inventory or consume
+blanks again.
 
 Ready rule (owner decisions, October 13 and 23, 2026): only orders sent to the print queue
 are gated. If an order has an active (not retired) print job, it can enter Ready or

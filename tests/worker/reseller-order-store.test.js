@@ -188,7 +188,7 @@ test('blank product quantity edits retain stored identity rather than frontend-n
     product(db, 900, { category: 'blanks' });
     seed(db, sale(1, { category: 'blanks', productId: 'legacy-catalog-id', linkedColor: 'White' }));
     const body = await input(db, drafts => drafts.map(draft => ({ ...draft, details: { ...draft.details, quantity: 2 } })));
-    assert.equal(body.changes[0].updates.details.category, 'shirts');
+    assert.equal(body.changes[0].updates.details.category, 'blanks', 'the editor keeps the stored category when it means the same');
     await api(db, body);
     const saved = rows(db)[0];
     assert.equal(saved.category, 'blanks');
@@ -583,4 +583,19 @@ test('legacy UUID order without orders row acquires version atomically and prese
     const body = await input(db, undefined, { customerName: 'Legacy updated' }, 'legacy-save', source);
     assert.deepEqual(await api(db, body), { orderId: id(1), version: 1, ids: [id(1)] });
     assert.equal(rows(db)[0].orderVersion, 1);
+});
+
+test('older line shapes still save when a reseller changes only the customer details', async t => {
+    for (const [label, row] of [
+        ['quoted quantity', sale(1, { quantity: '1' })],
+        ['name only in the description', { ...sale(1, { itemName: undefined }), description: 'Team Shirt' }]
+    ]) {
+        const db = new LocalD1(t);
+        product(db);
+        seed(db, row);
+        await api(db, await input(db, drafts => drafts, { customerName: 'New customer' }, `legacy-${label.replaceAll(' ', '-')}`));
+        const [saved] = rows(db);
+        const [line] = groupOrders(rows(db))[0].items;
+        assert.deepEqual([saved.details.customerName, Number(saved.details.quantity), line.details.itemName], ['New customer', 1, 'Team Shirt'], label);
+    }
 });

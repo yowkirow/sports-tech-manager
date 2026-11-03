@@ -634,6 +634,59 @@ async function reviseJob(db: D1Database, member: Member, id: string, body: Row, 
     );
     return mutation(db, member, requestId, hash, writes, jobResponse(true), [replacementId]);
 }
+// Owner report (2026-11-03): an order save can rewrite a line's stored fields without changing the
+// shirt, for example filling in a missing color label. That holds the job like a real change.
+// Keeping it re-checks the shirt against the current line with the same rule that prepared the job
+// (design, brand, color, size and quantity; the 0005 fingerprint never included the photo), then
+// clears the hold: every count stays, a fully accepted job is complete again, and the order moves
+// to Ready when every shirt on it is accepted, as QA would have done.
+const KEPT_FIELDS = [
+    ['design', 'designName', 'design_name'], ['brand', 'brand', 'brand'], ['color', 'color', 'color'],
+    ['size', 'size', 'size'], ['quantity', 'required', 'required']
+] as const;
+// The shirt a line describes now, or null when it is no longer an open shirt line.
+function currentShirt(source: Source, index: number): Shirt | null {
+    try {
+        return shirt(source, index);
+    } catch (error) {
+        if (error instanceof HttpError) return null;
+        throw error;
+    }
+}
+async function keepJob(db: D1Database, member: Member, id: string, body: Row, requestId: string, hash: string): Promise<Response> {
+    fields(body, ['expectedVersion', 'requestId', 'confirmed'], ['note']);
+    if (member.role !== 'owner' || body.confirmed !== true) fail('The owner must confirm keeping the job.', 'production_forbidden', 403);
+    const version = integer(body.expectedVersion, 'Expected version', Number.MAX_SAFE_INTEGER - 1);
+    const note = text(body.note ?? '', 'Note', 1000) || 'Same shirt as on the order; nothing to reprint.';
+    const [job] = await rows<{ source_id: string; item_index: number; design_name: string; brand: string; color: string; size: string; required: number }>(db,
+        "SELECT source_id,item_index,design_name,brand,color,size,required FROM production_jobs WHERE id=? AND version=? AND status='held' AND source_changed=1",
+        [id, version]);
+    if (!job) fail('This job changed. Reload before keeping it.', 'production_conflict', 409);
+    const [source] = await rows<Source>(db, `${sourceQuery} WHERE t.id=?`, [job.source_id]);
+    const line = source ? currentShirt(source, job.item_index) : null;
+    if (!source || !line) fail('This shirt is no longer on an open order. Retire the job instead.', 'production_conflict', 409);
+    const changed = KEPT_FIELDS.filter(([, key, column]) => line[key] !== job[column]).map(([label]) => label);
+    if (changed.length) {
+        fail(`The shirt changed (${changed.join(', ')}), so the printed shirts don't match. Prepare a revised job or retire this one.`,
+            'production_conflict', 409);
+    }
+    const writes = [
+        guard(db, 'conflict', `EXISTS(SELECT 1 FROM production_jobs WHERE id=? AND version=? AND status='held' AND source_changed=1)
+            AND EXISTS(SELECT 1 FROM transactions t JOIN production_source_state s ON t.id=s.source_id
+                WHERE t.id=? AND t.details IS ? AND s.fingerprint=?)`, [id, version, source.id, source.details, source.fingerprint]),
+        statement(db, `UPDATE production_jobs SET source_changed=0,source_fingerprint=?,
+            status=CASE WHEN accepted=required THEN 'completed' ELSE 'held' END,version=version+1,updated_at=${now}
+            WHERE id=? AND version=?`, [source.fingerprint, id, version]),
+        guard(db, 'write', 'changes()=1'),
+        event(db, member, id, 'kept', 0, 0, 0, note),
+        guard(db, 'write', 'changes()=1'),
+        ...readyAfterQA(db, JSON.stringify([id]))
+    ];
+    return mutation(db, member, requestId, hash, writes,
+        `SELECT json_object('job',json(${ownerPayload}),'orderReady',json(CASE WHEN ${ORDER_IS_READY} THEN 'true' ELSE 'false' END))
+            FROM production_job_public p JOIN production_jobs j ON j.id=p.id WHERE j.id=?`, [id],
+        'This job or its order changed while you were keeping it. Reload and check it again.');
+}
 async function changeMember(db: D1Database, member: Member, id: string | undefined, body: Row, requestId: string, hash: string): Promise<Response> {
     const writes: D1PreparedStatement[] = [];
     if (!id) {
@@ -916,7 +969,7 @@ export async function handleProductionRequest(request: Request, env: AppEnv, mem
     // Owner-only (ownerOnly above). Replays attach a fresh wallet summary to the saved receipt.
     if (url.pathname === '/api/production/payouts') return recordPayout(env.DB, member, input, requestId, hash);
     // Replaying a receipt still requires current assignment and visibility.
-    const match = /^\/api\/production\/jobs\/([^/]+)\/(release|progress|qa|hold|revise)$/.exec(url.pathname);
+    const match = /^\/api\/production\/jobs\/([^/]+)\/(release|progress|qa|hold|revise|keep)$/.exec(url.pathname);
     if (match && member.role !== 'owner') {
         if (!(await rows(env.DB, `SELECT id FROM production_jobs j WHERE j.id=? AND ${visible}`, [match[1], member.id])).length) {
             fail('This job is no longer assigned or released to you.', 'production_forbidden', 403);
@@ -931,6 +984,7 @@ export async function handleProductionRequest(request: Request, env: AppEnv, mem
     if (url.pathname === '/api/production/qa') return acceptAllQA(env.DB, member, input, requestId, hash);
     if (url.pathname === '/api/production/jobs') return createJob(env.DB, member, input, requestId, hash);
     if (match?.[2] === 'revise') return reviseJob(env.DB, member, match[1]!, input, requestId, hash);
+    if (match?.[2] === 'keep') return keepJob(env.DB, member, match[1]!, input, requestId, hash);
     if (match) return changeJob(env.DB, member, match[1]!, match[2]!, input, requestId, hash);
     fail('This print route does not exist.', 'not_found', 404);
 }

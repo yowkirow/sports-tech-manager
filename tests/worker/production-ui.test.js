@@ -1,7 +1,7 @@
 import assert from 'node:assert/strict';
 import { test } from 'node:test';
 import { MAX_BATCH_JOBS as WORKER_MAX_BATCH_JOBS } from '../../worker/production-api.ts';
-import { MAX_BATCH_JOBS, acceptAllPayload, acceptAllQueue, groupHistory, historyDayLabel, historyJobLabel, orderDateLabel, packageItems, packageReadiness, packageStatus, packageSummary, packageWaitingFor, printJobMatches, printPackages, qaWaitingQueue, visiblePrintPackages, payoutSteps, productionBatchLines, productionCandidates, productionCustomerOf, productionGroupMatches, productionLineKey, productionOrderDateOf, productionOrderGroups, productionQuantity, productionError, walletPeso } from '../../src/lib/production.js';
+import { MAX_BATCH_JOBS, acceptAllPayload, acceptAllQueue, groupHistory, heldJobReview, historyDayLabel, historyJobLabel, orderDateLabel, packageItems, packageReadiness, packageStatus, packageSummary, packageWaitingFor, printJobMatches, printPackages, qaWaitingQueue, shirtLabel, visiblePrintPackages, payoutSteps, productionBatchLines, productionCandidates, productionCustomerOf, productionGroupMatches, productionLineKey, productionOrderDateOf, productionOrderGroups, productionQuantity, productionError, walletPeso } from '../../src/lib/production.js';
 
 test('production UI sends only normalized shirt source references and server snapshot tokens', () => {
     const transactions = [
@@ -209,4 +209,24 @@ test('print staff search matches name, booking number, design, size and job code
     assert.deepEqual(visible('all', 'nobody'), []);
     assert.deepEqual(visible('all', '   '), visible('all', ''));
     assert.equal(printJobMatches(packages[0], packages[0].jobs[0], 'white'), false);
+});
+
+test('a held job offers only what can work: keep the same shirt, replace a changed one, retire one that left the order', () => {
+    const shirt = { designName: 'Club Crest Tee', brand: 'Sypik', color: 'Black', size: 'M', required: 2 };
+    const job = patch => ({ id: 'job', sourceId: 'source', itemIndex: null, status: 'held', sourceChanged: true, ...shirt, ...patch });
+    const line = patch => ({ sourceId: 'source', itemIndex: null, sourceToken: 'token', ...shirt, ...patch });
+    const other = { ...line(), sourceId: 'another' };
+    assert.equal(heldJobReview(job({ status: 'completed', sourceChanged: false }), [line()]), null);
+    const same = heldJobReview(job(), [line(), other]);
+    assert.deepEqual([same.reason, same.current?.sourceToken, same.lines.length], ['same', 'token', 1]);
+    const changed = heldJobReview(job(), [line({ size: 'L' })]);
+    assert.deepEqual([changed.reason, changed.current.size], ['changed', 'L']);
+    assert.equal(heldJobReview(job({ itemIndex: 0 }), [line({ itemIndex: 1 })]).reason, 'changed', 'another line of the order can replace it');
+    assert.equal(heldJobReview(job({ itemIndex: 0 }), [line({ itemIndex: 1 })]).current, null);
+    assert.equal(heldJobReview(job({ brand: 'Other' }), [line()]).reason, 'changed', 'every printed attribute must match');
+    assert.equal(heldJobReview(job(), [other]).reason, 'gone');
+    assert.equal(heldJobReview(job(), []).reason, 'gone');
+    assert.deepEqual(heldJobReview(job({ sourceChanged: false }), [line()]), { reason: 'hold', lines: [line()], current: null });
+    assert.equal(shirtLabel(line()), 'Club Crest Tee · Black · M ×2');
+    assert.equal(shirtLabel(line({ color: '' })), 'Club Crest Tee · No color · M ×2');
 });

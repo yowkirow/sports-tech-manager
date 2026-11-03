@@ -659,4 +659,6 @@
     .production-wallet .production-wallet-history { width: 100%; }
     .production-receipt-attach { width: 100%; }
     .print-history-receipt-button { width: 100%; }
+    /* A held job has one or two clear-the-hold actions: stack them full width, primary first. */
+    .production-held .production-actions { grid-template-columns: minmax(0, 1fr); }
 }

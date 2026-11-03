@@ -101,10 +101,11 @@ export function JobActivity({ job }) {
             {job.events.map(event => <li key={event.id}>
                 <div><strong>{event.actorName}</strong> · {({
                     prepared: 'Prepared job', release: 'Released to print', hold: 'Put on hold',
-                    revised: 'Prepared revised job', superseded: 'Retired original job; history preserved',
+                    revised: 'Prepared revised job', superseded: 'Retired; history kept',
                     start: 'Started printing', printed: `Printed ${event.quantity}`,
                     problem: 'Reported a problem', qa: `QA: ${event.accepted} accepted, ${event.rejected} for rework`,
-                    source_changed: 'Source changed — printing held', source_deleted: 'Source removed',
+                    source_changed: 'Order line changed — printing held', source_deleted: 'Order line deleted',
+                    kept: 'Kept after an order edit; nothing to reprint',
                     operator_revoked: 'Employee access revoked'
                 })[event.action] || event.action}</div>
                 {event.note && <p>{event.note}</p>}

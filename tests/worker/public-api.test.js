@@ -518,6 +518,8 @@ test('no-op customer edits preserve exact historical decimal text and financial 
     assert.equal(saved.details.originalAmount, 701.001);
     assert.equal(saved.details.privateCost, 'owner-only');
     assert.equal(saved.details.pricing, undefined);
+    assert.deepEqual([saved.details.color, saved.details.linkedColor], ['Black', undefined],
+        'an unchanged color keeps the stored fields, so a print job is never held by a contact edit');
 });
 
 test('physical returned tags do not add stock back to the catalog', async t => {

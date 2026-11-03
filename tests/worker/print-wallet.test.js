@@ -488,6 +488,9 @@ test('the owner can attach a receipt to an earlier payout or replace it; the rep
 
 test('print history lists the operator’s prints, QA results and payouts newest first, in stable pages', async t => {
     const f = fixture(t, 30);
+    // The LBC numbers on the order are the owner's and the customer's; history never carries them.
+    f.db.sqlite.prepare("UPDATE transactions SET details=json_set(details,'$.bookingNumber','BK-PRIVATE-0001','$.trackingNumber','TRACK-PRIVATE-0001') WHERE id=?")
+        .run(SOURCE);
     let current = await printed(f, await job(f), 30);
     current = await qa(f, current, 27, 3);
     current = await printed(f, current, 3);
@@ -508,7 +511,8 @@ test('print history lists the operator’s prints, QA results and payouts newest
     const [paid] = of('payout');
     assert.deepEqual([paid.amountCentavos, paid.note, paid.receiptUrl, typeof paid.payoutId], [K, 'GCash', upload.url, 'string']);
     const encoded = JSON.stringify(mine);
-    for (const forbidden of ['ST-PRINT', 'PRIVATE CONTACT', 'PRIVATE ADDRESS', 'PRIVATE RECEIPT', 'PRIVATE COST', '95000', 'orderId', 'Alex']) {
+    for (const forbidden of ['ST-PRINT', 'PRIVATE CONTACT', 'PRIVATE ADDRESS', 'PRIVATE RECEIPT', 'PRIVATE COST', '95000', 'orderId', 'Alex',
+        'BK-PRIVATE-0001', 'TRACK-PRIVATE-0001', 'bookingNumber', 'trackingNumber']) {
         assert.ok(!encoded.includes(forbidden), forbidden);
     }
     // Staff read only their own; the owner names the operator.

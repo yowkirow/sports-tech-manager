@@ -8,7 +8,7 @@ import { buildPublicCatalog } from '../src/lib/publicCatalog.js';
 import { getStockKey } from '../src/lib/inventory.js';
 import { createOrderId, groupOrders } from '../src/lib/orderItems.js';
 import { getCartUnitPrice, priceOrder } from '../src/lib/orderPricing.js';
-import { buildOrderChanges } from '../src/lib/orderEditingPure.js';
+import { buildOrderChanges, keepStoredPrintFields } from '../src/lib/orderEditingPure.js';
 import { normalizeCustomerEmail } from '../src/lib/customerEmail.js';
 import { background, sendOrderReceived, shippedTracking } from './notifications.ts';
 import type { Background } from './notifications.ts';
@@ -621,15 +621,16 @@ async function saveOrder(request: Request, env: AppEnv, key: string) {
         for (const change of result.changes) {
             const source = change.original;
             const details = { ...source.details, ...common, shippingDetails: { ...source.details.shippingDetails, ...common.shippingDetails } };
-            const variant = (item: RecordData, id: string) => {
+            const variant = (item: RecordData, id: string, parent: RecordData | null) => {
                 const draft = validated.find(entry => entry.id === id)!;
-                return { ...item, size: draft.size, color: draft.color, linkedColor: draft.color };
+                // An unchanged size or color keeps its stored fields, so a legacy row never holds a print job.
+                return keepStoredPrintFields({ ...item, size: draft.size, color: draft.color, linkedColor: draft.color }, item, parent, source);
             };
             if (Array.isArray(source.details.items)) {
                 details.items = source.details.items.map((item: RecordData, index: number) => item.details
-                    ? { ...item, details: variant(item.details, `${source.id}:${index}`) }
-                    : variant(item, `${source.id}:${index}`));
-            } else Object.assign(details, variant(details, source.id));
+                    ? { ...item, details: variant(item.details, `${source.id}:${index}`, source.details) }
+                    : variant(item, `${source.id}:${index}`, source.details));
+            } else Object.assign(details, variant(details, source.id, null));
             change.updates = { amount: source.amount, details };
         }
     }

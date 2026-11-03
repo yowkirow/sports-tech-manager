@@ -1,6 +1,47 @@
 import { getOrderPricingOptions, priceOrder } from './orderPricing.js';
+import { getItemCategory } from './orderItems.js';
 
 const money = value => Math.round(Number(value) * 100) / 100;
+
+// Older order rows can lack fields the editor always writes (linkedColor, category, brand,
+// itemName) or store them differently ('blanks', a quantity in quotes). Those raw fields are part
+// of the print queue's fingerprint (worker/migrations/0005_production.sql), so rewriting an
+// unchanged shirt put its printed job on hold and reopened the order (owner report 2026-11-03).
+// An edit keeps the stored value of every attribute whose effective value (as getSaleItems reads
+// it) is unchanged, and never when keeping it would change what the line means.
+const quantityOf = value => {
+    const number = Number(value);
+    return value === undefined || value === null || value === '' || !Number.isFinite(number) ? 1 : number;
+};
+// [stored keys, how getSaleItems reads the effective value, whether the stored keys can be sent back
+// as they are]. The reseller save (worker/reseller-order-store.ts draftsFor) reads `itemName ?? name`,
+// `size ??` and `color ??` directly and needs a numeric quantity, so an empty string, a quoted
+// quantity or a name that comes only from the description is rewritten as the editor shows it.
+const PRINT_ATTRIBUTES = [
+    [['itemName', 'name'], (item, parent, row) => item.itemName || item.name || row.description || 'Unknown Item',
+        (item, value) => (item.itemName ?? item.name) === value],
+    [['brand'], (item, parent) => item.brand || parent.brand || 'Sypik', () => true],
+    [['category'], (item, parent, row) => getItemCategory(item, row.category || ''), () => true],
+    [['size'], item => item.size || 'N/A', (item, value) => item.size == null || item.size === value],
+    [['color', 'linkedColor'], (item, parent) => item.linkedColor || item.color || parent.linkedColor || parent.color || '',
+        (item, value) => item.color == null || item.color === value],
+    [['quantity'], item => quantityOf(item.quantity), item => typeof item.quantity === 'number']
+];
+const effectiveLine = (item, parent, row) => PRINT_ATTRIBUTES.map(([, read]) => String(read(item, parent || item, row))).join('\n');
+// `parent` is the row's details for a nested item, or null when the row is the line itself.
+export const keepStoredPrintFields = (next, stored, parent, row) => {
+    if (!stored || typeof stored !== 'object' || (stored.details && typeof stored.details === 'object')) return next;
+    const kept = { ...next };
+    for (const [keys, read, sendable] of PRINT_ATTRIBUTES) {
+        const value = read(stored, parent || stored, row);
+        if (String(read(next, parent || next, row)) !== String(value) || !sendable(stored, value)) continue;
+        for (const key of keys) {
+            if (Object.hasOwn(stored, key)) kept[key] = stored[key];
+            else delete kept[key];
+        }
+    }
+    return effectiveLine(kept, parent, row) === effectiveLine(next, parent, row) ? kept : next;
+};
 
 export const getEditableOrderItems = (order) => order.items.map(item => ({
     id: item.id,
@@ -142,7 +183,7 @@ export const buildOrderChanges = (order, drafts, commonDetails = {}, recordUpdat
                     ...items[0].details.shippingDetails,
                     rushFee: money(items.reduce((sum, item) => sum + item.details.shippingDetails.rushFee, 0))
                 },
-                items: items.map(item => ({
+                items: items.map(item => keepStoredPrintFields({
                     ...original.details.items[item.original.itemIndex],
                     name: item.details.itemName,
                     itemName: item.details.itemName,
@@ -161,17 +202,18 @@ export const buildOrderChanges = (order, drafts, commonDetails = {}, recordUpdat
                     priceAdjustment: item.details.priceAdjustment,
                     shippingDetails: { rushFee: item.details.shippingDetails.rushFee },
                     amount: item.amount
-                }))
+                }, original.details.items[item.original.itemIndex], original.details, original))
             };
         } else {
-            details = items[0].details;
+            details = keepStoredPrintFields(items[0].details, original.details, null, original);
         }
         return {
             id: original.id,
             original,
             updates: {
                 ...recordUpdates,
-                ...(!Array.isArray(original.details?.items) && items.length ? { category: details.category } : {}),
+                ...(!Array.isArray(original.details?.items) && items.length && details.category !== original.details?.category
+                    ? { category: details.category } : {}),
                 amount: preserveSourceAmounts ? (original.amountExact ?? original.amount) : money(items.reduce((sum, item) => sum + item.amount, 0)),
                 details
             }
