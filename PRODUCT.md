@@ -69,7 +69,8 @@ prints, not an anonymous merch store.
 - Product links (owner request 2026-11-05): every product has its own link,
   sportstechph.store/p/<design>, that opens it in the shop. Shared in Messenger or Facebook, the link
   shows the product's photo, name and price. The shop's own link shows a share card. The product
-  sheet has a Share button.
+  sheet has a Share button. A product keeps its link when it is renamed or recolored, so ads and
+  links already shared keep working.
 - Meta Pixel (owner decision 2026-11-05): the shop's pages report visits, product views, bag adds,
   checkouts and purchases to Meta so Facebook and Instagram ads can be measured and retargeted. It
   loads for every visitor with a one-time notice; anyone can turn it off from the notice or on

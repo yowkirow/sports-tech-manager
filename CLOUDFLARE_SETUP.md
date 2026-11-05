@@ -233,15 +233,24 @@ separate application login works.
 Owner request (November 5, 2026): every product has a link that can be shared in
 Messenger, Facebook or anywhere else, and the link shows a preview.
 
-- **The link** is `https://www.sportstechph.store/p/<slug>`. The slug comes from the
-  product's name, because the catalog keys a product by its name and the product's id
+- **The link** is `https://www.sportstechph.store/p/<slug>`. A product's slug first comes
+  from its name, because the catalog keys a product by its name and the product's id
   changes on every edit. The owner's display number ("12. ", "27 ") is left out, so
   renumbering a design keeps its link. The color is added only when two products would
   otherwise share a link (the Black and White "Sypik Shirt with Vietnam Flag"). Older
   forms keep working: a slug with the number, with or without the color, opens the same
-  product. Renaming a product changes its link; an old link to a renamed or removed
-  product shows the shop with a short notice. The rule lives in
-  `src/lib/productLinks.js`, shared by the storefront and the Worker.
+  product. The rule lives in `src/lib/productLinks.js`, shared by the storefront and the
+  Worker.
+- **Links don't move** (owner request, November 5, 2026, for the Meta catalog ads): once
+  a product is saved, its slug is stored on it (`slug` in the `define_product` details)
+  and kept through every later save. Renaming a product or changing its color keeps its
+  link, and its new name's link opens it too. When a save would move another product's
+  link (a new product whose name reads the same, or deleting one of two that do), the
+  same save stores that product's current link as well (`keepProductLinks`). The slug is
+  also the product's Meta catalog item ID, so ads, shared links and the Pixel's
+  `content_ids` stay matched. Products saved before this change keep the slug their name
+  gives them until they are next saved. An old link to a removed product shows the shop
+  with a short notice.
 - **The storefront**: opening `/p/<slug>` opens that product's sheet. While a product
   is open, the address bar, tab title, canonical link and `og:url` follow it, so the
   address can be copied (Chrome on iOS shares the canonical link). Closing it returns to

@@ -7,6 +7,10 @@ import { isBallProduct } from './orderPricing.js';
 // name. The owner's display number ("12. ", "27 ") is left out so renumbering keeps old links working,
 // and the color is added only where two products would otherwise share a link (the Black and White
 // "Sypik Shirt with Vietnam Flag"). Every form a product could have had still opens it.
+//
+// Once a product is saved, it keeps its slug (owner request 2026-11-05). The slug is stored on the product,
+// so renaming it, or adding or deleting a product with a similar name, never moves its link or the Meta
+// catalog ID, which is the same slug (src/lib/pixelEvents.js).
 
 const MAX_SLUG = 80;
 const NUMBER_PREFIX = /^\s*\d+\s*[.):-]?\s+(?=\S)/;
@@ -29,21 +33,71 @@ function slugForms(product) {
     return [...new Set([base, color && `${base}-${color}`, full, color && `${full}-${color}`].filter(Boolean))];
 }
 
-/** Product name → its link slug: the first form no other product shares. */
+/** The slug stored on a product, if it is a well-formed one. */
+function pinnedSlug(product) {
+    const slug = typeof product?.slug === 'string' ? product.slug : '';
+    return slug && slugify(slug, Infinity) === slug ? slug : '';
+}
+
+/** Product name → its link slug: its stored slug, else the first form no other product shares. */
 export function productSlugs(products = []) {
     const entries = products.map(product => ({ product, forms: slugForms(product) }));
     const owners = new Map();
     for (const { forms } of entries) for (const form of forms) owners.set(form, (owners.get(form) || 0) + 1);
     const slugs = new Map();
     const used = new Set();
+    for (const { product } of entries) {
+        const pinned = pinnedSlug(product);
+        if (pinned && !used.has(pinned)) {
+            used.add(pinned);
+            slugs.set(product.name, pinned);
+        }
+    }
+    const stored = new Set(used);
     for (const { product, forms } of entries) {
-        let slug = forms.find(form => owners.get(form) === 1);
+        if (slugs.has(product.name)) continue;
+        let slug = forms.find(form => owners.get(form) === 1 && !stored.has(form));
         // Two names that read the same once simplified ("Tee!" and "Tee?") take a counter.
         for (let n = 2; !slug || used.has(slug); n++) slug = `${forms[forms.length - 1]}-${n}`;
         used.add(slug);
         slugs.set(product.name, slug);
     }
-    return slugs;
+    return new Map(products.map(product => [product.name, slugs.get(product.name)]));
+}
+
+const nameKey = name => String(name ?? '').trim().toLowerCase();
+
+/**
+ * What a catalog change must store so that no product's link moves. `saved` lists each product being
+ * saved with the product it replaces (`previous`, or null when it is new); `removed` lists deleted names.
+ * Returns the saved products with their slug, and the other products whose link the change would
+ * otherwise move, each pinned to the link it has now.
+ */
+export function keepProductLinks(products = [], { saved = [], removed = [] } = {}) {
+    const before = productSlugs(products);
+    const savedProducts = saved.map(({ product, previous }) => {
+        const { slug: _formSlug, ...fields } = product;
+        const replaced = previous || products.find(existing => nameKey(existing.name) === nameKey(product.name));
+        const slug = replaced ? pinnedSlug(replaced) || before.get(replaced.name) : '';
+        return slug ? { ...fields, slug } : fields;
+    });
+    const gone = new Set([
+        ...removed, ...saved.flatMap(({ previous }) => previous ? [previous.name] : []), ...savedProducts.map(product => product.name)
+    ].map(nameKey));
+    let others = products.filter(product => !gone.has(nameKey(product.name)));
+    const pinned = new Map();
+    for (let round = 0; ; round++) {
+        const after = productSlugs([...others, ...savedProducts]);
+        const moved = others.filter(product => !pinnedSlug(product) && after.get(product.name) !== before.get(product.name));
+        if (!moved.length || round > products.length) {
+            return {
+                saved: savedProducts.map(product => product.slug ? product : { ...product, slug: after.get(product.name) }),
+                pinned: [...pinned.values()]
+            };
+        }
+        for (const product of moved) pinned.set(nameKey(product.name), { ...product, slug: before.get(product.name) });
+        others = others.map(product => pinned.get(nameKey(product.name)) || product);
+    }
 }
 
 /** The raw slug of a /p/<slug> path, or null for any other path. */

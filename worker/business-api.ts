@@ -225,7 +225,7 @@ function legacyRow(row: StoredRow, member: Member): Data {
     if (member.role === 'reseller' && CATALOG.includes(row.type)) {
         const safe: Data = {};
         if (isObject(details)) {
-            for (const key of ['name', 'price', 'imageUrl', 'images', 'linkedColor', 'category', 'order', 'brand', 'hex']) {
+            for (const key of ['name', 'price', 'imageUrl', 'images', 'linkedColor', 'category', 'order', 'brand', 'hex', 'slug']) {
                 if (Object.hasOwn(details, key)) safe[key] = details[key];
             }
         }

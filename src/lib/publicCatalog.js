@@ -15,7 +15,8 @@ export const reconstructProducts = (transactions = []) => {
                 id: transaction.id, name, price: details.price, imageUrl: details.imageUrl,
                 images: details.images || (details.imageUrl ? [details.imageUrl] : []),
                 linkedColor: details.linkedColor, brand: details.brand || 'Sypik',
-                category: details.category || 'shirts', order: details.order !== undefined ? details.order : 9999
+                category: details.category || 'shirts', order: details.order !== undefined ? details.order : 9999,
+                ...(typeof details.slug === 'string' && details.slug ? { slug: details.slug } : {})
             });
         }
     }
