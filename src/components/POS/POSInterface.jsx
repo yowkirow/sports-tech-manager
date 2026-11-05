@@ -13,6 +13,7 @@ import useCustomers from '../../hooks/useCustomers';
 import { getMMCities, getAllProvinces, getCitiesByProvince, getBarangays } from '../../lib/phLocations';
 import { useActivityLog } from '../../hooks/useActivityLog';
 import { createOrderId } from '../../lib/orderItems';
+import { keepProductLinks, productSlugs } from '../../lib/productLinks';
 import { getStockKey } from '../../lib/inventory';
 import { getCartUnitPrice, isBallProduct, priceOrder } from '../../lib/orderPricing';
 import { getCheckoutStatuses } from '../../lib/checkoutPolicy';
@@ -27,6 +28,12 @@ const peso = (value) => `₱${(Number(value) || 0).toLocaleString()}`;
 const titleCase = (value) => String(value || '')
     .replace(/[-_]/g, ' ')
     .replace(/\b\w/g, char => char.toUpperCase());
+
+// Saves an untouched product again with the link it has now, so a change to another product can't move it.
+const keptLinkRow = (date) => ({ id: _id, ...product }) => ({
+    id: crypto.randomUUID(), type: 'define_product', category: 'system', amount: 0,
+    description: `Kept link: ${product.name}`, date, details: product
+});
 
 export default function POSInterface({ transactions, onAddTransaction, onAddTransactions, onDeleteTransaction, userRole }) {
     const { showToast } = useToast();
@@ -215,6 +222,8 @@ export default function POSInterface({ transactions, onAddTransaction, onAddTran
         if (!window.confirm(`Delete ${selectedProducts.size} products? This cannot be undone.`)) return;
         setCheckoutLoading(true);
         try {
+            const { pinned } = keepProductLinks(products, { removed: [...selectedProducts] });
+            if (pinned.length) await onAddTransactions(pinned.map(keptLinkRow(new Date().toISOString())));
             for (const name of selectedProducts) {
                 await onAddTransaction({
                     id: crypto.randomUUID(),
@@ -426,6 +435,9 @@ export default function POSInterface({ transactions, onAddTransaction, onAddTran
         if (!window.confirm('Save new product order?')) return;
         setCheckoutLoading(true);
         try {
+            // Reordering saves every product again, with the link it has now: numbered links ("tee-2")
+            // follow the product order and would otherwise swap.
+            const slugs = productSlugs(products);
             for (let i = 0; i < localOrderedProducts.length; i++) {
                 const p = localOrderedProducts[i];
                 await onAddTransaction({
@@ -437,7 +449,8 @@ export default function POSInterface({ transactions, onAddTransaction, onAddTran
                     date: new Date().toISOString(),
                     details: {
                         ...p,
-                        order: i
+                        order: i,
+                        ...(slugs.has(p.name) ? { slug: slugs.get(p.name) } : {})
                     }
                 });
             }
@@ -479,30 +492,35 @@ export default function POSInterface({ transactions, onAddTransaction, onAddTran
                     onSave={async (formData) => {
                         setCheckoutLoading(true);
                         try {
+                            // The product keeps its link through a rename, and so does any product the change would move.
+                            const { saved: [product], pinned } = keepProductLinks(products, {
+                                saved: [{ product: { ...formData, order: editingProduct?.order }, previous: editingProduct || null }]
+                            });
+                            const deletedAt = new Date();
+                            // One ms later, so a rename that only changes letter case still ends with the product defined.
+                            const definedAt = new Date(deletedAt.getTime() + 1).toISOString();
+                            const rows = [];
                             if (editingProduct && editingProduct.name !== formData.name) {
-                                await onAddTransaction({
+                                rows.push({
                                     id: crypto.randomUUID(),
                                     type: 'delete_product',
                                     category: 'system',
                                     amount: 0,
                                     description: `Renamed Product(Deleted Old): ${editingProduct.name}`,
-                                    date: new Date().toISOString(),
+                                    date: deletedAt.toISOString(),
                                     details: { name: editingProduct.name }
                                 });
                             }
-
-                            await onAddTransaction({
+                            rows.push({
                                 id: crypto.randomUUID(),
                                 type: 'define_product',
                                 category: 'system',
                                 amount: 0,
                                 description: `Defined Product: ${formData.name}`,
-                                date: new Date().toISOString(),
-                                details: {
-                                    ...formData,
-                                    order: editingProduct?.order
-                                }
-                            });
+                                date: definedAt,
+                                details: product
+                            }, ...pinned.map(keptLinkRow(definedAt)));
+                            await onAddTransactions(rows);
                             showToast('Product Saved!', 'success');
                             setShowProductModal(false);
                         } catch (err) {
@@ -524,6 +542,8 @@ export default function POSInterface({ transactions, onAddTransaction, onAddTran
                                 return;
                             }
 
+                            const { pinned } = keepProductLinks(products, { removed: [productName] });
+                            if (pinned.length) await onAddTransactions(pinned.map(keptLinkRow(new Date().toISOString())));
                             await Promise.all(relatedIds.map(id => onDeleteTransaction(id, true)));
                             showToast(`Product deleted(cleaned ${relatedIds.length} records)`, 'success');
                             setShowProductModal(false);
