@@ -16,7 +16,13 @@ export default defineConfig(({ mode }) => ({
         VitePWA({
             registerType: 'autoUpdate',
             workbox: {
-                navigateFallbackDenylist: [/^\/api\//, /^\/cdn-cgi\//, /^\/admin(?:\/|$)/, /^\/print(?:\/|$)/, /^\/health$/]
+                // The service worker precaches the app's files but never answers a page load: every visit
+                // gets the page from the Worker and so runs the current release. (Serving its saved
+                // index.html kept returning visitors on the previous release for a whole visit after each
+                // deploy, 2026-11-05.) index.html stays out of the precache too, or Workbox would still
+                // answer "/" from it as the directory index.
+                navigateFallback: null,
+                globIgnores: ['**/node_modules/**/*', 'index.html']
             },
             includeAssets: ['icon-192.png', 'apple-touch-icon.png'],
             manifest: {
