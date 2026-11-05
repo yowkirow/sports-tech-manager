@@ -1,7 +1,7 @@
 import React, { useState } from 'react';
 import { Trash2 } from 'lucide-react';
 import clsx from 'clsx';
-import { isReturnedSale } from '../lib/transactionStatus';
+import { isVoidedSale } from '../lib/transactionStatus';
 import { READ_ONLY_HINT } from './ui/ReadOnly';
 
 const formatPeso = (amount) => `₱${Math.abs(amount).toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`;
@@ -46,7 +46,7 @@ const DashboardStats = ({ transactions, onDeleteAll, readOnly = false }) => {
     const filtered = getFilteredTransactions();
 
     const totalSales = filtered
-        .filter(t => t.type === 'sale' && !isReturnedSale(t))
+        .filter(t => t.type === 'sale' && !isVoidedSale(t))
         .reduce((acc, curr) => acc + Number(curr.amount), 0);
 
     const totalExpenses = filtered

@@ -1,8 +1,7 @@
 import React, { useMemo, useState } from 'react';
 import { Target } from 'lucide-react';
 import clsx from 'clsx';
-import { isReturnedSale } from '../../lib/transactionStatus';
-import { getSaleItems } from '../../lib/orderItems.js';
+import { buildPlReport } from '../../lib/plReport.js';
 import { useReadOnly } from '../ui/ReadOnly';
 
 const FilterButton = ({ active, onClick, children }) => (
@@ -20,87 +19,7 @@ const AdsReporting = ({ transactions }) => {
     const readOnly = useReadOnly();
     const [filter, setFilter] = useState('monthly');
 
-    const reportData = useMemo(() => {
-        const now = new Date();
-
-        const filtered = transactions.filter(t => {
-            if (!t.date) return false;
-            const tDate = new Date(t.date);
-
-            if (filter === 'all') return true;
-            if (filter === 'daily') return tDate.toDateString() === now.toDateString();
-            if (filter === 'monthly') return tDate.getMonth() === now.getMonth() && tDate.getFullYear() === now.getFullYear();
-            if (filter === 'yearly') return tDate.getFullYear() === now.getFullYear();
-
-            if (filter === 'weekly') {
-                const sevenDaysAgo = new Date(now);
-                sevenDaysAgo.setDate(now.getDate() - 7);
-                return tDate >= sevenDaysAgo && tDate <= now;
-            }
-            return true;
-        });
-
-        let totalSales = 0;
-        let totalShirtsSold = 0;
-        let totalAdSpend = 0;
-        let totalProductionExpense = 0;
-        let otherExpenses = 0;
-
-        const productionKeywords = ['blanks', 'packaging', 'transportation', 'lalamove', 'print', 'printing', 'shirt', 'shipping'];
-
-        filtered.forEach(t => {
-            const amount = Number(t.amount) || 0;
-            if (t.type === 'sale' && !isReturnedSale(t) && t.details?.club !== 'downtown-dinks') {
-                totalSales += amount;
-                totalShirtsSold += getSaleItems(t)
-                    .filter(item => item.details?.category === 'shirts')
-                    .reduce((sum, item) => sum + (Number(item.details?.quantity) || 0), 0);
-            } else if (t.type === 'expense') {
-                if (t.details?.club === 'downtown-dinks') return;
-
-                const cat = (t.category || '').toLowerCase();
-                const subCat = (t.details?.subCategory || '').toLowerCase();
-
-                if (cat === 'ads' || subCat === 'marketing/ads') {
-                    totalAdSpend += amount;
-                } else {
-                    const isProduction = productionKeywords.some(kw => cat.includes(kw) || subCat.includes(kw));
-
-                    if (isProduction) {
-                        totalProductionExpense += amount;
-                    } else {
-                        otherExpenses += amount;
-                    }
-                }
-            }
-        });
-
-        const salesAfterShirtCost = totalSales - totalProductionExpense;
-        const netProfit = salesAfterShirtCost - totalAdSpend - otherExpenses;
-
-        const perShirt = (val) => totalShirtsSold > 0 ? (val / totalShirtsSold) : 0;
-
-        return {
-            totalShirtsSold,
-            totalSales,
-            totalSalesPerUnit: perShirt(totalSales),
-
-            totalProductionExpense,
-            productionPerUnit: perShirt(totalProductionExpense),
-
-            salesAfterShirtCost,
-            salesAfterShirtCostPerUnit: perShirt(salesAfterShirtCost),
-
-            totalAdSpend,
-            adSpendPerUnit: perShirt(totalAdSpend),
-
-            otherExpenses,
-            otherExpensesPerUnit: perShirt(otherExpenses),
-
-            netProfit,
-            netProfitPerUnit: perShirt(netProfit)
-        };
-    }, [transactions, filter]);
+    const reportData = useMemo(() => buildPlReport(transactions, filter), [transactions, filter]);
 
     const formatCurrency = (amount) => {
         return amount.toLocaleString(undefined, { minimumFractionDigits: 0, maximumFractionDigits: 2 });
@@ -149,7 +68,7 @@ const AdsReporting = ({ transactions }) => {
                             </tr>
 
                             <tr className="border-b border-line transition-colors hover:bg-white/[0.04]">
-                                <td className="px-5 py-4 text-ink-2">Less (Blank shirt, Lalamove, Print)</td>
+                                <td className="px-5 py-4 text-ink-2">Less (Blank shirt, Print, Packaging, Shipping)</td>
                                 <td className="num border-l border-line px-5 py-4 text-right font-semibold text-red-300">
                                     ₱{formatCurrency(reportData.totalProductionExpense)}
                                 </td>
@@ -210,7 +129,7 @@ const AdsReporting = ({ transactions }) => {
 
             <div className="w-full max-w-5xl">
                 <p className="rounded-xl border border-line bg-raised p-4 text-sm text-ink-2">
-                    <strong className="font-semibold text-ink">Note:</strong> Production costs are dynamically grouped based on your expense categories and descriptions (e.g., matching keywords like "blanks", "printing", "packaging", "lalamove", "transportation"). All other tracked administrative expenses fall under "other costs".
+                    <strong className="font-semibold text-ink">Note:</strong> Returned and cancelled orders don&apos;t count as sales. Production costs are grouped by keywords in your expense categories: &quot;blanks&quot;, &quot;shirt&quot;, &quot;DTF&quot;, &quot;print&quot;, &quot;packaging&quot;, &quot;LBC&quot;, &quot;lalamove&quot;, &quot;shipping&quot; and &quot;transportation&quot;. Marketing/Ads and any category naming advertising count as advertisement. All other expenses fall under &quot;other costs&quot;.
                 </p>
             </div>
         </div>

@@ -1,7 +1,7 @@
 import React, { useMemo, useState } from 'react';
 import { Search, Trash2, Calendar, Edit2, User, Coins, X } from 'lucide-react';
 import { createPortal } from 'react-dom';
-import { isReturnedSale } from '../lib/transactionStatus';
+import { isVoidedSale } from '../lib/transactionStatus';
 import { withLocalDate } from '../lib/transactionDate';
 import { useToast } from './ui/Toast';
 import { useReadOnly, READ_ONLY_HINT } from './ui/ReadOnly';
@@ -81,7 +81,7 @@ const Sales = ({ transactions, onDeleteTransaction, onUpdateTransaction }) => {
     // Filter only sale transactions
     const sales = useMemo(() => {
         return transactions
-            .filter(t => (t.type === 'sale' && !isReturnedSale(t) && !t.details?.removedFromOrder) || t.type === 'club_income')
+            .filter(t => (t.type === 'sale' && !isVoidedSale(t) && !t.details?.removedFromOrder) || t.type === 'club_income')
             .filter(t => {
                 const matchesSearch =
                     (t.description || '').toLowerCase().includes(searchTerm.toLowerCase()) ||

@@ -1,13 +1,13 @@
 import React from 'react';
 import { ArrowUpRight, ArrowDownLeft, Trash2, ReceiptText } from 'lucide-react';
 import clsx from 'clsx';
-import { isReturnedSale } from '../lib/transactionStatus';
+import { isVoidedSale } from '../lib/transactionStatus';
 import { READ_ONLY_HINT } from './ui/ReadOnly';
 
 const TransactionList = ({ transactions, onDelete, readOnly = false }) => {
     // Sort by date desc
     const sorted = transactions
-        .filter(t => !isReturnedSale(t) && !t.details?.removedFromOrder)
+        .filter(t => !isVoidedSale(t) && !t.details?.removedFromOrder)
         .sort((a, b) => new Date(b.date) - new Date(a.date));
 
     const formatDate = (isoString) => {
