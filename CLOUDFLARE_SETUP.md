@@ -246,9 +246,10 @@ Messenger, Facebook or anywhere else, and the link shows a preview.
   is open, the address bar, tab title, canonical link and `og:url` follow it, so the
   address can be copied (Chrome on iOS shares the canonical link). Closing it returns to
   `/`. Tracking and staff pages drop the shop home's canonical link, which the offline
-  app copy carries. Product tiles are real links (long-press or right-click to copy, or
-  open in a new tab). The sheet has a Share button: phones open the share sheet
-  (Messenger, Facebook…), computers copy the link.
+  app copy carried before November 5 (see "Service worker" below). Product tiles are
+  real links (long-press or right-click to copy, or open in a new tab). The sheet has a
+  Share button: phones open the share sheet (Messenger, Facebook…), computers copy the
+  link.
 - **The preview**: link-preview crawlers don't run the app, so the Worker writes Open
   Graph and Twitter tags into `index.html` for `/` and `/p/*` (`worker/share-preview.ts`).
   The tags carry the title, description, photo, canonical URL and the product price in
@@ -288,7 +289,7 @@ off, rather than asking first.
   `fbq.allowDuplicatePageViews`), and automatic button-click and page-metadata events are off
   (`autoConfig` false), because the order-complete screen shows the order number and its
   `/track` link. `/track`, `/admin` and `/print` set a `strict-origin` referrer policy
-  (a meta tag, since the offline app copy serves those pages too), so a link from an
+  (a meta tag, which also covers browsers still on the old service worker), so a link from an
   order page back to the shop never hands the Pixel `/track/<order number>` as the
   referrer. In Events Manager, keep automatic advanced matching and automatic events
   off; the privacy page promises it.
@@ -321,6 +322,22 @@ off, rather than asking first.
   statement describes what the app does today, so update it with any change to what is
   collected, who sees it (LBC, textbee.dev for texts, Cloudflare for hosting and email),
   or the Pixel's events.
+
+## Service worker
+
+The app installs a service worker (`vite-plugin-pwa`, `registerType: 'autoUpdate'`) that
+precaches the built files, so repeat visits load scripts and images quickly. It never
+answers a page load (November 5, 2026): `navigateFallback` is `null`, and `index.html` is
+left out of the precache, since Workbox would otherwise still answer `/` from it as the
+directory index. Every visit to `/`, `/p/*`, `/privacy` or `/track/*` gets its page from
+the Worker, and so runs the current release. Before that change it served its saved
+`index.html` for those pages, so a returning visitor ran the previous release for a whole
+visit after each deploy (seen in the owner's Edge after the Meta Pixel release, where the
+old shop could no longer apply vouchers). A browser still on that older worker picks up
+the new one during its next visit; a real-browser check showed the new worker in charge
+by the second visit. The client-side canonical cleanup on order and staff pages and their
+referrer meta tag stay as safeguards. A shop page opened offline now shows the browser's
+own offline page; the shop needs the network for its catalog anyway.
 
 ## Customer emails (migration 0017)
 
