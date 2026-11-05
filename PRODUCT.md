@@ -68,6 +68,12 @@ prints, not an anonymous merch store.
   sportstechph.store/p/<design>, that opens it in the shop. Shared in Messenger or Facebook, the link
   shows the product's photo, name and price. The shop's own link shows a share card. The product
   sheet has a Share button.
+- Meta Pixel (owner decision 2026-11-05): the shop's pages report visits, product views, bag adds,
+  checkouts and purchases to Meta so Facebook and Instagram ads can be measured and retargeted. It
+  loads for every visitor with a one-time notice; anyone can turn it off from the notice or on
+  `/privacy`, and the browser's Global Privacy Control turns it off. The shop never sends Meta
+  customers' names, numbers, addresses, emails or order numbers, and the Pixel never runs on order,
+  staff or print pages.
 - Ball pricing is tiered by quantity (1, 5, 10, 20, 50, 100 pieces).
 - Shirt sizes XS–2XL with brand-specific size guides.
 - Staff sign-in is email-code via Cloudflare Access; staging is a read-only snapshot with a visible
@@ -81,7 +87,8 @@ prints, not an anonymous merch store.
   must stay lazy.
 - Pricing, inventory, permissions and order-save payloads are owned by the Worker and must not
   change from UI work.
-- Routes: `/` storefront, `/track/:id` tracking, `/admin` staff workspace, `/print` print queue.
+- Routes: `/` storefront, `/privacy` privacy and cookies notice, `/track/:id` tracking, `/admin`
+  staff workspace, `/print` print queue.
 - Currency is Philippine peso (₱) throughout.
 - Undecided: product photography standards (catalog images are whatever the owner uploads).
 

@@ -336,6 +336,27 @@ test('lost checkout responses replay the same receipt without duplicate sales an
     await assert.rejects(call(env, '/api/public/checkout', { ...body, rush: false }), code('idempotency_conflict'));
 });
 
+test('a lost GCash checkout retried with a re-uploaded receipt returns the same order, never a second one', async t => {
+    const { env } = fixture(t);
+    const png = new Uint8Array([137, 80, 78, 71, 13, 10, 26, 10, 0, 0]);
+    const upload = async () => (await handlePublicRequest(new Request('https://shop.example.invalid/api/public/receipts', { method: 'POST', body: png }), env)).json();
+    const first = await upload();
+    const body = intent({ paymentMode: 'Gcash', receipt: first });
+    env.DB.loseCheckoutResponse = true;
+    await assert.rejects(call(env, '/api/public/checkout', body), /lost response/);
+    const firstId = saleRows(env)[0].order_id;
+    // After a reload the shop still has the request ID, but the receipt is uploaded again.
+    const second = await upload();
+    assert.notEqual(second.receiptId, first.receiptId);
+    const retry = await call(env, '/api/public/checkout', { ...body, receipt: second });
+    assert.equal(retry.body.orderId, firstId);
+    assert.equal(saleRows(env).length, 1);
+    const receiptImage = await handlePublicRequest(req(`/api/media/receipts/${first.receiptId}`, undefined, retry.body.token), env);
+    assert.equal(receiptImage.status, 200, 'the order keeps the receipt it was placed with');
+    // A different order under the same request ID is still refused.
+    await assert.rejects(call(env, '/api/public/checkout', { ...body, receipt: second, rush: false }), code('idempotency_conflict'));
+});
+
 test('concurrent catalog/stock/voucher change aborts checkout without partial order/receipt writes', async t => {
     const { env } = fixture(t);
     env.DB.beforeBatch = statements => {

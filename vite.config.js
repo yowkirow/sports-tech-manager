@@ -6,7 +6,10 @@ import { VitePWA } from 'vite-plugin-pwa'
 export default defineConfig(({ mode }) => ({
     define: {
         // Must match PRINT_QUEUE_ENABLED in wrangler.production.jsonc (enabled 2026-10-13).
-        'import.meta.env.VITE_PRINT_QUEUE_ENABLED': JSON.stringify(mode === 'staging' ? 'true' : process.env.VITE_PRINT_QUEUE_ENABLED || 'true')
+        'import.meta.env.VITE_PRINT_QUEUE_ENABLED': JSON.stringify(mode === 'staging' ? 'true' : process.env.VITE_PRINT_QUEUE_ENABLED || 'true'),
+        // The shop's Meta Pixel ("Sports TECH Event Data", owner-approved 2026-11-05). A Pixel ID is
+        // public by design: every page that loads the Pixel shows it. Staging builds leave it out.
+        'import.meta.env.VITE_META_PIXEL_ID': JSON.stringify(mode === 'staging' ? '' : process.env.VITE_META_PIXEL_ID ?? '1659409512144130')
     },
     plugins: [
         react(),

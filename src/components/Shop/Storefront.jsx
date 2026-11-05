@@ -7,11 +7,14 @@ import {
 import { apiRequest } from '../../lib/apiClient';
 import { checkVoucher, rememberTracking, trackOrder, uploadReceipt } from '../../lib/publicShopApi';
 import { findProductBySlug, parseProductPath, productPageTitle, productSlugs, SITE_PREVIEW } from '../../lib/productLinks';
+import { acknowledgePixelNotice, onPixelChoiceChange, pixelNoticeNeeded, setPixelChoice, startShopPixel, trackPixel } from '../../lib/metaPixel';
+import { bagEvent, catalogIds, productView } from '../../lib/pixelEvents';
 import { setShareUrl } from '../../lib/shareHead';
 import { useToast } from '../ui/Toast';
 import Dialog from '../ui/Dialog';
 import EmailFixHint from '../ui/EmailFixHint';
 import Logo from '../ui/Logo';
+import PixelNotice from './PixelNotice';
 import { normalizeCustomerEmail, suggestEmailFix } from '../../lib/customerEmail';
 import { getMMCities, getAllProvinces, getCitiesByProvince, getBarangays } from '../../lib/phLocations';
 import { getSizeGuideForBrand } from '../../data/sizeGuides';
@@ -351,13 +354,73 @@ function ChoiceCard({ name, value, checked, onChange, icon: Icon, label, detail,
     );
 }
 
+// The bag lasts for this browser tab until an order is placed, so a reload or a visit to /privacy
+// keeps it (in-app browsers open links in the same view). Only names, sizes and quantities are kept;
+// each line is rebuilt from the current catalog, so prices and product IDs are always current.
+const BAG_KEY = 'sportstech:bag';
+function restoreBag(products) {
+    try {
+        const saved = JSON.parse(sessionStorage.getItem(BAG_KEY) || '[]');
+        if (!Array.isArray(saved)) return [];
+        const byName = new Map(products.map(product => [product.name, product]));
+        const lines = new Map();
+        for (const line of saved) {
+            const product = byName.get(line?.name);
+            const quantity = Number(line?.quantity);
+            if (!product || typeof line.size !== 'string' || line.size.length > 10 || !Number.isInteger(quantity) || quantity < 1 || quantity > 9999) continue;
+            const cartId = `${product.name}-${line.size}`;
+            if (!lines.has(cartId)) lines.set(cartId, { ...product, size: line.size, cartId, quantity, price: getCartUnitPrice(product, quantity) });
+        }
+        return [...lines.values()];
+    } catch {
+        return [];
+    }
+}
+function saveBag(cart) {
+    try {
+        if (cart.length) sessionStorage.setItem(BAG_KEY, JSON.stringify(cart.map(({ name, size, quantity }) => ({ name, size, quantity }))));
+        else sessionStorage.removeItem(BAG_KEY);
+    } catch { /* the bag still works for this page */ }
+}
+
+// An order attempt that got no reply (a dropped connection) may still have been placed. Its request ID
+// stays with this tab beside a hash of the order (never the customer's details), so retrying the same
+// order, even after a reload, returns that order instead of placing a second one. A different order
+// waits 30 minutes, long enough to check Track order, for a shopper whose first attempt never arrived.
+const CHECKOUT_KEY = 'sportstech:checkout';
+const DIFFERENT_ORDER_WAIT = 30 * 60 * 1000;
+function restoreUnconfirmedCheckout() {
+    try {
+        const saved = JSON.parse(sessionStorage.getItem(CHECKOUT_KEY) || 'null');
+        if (saved && typeof saved.requestId === 'string' && typeof saved.signature === 'string' && Number.isFinite(saved.at)) return saved;
+    } catch { /* none kept */ }
+    return null;
+}
+function saveUnconfirmedCheckout(checkout) {
+    try {
+        if (checkout) sessionStorage.setItem(CHECKOUT_KEY, JSON.stringify(checkout));
+        else sessionStorage.removeItem(CHECKOUT_KEY);
+    } catch { /* this page still remembers it */ }
+}
+async function orderSignature(intent) {
+    // The payment proof is left out: retrying with a fresh upload is still the same order.
+    const { receipt: _proof, ...order } = intent;
+    const text = JSON.stringify(order);
+    if (!globalThis.crypto?.subtle) return { signature: text, storable: false };
+    const digest = new Uint8Array(await crypto.subtle.digest('SHA-256', new TextEncoder().encode(text)));
+    return { signature: [...digest].map(byte => byte.toString(16).padStart(2, '0')).join(''), storable: true };
+}
+
 export default function Storefront({ catalog }) {
     const { showToast } = useToast();
     const { products = [], stock: rawInventory = {}, brands = [] } = catalog || {};
-    const checkoutRequest = useRef(null);
+    const [unconfirmedCheckout] = useState(restoreUnconfirmedCheckout);
+    const checkoutRequest = useRef(unconfirmedCheckout);
+    const forgetCheckout = () => { checkoutRequest.current = null; saveUnconfirmedCheckout(null); };
     const checkoutInFlight = useRef(false);
 
-    const [cart, setCart] = useState([]);
+    const [cart, setCart] = useState(() => restoreBag(products));
+    React.useEffect(() => { saveBag(cart); }, [cart]);
     const [isCartOpen, setIsCartOpen] = useState(false);
     const [bagStep, setBagStep] = useState('bag');
     // A shared /p/<product> link opens straight to that product.
@@ -366,6 +429,9 @@ export default function Storefront({ catalog }) {
         return slug === null ? null : findProductBySlug(products, slug);
     });
     const slugs = useMemo(() => productSlugs(products), [products]);
+    const pixelIds = useMemo(() => catalogIds(products, slugs), [products, slugs]);
+    const slugFor = item => pixelIds.get(item.name);
+    const [showPixelNotice, setShowPixelNotice] = useState(pixelNoticeNeeded);
     const [searchTerm, setSearchTerm] = useState('');
     const [selectedBrand, setSelectedBrand] = useState('All');
     const [lastOrderId, setLastOrderId] = useState('');
@@ -488,6 +554,26 @@ export default function Storefront({ catalog }) {
     // eslint-disable-next-line react-hooks/exhaustive-deps
     }, [activeProduct, slugs]);
 
+    // Meta Pixel: a PageView when the shop loads and whenever its address changes (a product opens or
+    // closes), and ViewContent each time a product opens.
+    React.useEffect(() => { startShopPixel(); }, []);
+    const pixelPath = useRef(null);
+    React.useEffect(() => {
+        const path = window.location.pathname;
+        if (pixelPath.current !== null && pixelPath.current !== path) trackPixel('PageView');
+        pixelPath.current = path;
+        if (activeProduct) trackPixel('ViewContent', productView(activeProduct, slugFor(activeProduct)));
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+    }, [activeProduct]);
+    const dismissPixelNotice = () => { acknowledgePixelNotice(); setShowPixelNotice(false); };
+    // A choice made on /privacy in another tab answers this tab's notice too.
+    React.useEffect(() => onPixelChoiceChange(() => { if (!pixelNoticeNeeded()) setShowPixelNotice(false); }), []);
+    const turnOffPixel = () => {
+        setPixelChoice('off');
+        setShowPixelNotice(false);
+        showToast('Meta cookies are off in this browser.', 'info');
+    };
+
     const getStock = (product, size) => {
         if (!product.linkedColor || product.category !== 'shirts') {
             if (product.category && product.category !== 'shirts') {
@@ -513,6 +599,7 @@ export default function Storefront({ catalog }) {
             }
             return [...prev, { ...product, size, cartId, quantity, price: getCartUnitPrice(product, quantity) }];
         });
+        trackPixel('AddToCart', bagEvent([{ ...product, quantity }], slugFor, getCartUnitPrice(product, quantity) * quantity));
         setActiveProduct(null);
         showToast(`Added to bag: ${product.name}${size !== 'N/A' ? `, size ${size}` : ''}`, 'success');
     };
@@ -637,20 +724,27 @@ export default function Storefront({ catalog }) {
                 region: shippingRegion, rush: isRushOrder, voucherCode: appliedVoucher?.code || null, paymentMode,
                 ...(requiresProof ? { receipt: proofReceipt } : {})
             };
-            const signature = JSON.stringify(intent);
-            if (checkoutRequest.current && checkoutRequest.current.signature !== signature) {
-                throw new Error('A previous checkout is unconfirmed. Restore that cart and retry, or track your order before starting a different checkout.');
+            const { signature, storable } = await orderSignature(intent);
+            const unanswered = checkoutRequest.current;
+            if (unanswered && unanswered.signature !== signature) {
+                if (Date.now() - unanswered.at < DIFFERENT_ORDER_WAIT) {
+                    throw new Error('Your last order attempt got no reply, so it may have gone through. Check Track order before ordering again, or retry with the same details.');
+                }
+                forgetCheckout();
             }
-            checkoutRequest.current ||= { signature, requestId: crypto.randomUUID() };
+            // Each send restarts the wait for a different order: this attempt may be the one that lands.
+            checkoutRequest.current = { signature, requestId: checkoutRequest.current?.requestId || crypto.randomUUID(), at: Date.now() };
+            if (storable) saveUnconfirmedCheckout(checkoutRequest.current);
             const result = await apiRequest('/api/public/checkout', {
                 method: 'POST', body: { ...intent, requestId: checkoutRequest.current.requestId }
             });
             rememberTracking(result.orderId, result.token);
+            trackPixel('Purchase', bagEvent(cart, slugFor, result.total));
 
             setOrderComplete(true);
             setLastOrderId(result.orderId);
             setLastOrderEmail(email);
-            checkoutRequest.current = null;
+            forgetCheckout();
             setCart([]);
             setProofUrl('');
             setProofReceipt(null);
@@ -660,9 +754,12 @@ export default function Storefront({ catalog }) {
             setBagStep('bag');
             window.scrollTo(0, 0);
         } catch (err) {
-            if (['invalid_input', 'payload_too_large', 'catalog_changed', 'receipt_conflict'].includes(err.code)) checkoutRequest.current = null;
+            if (['invalid_input', 'payload_too_large', 'catalog_changed', 'receipt_conflict'].includes(err.code)) forgetCheckout();
             console.error(err);
-            showToast(`Order could not be confirmed: ${err.message || 'Please check your connection and try again.'}`, 'error');
+            // The server already placed an order under this attempt's request ID.
+            showToast(err.code === 'idempotency_conflict'
+                ? 'We already received an order from this checkout. Find it with Track order before ordering again.'
+                : `Order could not be confirmed: ${err.message || 'Please check your connection and try again.'}`, 'error');
         } finally {
             checkoutInFlight.current = false;
             setCheckoutLoading(false);
@@ -687,7 +784,27 @@ export default function Storefront({ catalog }) {
     };
 
     const openBag = () => { setBagStep('bag'); setIsCartOpen(true); };
+    const startCheckout = () => {
+        setBagStep('checkout');
+        trackPixel('InitiateCheckout', bagEvent(cart, slugFor, subtotal));
+    };
     const trackingUrl = `${window.location.origin}/track/${lastOrderId}`;
+    const showStickyBag = cart.length > 0 && !isCartOpen && !activeProduct;
+    // The phone's bottom bars (cookie notice, View bag) are measured so the page can scroll past them.
+    const bottomStackRef = useRef(null);
+    const [bottomStackHeight, setBottomStackHeight] = useState(0);
+    React.useLayoutEffect(() => {
+        const stack = bottomStackRef.current;
+        if (!stack) {
+            setBottomStackHeight(0);
+            return undefined;
+        }
+        const measure = () => setBottomStackHeight(stack.offsetHeight);
+        measure();
+        const observer = new ResizeObserver(measure);
+        observer.observe(stack);
+        return () => observer.disconnect();
+    }, [showPixelNotice, showStickyBag, orderComplete]);
 
     if (orderComplete) {
         return (
@@ -726,13 +843,15 @@ export default function Storefront({ catalog }) {
                             Place another order
                         </button>
                     </div>
+                    <p className="mt-10 border-t border-line pt-2">
+                        <a href="/privacy" className="inline-flex min-h-11 items-center text-sm text-ink-2 underline hover:text-ink">Privacy &amp; cookies</a>
+                    </p>
                 </main>
             </div>
         );
     }
 
     const requiresProof = ['Gcash', 'Bank Transfer'].includes(paymentMode);
-    const showStickyBag = cart.length > 0 && !isCartOpen && !activeProduct;
 
     return (
         <div className="min-h-dvh bg-ground text-ink">
@@ -808,16 +927,26 @@ export default function Storefront({ catalog }) {
                     </div>
                 </div>
                 <div className="border-t border-line">
-                    <p className="mx-auto max-w-7xl px-4 py-5 text-xs text-ink-3 sm:px-6 lg:px-8">© {new Date().getFullYear()} SportsTech PH · www.sportstechph.store</p>
+                    <div className="mx-auto flex max-w-7xl flex-wrap items-center justify-between gap-x-6 px-4 py-2 sm:px-6 lg:px-8">
+                        <p className="py-3 text-xs text-ink-3">© {new Date().getFullYear()} SportsTech PH · www.sportstechph.store</p>
+                        <a href="/privacy" className="inline-flex min-h-11 items-center text-sm text-ink-2 underline hover:text-ink">Privacy &amp; cookies</a>
+                    </div>
                 </div>
             </footer>
+            {/* Keeps the end of the page scrollable above the phone's bottom bars. */}
+            {bottomStackHeight > 0 && <div aria-hidden="true" className="sm:hidden" style={{ height: bottomStackHeight }} />}
 
-            {showStickyBag && (
-                <div className="fixed inset-x-0 bottom-0 z-30 border-t border-line bg-ground px-4 pt-3 pb-[max(0.75rem,env(safe-area-inset-bottom))] sm:hidden">
-                    <button type="button" onClick={openBag} className="btn-primary h-12 w-full justify-between px-5 text-base">
-                        <span>View bag ({itemCount})</span>
-                        <span className="num">{peso(subtotal)}</span>
-                    </button>
+            {(showPixelNotice || showStickyBag) && (
+                <div ref={bottomStackRef} className="pointer-events-none fixed inset-x-0 bottom-0 z-30 flex flex-col sm:items-start">
+                    {showPixelNotice && <PixelNotice onDismiss={dismissPixelNotice} onTurnOff={turnOffPixel} lastInStack={!showStickyBag} />}
+                    {showStickyBag && (
+                        <div className="pointer-events-auto border-t border-line bg-ground px-4 pt-3 pb-[max(0.75rem,env(safe-area-inset-bottom))] sm:hidden">
+                            <button type="button" onClick={openBag} className="btn-primary h-12 w-full justify-between px-5 text-base">
+                                <span>View bag ({itemCount})</span>
+                                <span className="num">{peso(subtotal)}</span>
+                            </button>
+                        </div>
+                    )}
                 </div>
             )}
 
@@ -836,7 +965,7 @@ export default function Storefront({ catalog }) {
                                 <span className="num text-lg font-semibold">{peso(subtotal)}</span>
                             </div>
                             <p className="text-xs text-ink-2">Shipping, rush printing and vouchers are added at checkout.</p>
-                            <button type="button" onClick={() => setBagStep('checkout')} className="btn-primary h-12 w-full text-base">Checkout</button>
+                            <button type="button" onClick={startCheckout} className="btn-primary h-12 w-full text-base">Checkout</button>
                         </div>
                     )}>
                     {cart.length === 0 ? (

@@ -28,6 +28,7 @@ const Login = lazy(() => import('./components/Auth/Login'));
 const PinGate = lazy(() => import('./components/Auth/PinGate'));
 const ProfileSettings = lazy(() => import('./components/Settings/ProfileSettings'));
 const OrderTracking = lazy(() => import('./components/Shop/OrderTracking'));
+const PrivacyNotice = lazy(() => import('./components/Shop/PrivacyNotice'));
 const PrintQueue = lazy(() => import('./components/Production/PrintQueue'));
 const ProductionManager = lazy(() => import('./components/Production/ProductionManager'));
 const printQueueEnabled = import.meta.env.VITE_PRINT_QUEUE_ENABLED === 'true';
@@ -580,6 +581,7 @@ export default function AppLoader() {
     const isAdminPath = /^\/admin(?:\/|$)/.test(path);
     const isPrintPath = /^\/print(?:\/|$)/.test(path);
     const isTrackPath = /^\/track(?:\/|$)/.test(path);
+    const isPrivacyPath = /^\/privacy\/?$/.test(path);
     React.useEffect(() => {
         const standalone = window.matchMedia('(display-mode: standalone)').matches || window.navigator.standalone;
         if (standalone && path === '/') window.location.replace('/admin');
@@ -589,8 +591,15 @@ export default function AppLoader() {
         if (!isTrackPath && !isAdminPath && !isPrintPath) return;
         setShareUrl(null);
         document.title = 'SportsTech PH';
+        // Links from here send only the site's address as the referrer, so an order number in
+        // /track/<id> never reaches the shop page, whose Meta Pixel reports document.referrer.
+        const referrer = document.createElement('meta');
+        referrer.name = 'referrer';
+        referrer.content = 'strict-origin';
+        document.head.appendChild(referrer);
     }, [isTrackPath, isAdminPath, isPrintPath]);
     return <Suspense fallback={<LoadingState />}>
-        {isTrackPath ? <OrderTracking /> : isAdminPath || isPrintPath ? <ProtectedWorkspace printPath={isPrintPath} /> : <PublicStore />}
+        {isTrackPath ? <OrderTracking /> : isPrivacyPath ? <PrivacyNotice />
+            : isAdminPath || isPrintPath ? <ProtectedWorkspace printPath={isPrintPath} /> : <PublicStore />}
     </Suspense>;
 }

@@ -192,6 +192,7 @@ owner still approves which identities to enable.
 | `GET /api/session` | Verified Access identity and active D1 membership required |
 | `/`, `/track/:id` | Storefront and contact-verified tracking; public in the eventual production deployment |
 | `/p/:product` | Shareable product link: the storefront with that product open, served with its link preview |
+| `/privacy` | Privacy and cookies notice, with the switch for the shop's Meta Pixel |
 | `/admin` | Authenticated owner/reseller workspace; print operators redirect to `/print` before management data loads |
 | `/print` | Assigned, owner-released production jobs only; requires the print feature flag |
 | `/api/public/*` | Sanitized catalog, server-priced checkout, voucher checks and order-scoped guest tracking/edit capabilities |
@@ -260,6 +261,66 @@ Messenger, Facebook or anywhere else, and the link shows a preview.
   image first.
 - Facebook caches a link's preview. To refresh one after changing a product's photo or
   price, paste the link into Facebook's Sharing Debugger and choose Scrape Again.
+
+## Meta Pixel and the privacy page
+
+Owner decision (November 5, 2026): the shop runs the Meta Pixel "Sports TECH Event
+Data" (`1659409512144130`, connected to the Sports TECH ad account and the "Shirt
+Catalog") so Facebook and Instagram ads can be measured and shown to shop visitors. The
+owner chose to load it for every visitor, with a one-time notice and a way to turn it
+off, rather than asking first.
+
+- **Where it runs**: only the public shop, `/` and `/p/*` (bag, checkout and the
+  order-complete screen are part of that page), and only on `sportstechph.store` and
+  `www.sportstechph.store`. Staging builds carry no Pixel ID (`vite.config.js`), and any
+  other host never loads it. It never runs on `/privacy`, `/track/*`, `/admin` or
+  `/print`. The code is in `src/lib/metaPixel.js`; Meta's script loads after the shop
+  has drawn.
+- **Events** (`src/lib/pixelEvents.js`): PageView when the shop loads and whenever its
+  address changes (a product opens or closes); ViewContent when a product opens;
+  AddToCart; InitiateCheckout when Checkout is pressed; Purchase once the server confirms
+  the order, with the server's total. Products are named by their link slug, which is
+  also their Meta catalog item ID. The ball's "… per piece" bulk-price listings aren't in
+  the Meta catalog, so they report as the main ball. Values are in PHP.
+- **What the shop never sends Meta**: the customer's name, mobile number, address, email,
+  order number or tracking key. History changes aren't logged automatically
+  (`fbq.disablePushState`; the shop sends those PageViews itself, which needs
+  `fbq.allowDuplicatePageViews`), and automatic button-click and page-metadata events are off
+  (`autoConfig` false), because the order-complete screen shows the order number and its
+  `/track` link. `/track`, `/admin` and `/print` set a `strict-origin` referrer policy
+  (a meta tag, since the offline app copy serves those pages too), so a link from an
+  order page back to the shop never hands the Pixel `/track/<order number>` as the
+  referrer. In Events Manager, keep automatic advanced matching and automatic events
+  off; the privacy page promises it.
+- **Ad clicks**: Meta credits an ad through its `_fbc` cookie, normally set from `fbclid`
+  in the address. The shop tidies the address before Meta's script loads, so it sets
+  `_fbc` itself from the landing address, in Meta's format (`fb.1.<time>.<fbclid>`), on
+  `sportstechph.store` for 90 days, only while the Pixel is on.
+- **Turning it off**: the notice's Turn off, the switch on `/privacy`, or the browser's
+  Global Privacy Control signal. Turning off stops all events, revokes consent in the
+  Pixel if it already loaded, deletes the `_fbp` and `_fbc` cookies, and keeps the
+  Pixel from loading on later visits. A shop page already open in another tab, or
+  brought back with the Back button, applies the change too. The choice is stored in
+  the browser (`sportstech:meta-cookies`): `off`, `on` (only from Turn on at `/privacy`,
+  the one thing that outranks Global Privacy Control) or `seen` (the notice's Got it,
+  which keeps the Pixel as it is).
+- **The privacy page** `/privacy` is the notice Meta's Business Tools terms require on
+  pages that use the Pixel. It's linked from the cookie notice, the shop footer and the
+  order-complete screen. Leaving the shop for it doesn't lose the bag: the bag is kept
+  for the browser tab (`sessionStorage` key `sportstech:bag`, only names, sizes and
+  quantities, rebuilt from the current catalog on return) and cleared when an order is
+  placed. Because the bag outlives a reload, so does an unanswered order attempt: when
+  "Place order" gets no reply, its request ID and a SHA-256 hash of the order (never the
+  customer's details) stay in `sessionStorage` (`sportstech:checkout`) for the life of
+  the tab. Retrying the same order reuses the ID at any time, so the server returns the
+  original order instead of placing a second one. The payment receipt is left out of
+  both the shop's hash and the server's duplicate check, so a receipt uploaded again
+  after a reload still counts as the same order. A different order is held back for 30
+  minutes with a message to check Track order first; if the server still reports the ID
+  as used for a different order, the shop says the order was already received. Every
+  statement describes what the app does today, so update it with any change to what is
+  collected, who sees it (LBC, textbee.dev for texts, Cloudflare for hosting and email),
+  or the Pixel's events.
 
 ## Customer emails (migration 0017)
 

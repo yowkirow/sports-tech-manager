@@ -386,7 +386,10 @@ async function checkout(request: Request, env: AppEnv, ctx?: Background): Promis
     const limited = await rateLimit(request, env, 'checkout', 20);
     if (limited) return limited;
     const intent = normalizeCheckout(await readJson(request));
-    const hash = await digest(canonical(intent));
+    // The payment proof stays out of the request's fingerprint: a shopper retrying after a reload
+    // uploads the receipt again, and must still get the order the first attempt placed.
+    const { receipt: _proof, ...order } = intent;
+    const hash = await digest(canonical(order));
     const prior = await env.DB.prepare('SELECT payload_hash,response FROM guest_checkout_receipts WHERE request_id = ?').bind(intent.requestId).first<{ payload_hash: string; response: string }>();
     if (prior) {
         if (prior.payload_hash !== hash) throw new HttpError(409, 'idempotency_conflict', 'This checkout request was already used for a different cart.');
