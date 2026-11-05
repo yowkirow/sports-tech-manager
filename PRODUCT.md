@@ -53,9 +53,11 @@ prints, not an anonymous merch store.
   straight away, often before the shirts are printed: the owner copies the receiver's details from
   the order into LBC, pastes the booking number on the order, and the print employee writes the
   customer's name and booking number on the package label. The tracking number comes once the
-  parcel ships; it is the customer's. The owner pastes it and marks the order Shipped in one step,
-  and the customer sees it on their order page (by text when SMS is on, and by email when the order
-  has one). Print staff never need it.
+  parcel ships; it is the customer's. Once an order is booked, its row in Orders asks for the
+  tracking number, and pasting it there (or in the order's LBC panel) marks the order Shipped
+  in one step, and the customer sees it on their order page (by text when SMS is on, and by
+  email when the order has one). Orders > "Booked, not shipped" lists the booked parcels still
+  waiting for that step. Print staff never need it.
 - Customer emails (owner decision 2026-10-27): the email is optional (asked at checkout "for order
   updates"; owners can add it in POS or an order's Edit; resellers never set it). An order with one
   gets "We got your order" right after checkout and "It's on its way" with the LBC tracking number

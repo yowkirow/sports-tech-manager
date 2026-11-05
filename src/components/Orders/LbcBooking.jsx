@@ -1,6 +1,6 @@
 import React, { useEffect, useRef, useState } from 'react';
-import { Check, ClipboardCopy, Copy, Send, Truck } from 'lucide-react';
-import { SHIPPABLE_STATUSES, lbcCopyText, lbcReceiver, mobileForLbc, normalizeLbcNumber, plainLabelCode } from '../../lib/lbcBooking';
+import { Check, ClipboardCopy, Copy, Package, Send, Truck } from 'lucide-react';
+import { SHIPPABLE_STATUSES, lbcCopyText, lbcReceiver, mobileForLbc, normalizeLbcNumber, plainLabelCode, sameLbcCode } from '../../lib/lbcBooking';
 import { orderCustomerEmail } from '../../lib/customerEmail';
 import { useReadOnly, READ_ONLY_HINT } from '../ui/ReadOnly';
 
@@ -133,4 +133,54 @@ export function LbcBookingPanel({ order, canEdit, busy, onCopy, onSaveBooking, o
             <p className="font-semibold tracking-wide num">{savedTracking || 'Not shipped yet'}</p>
         </div>}
     </section>;
+}
+
+// The order row's box once the parcel is booked (owner decision 2026-11-05): paste LBC's tracking
+// number and press Enter or Ship, and the order is marked Shipped with it, exactly as Mark as
+// shipped in the panel does (packing check for print-queue orders, the customer's text, and the
+// email when the order has one). Shipping without a number stays in the panel.
+export function LbcRowShip({ order, busy, onShip }) {
+    const readOnly = useReadOnly();
+    const bookingNumber = order.items[0]?.details?.bookingNumber || '';
+    const [tracking, setTracking] = useState('');
+    const [problem, setProblem] = useState('');
+    const input = useRef(null);
+    const inputId = `row-tracking-${order.id}`;
+    const locked = readOnly || busy;
+    const ship = event => {
+        event.preventDefault();
+        const next = normalizeLbcNumber(tracking);
+        const issue = !next ? 'Paste the tracking number LBC gave you. To ship without one, open the order.'
+            : sameLbcCode(next, bookingNumber) ? 'That’s the booking number. Paste the tracking number LBC gives once the parcel ships.'
+                : '';
+        setProblem(issue);
+        if (issue) {
+            input.current?.focus();
+            return;
+        }
+        onShip(next);
+    };
+    return <form className="w-full sm:w-72" onSubmit={ship}>
+        <p className="mb-1.5 flex min-w-0 items-center gap-1.5 text-xs text-ink-2">
+            <Package size={14} className="shrink-0 text-primary" aria-hidden="true" />
+            <span className="shrink-0">Booked</span>
+            <span className="num truncate font-semibold text-ink" title={bookingNumber}>{bookingNumber}</span>
+        </p>
+        <div className="flex gap-2">
+            <div className="relative min-w-0 flex-1">
+                <Truck size={16} className="pointer-events-none absolute left-3 top-1/2 -translate-y-1/2 text-ink-3" aria-hidden="true" />
+                <input ref={input} id={inputId} value={tracking} autoComplete="off" spellCheck={false} enterKeyHint="go"
+                    aria-label={`LBC tracking number for ${order.customerName}`} aria-invalid={problem ? true : undefined}
+                    aria-describedby={problem ? `${inputId}-problem` : undefined} placeholder="LBC tracking no."
+                    disabled={locked} title={readOnly ? READ_ONLY_HINT : 'LBC gives it once the parcel ships. Shipping texts it to the customer.'}
+                    className="field pl-9 pr-3 py-2 text-sm num"
+                    onChange={event => { setTracking(event.target.value); setProblem(''); }} />
+            </div>
+            <button type="submit" className="btn-primary shrink-0 px-4" disabled={locked} title={readOnly ? READ_ONLY_HINT : undefined}
+                aria-label={`Ship the order for ${order.customerName}`}>
+                <Send size={16} aria-hidden="true" /> Ship
+            </button>
+        </div>
+        {problem && <p id={`${inputId}-problem`} role="alert" className="mt-1.5 text-xs text-amber-200">{problem}</p>}
+    </form>;
 }
