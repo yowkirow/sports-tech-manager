@@ -1,6 +1,6 @@
 import assert from 'node:assert/strict';
 import { test } from 'node:test';
-import { SHIPPABLE_STATUSES, lbcCopyText, lbcReceiver, localMobile, mobileForLbc, normalizeLbcNumber, parcelTrackingUrl, plainLabelCode, receiverAddress, shippedWith, withBookingNumber, withTrackingNumber } from '../src/lib/lbcBooking.js';
+import { SHIPPABLE_STATUSES, bookedNotShipped, lbcCopyText, lbcReceiver, localMobile, mobileForLbc, normalizeLbcNumber, parcelTrackingUrl, plainLabelCode, receiverAddress, sameLbcCode, shippedWith, withBookingNumber, withTrackingNumber } from '../src/lib/lbcBooking.js';
 
 const order = (details, customerName = details.customerName || 'Unknown') => ({ customerName, items: [{ details }] });
 
@@ -82,4 +82,26 @@ test('customers follow a plain tracking code on LBC, or a saved courier link as 
     for (const value of ['', null, 'ABC', 'javascript:alert(1)', 'ftp://x.example/1', '0917 / Makati', 'https://a.example/with space']) {
         assert.equal(parcelTrackingUrl(value), null, JSON.stringify(value));
     }
+});
+
+test('booked, not shipped: a booking number on an order that can still ship, read once per grouped order', () => {
+    const grouped = (fulfillmentStatus, bookingNumber, lines = 1) => ({ fulfillmentStatus,
+        items: Array.from({ length: lines }, () => ({ details: { bookingNumber } })) });
+    for (const status of SHIPPABLE_STATUSES) assert.equal(bookedNotShipped(grouped(status, 'BK-2026-0001')), true, status);
+    for (const status of ['shipped', 'returned', 'cancelled']) assert.equal(bookedNotShipped(grouped(status, 'BK-2026-0001')), false, status);
+    for (const missing of ['', '   ', undefined, null]) assert.equal(bookedNotShipped(grouped('ready', missing)), false, JSON.stringify(missing));
+    // An order saved as two rows is one order: the count is per order, never per line.
+    const orders = [grouped('ready', 'BK-1', 2), grouped('in_progress', 'BK-2'), grouped('shipped', 'BK-3', 3), grouped('ready', '')];
+    assert.equal(orders.filter(bookedNotShipped).length, 2);
+    assert.equal(bookedNotShipped(null), false);
+    assert.equal(bookedNotShipped({ fulfillmentStatus: 'ready', items: [] }), false);
+});
+
+test('the booking number pasted where the tracking number goes is recognised however it is typed', () => {
+    assert.equal(sameLbcCode('bk 2026 0001', 'BK-2026-0001'), true);
+    assert.equal(sameLbcCode('1224-8001-5678', '1224 8001 5678'), true);
+    assert.equal(sameLbcCode('1224 8001 5678', 'BK-2026-0001'), false);
+    assert.equal(sameLbcCode('', ''), false);
+    assert.equal(sameLbcCode(' - ', ''), false);
+    assert.equal(sameLbcCode('123', undefined), false);
 });

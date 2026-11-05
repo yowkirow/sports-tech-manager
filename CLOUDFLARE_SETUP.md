@@ -332,7 +332,8 @@ Cloudflare Email Service, sent by the Worker itself (`worker/notifications.ts`):
   Thursday, ships Sunday via LBC", and a link to the contact-verified `/track` page. Once per
   order; at most 10 a day to one address from the public checkout.
 - **It's on its way**: when an owner save leaves the order Shipped with a tracking
-  number (Mark as shipped, Edit, or a bulk Shipped where a number is already saved). Worded
+  number (the order row's Ship, Mark as shipped, Edit, or a bulk Shipped where a number is
+  already saved). Worded
   like the order page: a code shows as the LBC tracking number with a Track on LBC button; a
   saved link (another courier's) is "the courier's tracking link" with Open tracking link, and
   that email doesn't mention LBC. Once per tracking number
@@ -455,22 +456,32 @@ gives two numbers per parcel, kept apart on the order:
 - **Booking number** (`details.bookingNumber`): LBC gives it when the owner books the pickup.
   In Orders, open an order > Book with LBC (one copy button per LBC form field, or Copy
   all; the row's clipboard button copies the same block), then paste the booking number
-  there or in the order row's "LBC booking no." field. Print staff see it next to the
-  customer's name under "Write on package", read live from the order line, on in-progress
-  and accepted jobs alike, and write it on the package. Only a plain code (4-40 letters,
-  digits, spaces or dashes) is shown; links and anything else stay owner-only. Saving it
-  never changes the order status, is never texted and never holds a print job, so it works
-  while printing is still in progress.
+  there or in the order row's "LBC booking no." box. Once the order is booked, that row box
+  asks for the tracking number instead, with the booking number shown above it. Print staff
+  see the booking number next to the customer's name under "Write on package", read live from
+  the order line, on in-progress and accepted jobs alike, and write it on the package. Only a
+  plain code (4-40 letters, digits, spaces or dashes) is shown; links and anything else stay
+  owner-only. Saving it never changes the order status, is never texted and never holds a
+  print job, so it works while printing is still in progress.
 - **Tracking number** (`details.trackingNumber`): LBC gives it once the parcel ships. It is
-  the customer's. The owner pastes it in the same panel and taps Mark as shipped, which
-  saves it with Shipped in one save (print-queue orders still need finished QA, and the
-  owner confirms packing, accessories and the package label at this step) and sends the
-  tracking text when SMS is on. If the order has a customer email, the same save emails the
-  number too (see Customer emails). If the field is empty,
-  the panel asks for the number; shipping without one (another courier, a pickup) is an
-  explicit choice and texts and emails nothing. The customer's contact-verified `/track` page shows the
-  number with a "Track on LBC" link once the order is Shipped. Print staff never receive
-  it. Correcting it on a shipped order texts and emails the new number.
+  the customer's. The owner pastes it in the order row's "LBC tracking no." box and presses
+  Enter (or Ship), or in the panel and taps Mark as shipped. Either way it is saved with
+  Shipped in one save (print-queue orders still need finished QA, and the owner confirms
+  packing, accessories and the package label at this step) and sends the tracking text when
+  SMS is on. If the order has a customer email, the same save emails the number too (see
+  Customer emails). If the field is empty, the row or the panel asks for the number, and the
+  row refuses the booking number pasted there by mistake. Shipping without one (another
+  courier, a pickup) is an explicit choice in the panel and texts and emails nothing. The
+  customer's contact-verified `/track` page shows the number with a "Track on LBC" link once
+  the order is Shipped. Print staff never receive it. Correcting it on a shipped order texts
+  and emails the new number.
+
+Orders > Fulfillment > **Booked, not shipped** (owner decision November 5, 2026) lists the
+orders that have a booking number and are still Pending, In progress or Ready, with their
+count: orders as the list groups them, not lines. In Multi-select, **Select all N** selects
+exactly what the filters show, for a bulk update. A bulk Shipped asks the packing question
+once for the whole update, when the first print-queue order needs it, and declining stops the
+update there. It sends no text, and emails only orders whose tracking number was already saved.
 
 Apply `0013` with `npm run db:staging` / `npm run db:production` right before deploying the
 code that shows it. Until both are live, the print queue shows "Not booked yet". Every
@@ -589,7 +600,8 @@ Ready until that line is prepared, printed and accepted. Only
 Migration `0014_ready_after_qa.sql` applied the same rule once to the 28 orders that were
 already fully accepted on October 23. The owner confirms packing, accessories and the
 package label (customer name and LBC booking number) once, on the way into Shipped; Ready
-no longer asks. Orders without print jobs, such as counter sales and orders placed before
+no longer asks, and a bulk Shipped asks once for all its orders. Orders without print jobs,
+such as counter sales and orders placed before
 the queue, keep the previous workflow with no extra prompt. Retiring a held job removes its
 gate. Historical already-ready orders are not given retroactive jobs for a payment-only
 change. Employees cannot release work, approve QA, change quantities on orders, mark

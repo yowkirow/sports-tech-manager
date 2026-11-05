@@ -9,16 +9,19 @@ import { useProducts } from '../../hooks/useInventory';
 import { withLocalDate } from '../../lib/transactionDate';
 import { groupOrders } from '../../lib/orderItems';
 import { buildOrderChanges, buildOrderDetailChanges, priceOrderChanges, saveOrderChanges } from '../../lib/orderEditing';
-import { SHIPPABLE_STATUSES, lbcCopyText, lbcReceiver, normalizeLbcNumber, parcelTrackingUrl, plainLabelCode, receiverAddress, shippedWith, withBookingNumber, withTrackingNumber } from '../../lib/lbcBooking';
+import { SHIPPABLE_STATUSES, bookedNotShipped, lbcCopyText, lbcReceiver, normalizeLbcNumber, parcelTrackingUrl, plainLabelCode, receiverAddress, shippedWith, withBookingNumber, withTrackingNumber } from '../../lib/lbcBooking';
 import { normalizeCustomerEmail, orderCustomerEmail, suggestEmailFix } from '../../lib/customerEmail';
 import EmailFixHint from '../ui/EmailFixHint';
-import { LbcBookingPanel } from './LbcBooking';
+import { LbcBookingPanel, LbcRowShip } from './LbcBooking';
 
 const SIZES = ['XS', 'S', 'M', 'L', 'XL', '2XL'];
 
 const FULFILLMENT_STATUSES = ['pending', 'in_progress', 'ready', 'shipped', 'returned', 'cancelled'];
+// Fulfillment filter for parcels booked with LBC but not marked Shipped yet (owner only).
+const BOOKED_FILTER = 'booked';
 const PAYMENT_STATUSES = ['unpaid', 'paid'];
 const PAYMENT_MODES = ['Cash', 'Gcash', 'Bank Transfer', 'COD'];
+const PACKING_PROMPT = 'This order went through the print queue. Before shipping, confirm that packing, accessories and the package label (customer name and LBC booking number) are complete.';
 
 export default function OrderManagement({ transactions, onAddTransaction, onDeleteTransaction, onOrderSaved, refetch, userRole }) {
     const { showToast } = useToast();
@@ -26,7 +29,8 @@ export default function OrderManagement({ transactions, onAddTransaction, onDele
     const isReseller = userRole === 'reseller';
     const readOnly = useReadOnly();
     const deletionRequests = React.useRef(new Map());
-    const persistOrder = async changes => {
+    // confirmPacking asks the packing question; a bulk update passes one that asks once for all its orders.
+    const persistOrder = async (changes, { confirmPacking = () => window.confirm(PACKING_PROMPT) } = {}) => {
         const save = packingConfirmed => saveOrderChanges(changes, { requirePending: isReseller, ...(packingConfirmed ? { packingConfirmed: true } : {}) });
         let result;
         try {
@@ -34,7 +38,7 @@ export default function OrderManagement({ transactions, onAddTransaction, onDele
         } catch (error) {
             // Only orders in the print queue need this; the server decides.
             if (error.cause?.code !== 'PACKING_CONFIRMATION_REQUIRED') throw error;
-            if (!window.confirm('This order went through the print queue. Before shipping, confirm that packing, accessories and the package label (customer name and LBC booking number) are complete.')) {
+            if (!confirmPacking()) {
                 throw new Error('Packing was not confirmed. No changes were saved.');
             }
             result = await save(true);
@@ -83,7 +87,8 @@ export default function OrderManagement({ transactions, onAddTransaction, onDele
     // 2. Filter Groups
     const filteredOrders = useMemo(() => {
         return groupedOrders.map(order => order.id === editingId && editingOrder ? editingOrder : order).filter(order => {
-            const matchesFulfillment = filterFulfillment === 'all' || order.fulfillmentStatus === filterFulfillment;
+            const matchesFulfillment = filterFulfillment === 'all'
+                || (filterFulfillment === BOOKED_FILTER ? bookedNotShipped(order) : order.fulfillmentStatus === filterFulfillment);
             const matchesPayment = filterPayment === 'all' || order.paymentStatus === filterPayment;
             const matchesSearch =
                 order.customerName.toLowerCase().includes(searchTerm.toLowerCase()) ||
@@ -92,6 +97,10 @@ export default function OrderManagement({ transactions, onAddTransaction, onDele
             return matchesFulfillment && matchesPayment && matchesSearch;
         });
     }, [groupedOrders, filterFulfillment, filterPayment, searchTerm, editingId, editingOrder]);
+    // Orders, not lines: an order saved as several rows is one parcel.
+    const bookedCount = useMemo(() => (isReseller ? 0 : groupedOrders.filter(bookedNotShipped).length), [groupedOrders, isReseller]);
+    const visibleOrderIds = filteredOrders.map(order => order.id);
+    const allVisibleSelected = visibleOrderIds.length > 0 && visibleOrderIds.every(id => selectedOrderIds.has(id));
 
 
     const toggleExpansion = (orderId) => {
@@ -366,6 +375,14 @@ export default function OrderManagement({ transactions, onAddTransaction, onDele
                 showToast(`Tracking email not sent for ${notEmailed.map(order => order.customerName || order.id).join(', ')}. Save those orders again to retry.`, 'error', 8000);
             }
         };
+        // One packing question for the whole update, asked when the first print-queue order needs it,
+        // so shipping a backlog of booked parcels isn't one prompt per order. Declining stops the update.
+        let packingAnswer = null;
+        const confirmPacking = () => {
+            packingAnswer ??= window.confirm(total === 1 ? PACKING_PROMPT
+                : `This update ships ${total} orders, and some went through the print queue. Before shipping, confirm that packing, accessories and each package label (customer name and LBC booking number) are complete for all of them.`);
+            return packingAnswer;
+        };
         try {
             for (const orderId of selectedOrderIds) {
                 current = { id: orderId };
@@ -391,7 +408,7 @@ export default function OrderManagement({ transactions, onAddTransaction, onDele
 
                     return newDetails;
                 });
-                const saved = await persistOrder(changes);
+                const saved = await persistOrder(changes, { confirmPacking });
                 savedCount += 1;
                 if (saved?.email?.status === 'sent') emailed.push(order);
                 else if (saved?.email?.status === 'failed') notEmailed.push(order);
@@ -552,6 +569,15 @@ export default function OrderManagement({ transactions, onAddTransaction, onDele
                         <div className="flex flex-wrap items-center gap-2">
                             {isSelectionMode ? (
                                 <>
+                                    {/* Picks exactly what the filters show, e.g. every "Booked, not shipped" order for a bulk Shipped. */}
+                                    <button
+                                        type="button"
+                                        disabled={!visibleOrderIds.length}
+                                        onClick={() => setSelectedOrderIds(allVisibleSelected ? new Set() : new Set(visibleOrderIds))}
+                                        className="btn-secondary whitespace-nowrap"
+                                    >
+                                        {allVisibleSelected ? 'Clear selection' : `Select all ${visibleOrderIds.length}`}
+                                    </button>
                                     {!isReseller && <button
                                         type="button"
                                         disabled={readOnly}
@@ -559,7 +585,7 @@ export default function OrderManagement({ transactions, onAddTransaction, onDele
                                         onClick={() => setShowBulkEditModal(true)}
                                         className="btn-primary whitespace-nowrap"
                                     >
-                                        <Edit2 size={18} aria-hidden="true" /> Bulk edit
+                                        <Edit2 size={18} aria-hidden="true" /> Bulk edit{selectedOrderIds.size ? ` (${selectedOrderIds.size})` : ''}
                                     </button>}
                                     <button
                                         type="button"
@@ -621,15 +647,29 @@ export default function OrderManagement({ transactions, onAddTransaction, onDele
                         <p className="mb-2 text-sm font-medium text-ink-2">Fulfillment</p>
                         <div className="flex gap-2 overflow-x-auto pb-1 scrollbar-hide" aria-label="Fulfillment filter">
                             {['all', ...FULFILLMENT_STATUSES].map(status => (
-                                <button
-                                    key={status}
-                                    type="button"
-                                    onClick={() => setFilterFulfillment(status)}
-                                    aria-pressed={filterFulfillment === status}
-                                    className="chip capitalize"
-                                >
-                                    {status.replace('_', ' ')}
-                                </button>
+                                <React.Fragment key={status}>
+                                    <button
+                                        type="button"
+                                        onClick={() => setFilterFulfillment(status)}
+                                        aria-pressed={filterFulfillment === status}
+                                        className="chip capitalize"
+                                    >
+                                        {status.replace('_', ' ')}
+                                    </button>
+                                    {/* Booked with LBC, not marked Shipped yet: the parcels that still need a tracking number. */}
+                                    {status === 'ready' && !isReseller && (
+                                        <button
+                                            type="button"
+                                            onClick={() => setFilterFulfillment(BOOKED_FILTER)}
+                                            aria-pressed={filterFulfillment === BOOKED_FILTER}
+                                            title="Booked with LBC, not marked Shipped yet"
+                                            className="chip whitespace-nowrap capitalize"
+                                        >
+                                            Booked, not shipped
+                                            {bookedCount > 0 && <>{' '}<span className="num rounded-full bg-primary/15 px-2 py-0.5 text-xs text-primary">{bookedCount}</span></>}
+                                        </button>
+                                    )}
+                                </React.Fragment>
                             ))}
                         </div>
                     </div>
@@ -682,8 +722,9 @@ export default function OrderManagement({ transactions, onAddTransaction, onDele
                         const bookingInputId = `booking-${order.id}`;
                         const savedBooking = order.items[0]?.details?.bookingNumber || '';
                         const savedTracking = order.items[0]?.details?.trackingNumber || '';
-                        // The row's quick field is the booking number: it is what the owner pastes right
-                        // after booking (often with the row's copy button), and it never ships or texts.
+                        // The row's quick field follows the parcel (owner decision 2026-11-05): the booking number
+                        // until the order is booked (pasted right after booking, it never ships or texts), then
+                        // the tracking number, which ships the order in one paste.
                         const quickBooking = !isReseller && SHIPPABLE_STATUSES.includes(order.fulfillmentStatus)
                             && !!receiverAddress(lbcReceiver(order));
                         const fulfillmentSelectId = `fulfillment-${order.id}`;
@@ -902,19 +943,18 @@ export default function OrderManagement({ transactions, onAddTransaction, onDele
                                                 </div>
                                             ) : (
                                                 <div className="flex w-full flex-col gap-2 sm:w-auto sm:items-end" onClick={e => e.stopPropagation()}>
-                                                    {quickBooking && <div className="relative w-full sm:w-52">
-                                                        <Package size={16} className={`pointer-events-none absolute left-3 top-1/2 -translate-y-1/2 ${savedBooking ? 'text-primary' : 'text-ink-3'}`} aria-hidden="true" />
+                                                    {/* Hidden while selecting, like the row's other actions, so a tap meant to select never ships. */}
+                                                    {quickBooking && !isSelectionMode && bookedNotShipped(order) && (
+                                                        <LbcRowShip order={order} busy={loading} onShip={value => handleShip(order.id, value)} />
+                                                    )}
+                                                    {quickBooking && !isSelectionMode && !bookedNotShipped(order) && <div className="relative w-full sm:w-52">
+                                                        <Package size={16} className="pointer-events-none absolute left-3 top-1/2 -translate-y-1/2 text-ink-3" aria-hidden="true" />
                                                         <input
-                                                            key={savedBooking || 'none'}
                                                             aria-label={`LBC booking number for ${order.customerName}`}
-                                                            defaultValue={savedBooking}
                                                             disabled={readOnly}
                                                             title={readOnly ? READ_ONLY_HINT : 'From the LBC pickup booking. Print staff write it on the package.'}
                                                             placeholder="LBC booking no."
-                                                            className={`field pl-9 pr-3 py-2 text-sm ${savedBooking
-                                                                ? 'border-primary/40 bg-primary/10 text-primary font-mono font-semibold'
-                                                                : ''
-                                                                }`}
+                                                            className="field pl-9 pr-3 py-2 text-sm"
                                                             onKeyDown={(e) => {
                                                                 if (e.key === 'Enter') {
                                                                     e.target.blur();
@@ -922,9 +962,7 @@ export default function OrderManagement({ transactions, onAddTransaction, onDele
                                                             }}
                                                             onBlur={(e) => {
                                                                 const val = normalizeLbcNumber(e.target.value);
-                                                                if (val !== savedBooking) {
-                                                                    handleSaveBooking(order.id, val);
-                                                                }
+                                                                if (val) handleSaveBooking(order.id, val);
                                                             }}
                                                         />
                                                     </div>}

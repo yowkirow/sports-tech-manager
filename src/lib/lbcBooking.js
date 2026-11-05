@@ -77,6 +77,18 @@ export const withBookingNumber = (details, bookingNumber) => ({ ...details, book
 // their numbers for reference.
 export const SHIPPABLE_STATUSES = ['pending', 'in_progress', 'ready'];
 
+// Booked with LBC and not shipped yet: the order row asks for the tracking number, and Orders can
+// list just these ("Booked, not shipped"). Read from a grouped order, so an order counts once.
+export const bookedNotShipped = order => SHIPPABLE_STATUSES.includes(order?.fulfillmentStatus)
+    && text(order?.items?.[0]?.details?.bookingNumber) !== '';
+
+// The same LBC code, ignoring spaces, dashes and letter case. Catches the booking number pasted
+// where the tracking number goes.
+export function sameLbcCode(left, right) {
+    const key = value => String(value ?? '').replace(/[\s-]+/g, '').toUpperCase();
+    return key(left) !== '' && key(left) === key(right);
+}
+
 // Corrects the tracking number of an order that has already shipped; the status stays as it is.
 export const withTrackingNumber = (details, trackingNumber) => ({ ...details, trackingNumber });
 
