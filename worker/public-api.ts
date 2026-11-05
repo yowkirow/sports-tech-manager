@@ -277,6 +277,10 @@ async function loadCatalog(env: AppEnv): Promise<{ catalog: Catalog; revision: n
     catalogCache.set(env.DB, snapshot);
     return snapshot;
 }
+/** The public catalog's products, from the same revision-checked cache (link previews). */
+export async function publicProducts(env: AppEnv): Promise<RecordData[]> {
+    return (await loadCatalog(env)).catalog.products;
+}
 function address(value: unknown, optional = false): RecordData {
     fields(value, ['address', 'city', 'province', 'barangay']);
     return Object.fromEntries(['address', 'city', 'province', 'barangay'].map(key => [key, text(value[key], key, key === 'address' ? 300 : 100, !optional)]));

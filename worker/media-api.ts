@@ -111,7 +111,8 @@ export function imageType(bytes: Uint8Array): string | null {
 export async function handleMediaRequest(request: Request, env: AppEnv, member: Member | null = null): Promise<Response | null> {
     const path = new URL(request.url).pathname;
     const match = /^\/api\/media\/objects\/([0-9a-f-]{36})$/i.exec(path);
-    if (match && request.method === 'GET') {
+    // HEAD too: link-preview crawlers check a shared product photo before fetching it.
+    if (match && (request.method === 'GET' || request.method === 'HEAD')) {
         const row = await env.DB.prepare('SELECT id,object_key,visibility,content_type FROM media_objects WHERE id = ?')
             .bind(match[1]).first<MediaRow>();
         if (!row) throw new HttpError(404, 'not_found', 'File not found.');
@@ -119,10 +120,16 @@ export async function handleMediaRequest(request: Request, env: AppEnv, member: 
             const requester = member || await authorizedMember(request, env);
             await privateReader(env, requester, row.id);
         }
-        const object = await env.MEDIA.get(row.object_key);
-        if (!object) throw new HttpError(404, 'not_found', 'File not found.');
+        let body: ReadableStream | null = null;
+        if (request.method === 'HEAD') {
+            if (!await env.MEDIA.head(row.object_key)) throw new HttpError(404, 'not_found', 'File not found.');
+        } else {
+            const object = await env.MEDIA.get(row.object_key);
+            if (!object) throw new HttpError(404, 'not_found', 'File not found.');
+            body = object.body;
+        }
         const isImage = ['image/png', 'image/jpeg', 'image/gif', 'image/webp'].includes(row.content_type);
-        return new Response(object.body, { headers: {
+        return new Response(body, { headers: {
             'Content-Type': isImage ? row.content_type : 'application/octet-stream',
             'X-Content-Type-Options': 'nosniff',
             'Content-Disposition': `${isImage ? 'inline' : 'attachment'}; filename="${row.id}"`,

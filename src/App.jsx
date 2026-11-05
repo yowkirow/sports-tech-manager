@@ -9,6 +9,7 @@ import LoadingState from './components/ui/LoadingState';
 import Dialog from './components/ui/Dialog';
 import Logo from './components/ui/Logo';
 import { ReadOnlyContext } from './components/ui/ReadOnly';
+import { setShareUrl } from './lib/shareHead';
 
 const DashboardStats = lazy(() => import('./components/DashboardStats'));
 const TransactionList = lazy(() => import('./components/TransactionList'));
@@ -583,6 +584,12 @@ export default function AppLoader() {
         const standalone = window.matchMedia('(display-mode: standalone)').matches || window.navigator.standalone;
         if (standalone && path === '/') window.location.replace('/admin');
     }, [path]);
+    // The offline copy of the app is the shop home with its link-preview tags; on these pages it isn't.
+    React.useEffect(() => {
+        if (!isTrackPath && !isAdminPath && !isPrintPath) return;
+        setShareUrl(null);
+        document.title = 'SportsTech PH';
+    }, [isTrackPath, isAdminPath, isPrintPath]);
     return <Suspense fallback={<LoadingState />}>
         {isTrackPath ? <OrderTracking /> : isAdminPath || isPrintPath ? <ProtectedWorkspace printPath={isPrintPath} /> : <PublicStore />}
     </Suspense>;

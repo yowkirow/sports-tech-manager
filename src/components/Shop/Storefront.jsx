@@ -2,10 +2,12 @@ import React, { useState, useMemo, useRef } from 'react';
 import clsx from 'clsx';
 import {
     ArrowLeft, Building2, CheckCircle2, Copy, CreditCard, ExternalLink, ImageOff, Loader2, MapPin, Minus,
-    PackageSearch, Plus, Search, ShoppingBag, Ticket, Truck, Upload, Wallet, X, Zap
+    PackageSearch, Plus, Search, Share2, ShoppingBag, Ticket, Truck, Upload, Wallet, X, Zap
 } from 'lucide-react';
 import { apiRequest } from '../../lib/apiClient';
 import { rememberTracking, trackOrder, uploadReceipt } from '../../lib/publicShopApi';
+import { findProductBySlug, parseProductPath, productPageTitle, productSlugs, SITE_PREVIEW } from '../../lib/productLinks';
+import { setShareUrl } from '../../lib/shareHead';
 import { useToast } from '../ui/Toast';
 import Dialog from '../ui/Dialog';
 import EmailFixHint from '../ui/EmailFixHint';
@@ -134,11 +136,17 @@ function ProductImage({ src, alt = '', className }) {
     );
 }
 
-function ProductTile({ product, onOpen }) {
+function ProductTile({ product, href, onOpen }) {
     const kind = productKind(product);
+    // A real link, so it can be long-pressed, copied or opened in a new tab; a plain click opens it here.
+    const open = event => {
+        if (event.defaultPrevented || event.button !== 0 || event.metaKey || event.ctrlKey || event.shiftKey || event.altKey) return;
+        event.preventDefault();
+        onOpen(product);
+    };
     return (
         <li>
-            <button type="button" onClick={() => onOpen(product)} className="group block w-full rounded-xl text-left">
+            <a href={href} onClick={open} className="group block w-full rounded-xl text-left">
                 <div className="aspect-[4/5] overflow-hidden rounded-xl bg-well">
                     <ProductImage src={product.imageUrl} className="transition-transform duration-500 ease-out group-hover:scale-[1.03]" />
                 </div>
@@ -149,12 +157,53 @@ function ProductTile({ product, onOpen }) {
                         {peso(product.price)}{kind === 'ball' && <span className="font-normal text-ink-2"> /pc</span>}
                     </p>
                 </div>
-            </button>
+            </a>
         </li>
     );
 }
 
-function ProductSheet({ product, getStock, onClose, onAdd }) {
+async function copyLink(url) {
+    try {
+        await navigator.clipboard.writeText(url);
+        return true;
+    } catch {
+        // Older in-app browsers have no clipboard API.
+        const field = document.createElement('textarea');
+        field.value = url;
+        field.setAttribute('readonly', '');
+        field.className = 'fixed top-0 left-0 opacity-0';
+        document.body.appendChild(field);
+        field.select();
+        let copied = false;
+        try { copied = document.execCommand('copy'); } catch { copied = false; }
+        field.remove();
+        return copied;
+    }
+}
+
+// Phones open the share sheet (Messenger, Facebook, Instagram…); computers copy the link.
+function ShareButton({ product, url }) {
+    const { showToast } = useToast();
+    const share = async () => {
+        if (navigator.share && window.matchMedia('(pointer: coarse)').matches) {
+            try {
+                await navigator.share({ title: product.name, url });
+                return;
+            } catch (error) {
+                if (error?.name === 'AbortError') return;
+            }
+        }
+        if (await copyLink(url)) showToast('Product link copied', 'success');
+        else showToast(`Couldn’t copy the link. Here it is: ${url}`, 'info', 0);
+    };
+    return (
+        <button type="button" onClick={share} className="icon-btn" aria-label="Share this product" title="Share">
+            <Share2 size={20} aria-hidden="true" />
+        </button>
+    );
+}
+
+function ProductSheet({ product, shareUrl, getStock, onClose, onAdd }) {
     const kind = productKind(product);
     const images = product.images?.length ? product.images : [product.imageUrl].filter(Boolean);
     const [imageIdx, setImageIdx] = useState(0);
@@ -176,6 +225,7 @@ function ProductSheet({ product, getStock, onClose, onAdd }) {
 
     return (
         <Dialog onClose={onClose} title={product.name} description={product.brand || undefined} size="xl" closeLabel="Close product"
+            headerExtra={shareUrl && <ShareButton product={product} url={shareUrl} />}
             footer={<button type="button" onClick={add} disabled={!ready} className="btn-primary h-12 w-full text-base">{addLabel}</button>}>
             <div className="grid gap-6 sm:grid-cols-2">
                 <div>
@@ -310,7 +360,12 @@ export default function Storefront({ catalog }) {
     const [cart, setCart] = useState([]);
     const [isCartOpen, setIsCartOpen] = useState(false);
     const [bagStep, setBagStep] = useState('bag');
-    const [activeProduct, setActiveProduct] = useState(null);
+    // A shared /p/<product> link opens straight to that product.
+    const [activeProduct, setActiveProduct] = useState(() => {
+        const slug = parseProductPath(window.location.pathname);
+        return slug === null ? null : findProductBySlug(products, slug);
+    });
+    const slugs = useMemo(() => productSlugs(products), [products]);
     const [searchTerm, setSearchTerm] = useState('');
     const [selectedBrand, setSelectedBrand] = useState('All');
     const [lastOrderId, setLastOrderId] = useState('');
@@ -408,6 +463,30 @@ export default function Storefront({ catalog }) {
     }), [products, searchTerm, selectedBrand]);
     const productsByName = useMemo(() => new Map(products.map(product => [product.name, product])), [products]);
     React.useEffect(() => () => { if (proofUrl) URL.revokeObjectURL(proofUrl); }, [proofUrl]);
+
+    const productHref = product => `/p/${slugs.get(product.name)}`;
+    // An old link to a product that's gone says so once, then shows the whole shop.
+    const linkChecked = useRef(false);
+    React.useEffect(() => {
+        if (linkChecked.current) return;
+        linkChecked.current = true;
+        const slug = parseProductPath(window.location.pathname);
+        if (slug !== null && !findProductBySlug(products, slug, slugs)) {
+            showToast('That product isn’t in the shop anymore. Here’s everything else.', 'info', 6000);
+        }
+    }, [products, slugs, showToast]);
+    // The address bar follows the open product, so it can be copied and shared like the Share button.
+    React.useEffect(() => {
+        const path = activeProduct ? productHref(activeProduct) : '/';
+        if (activeProduct || parseProductPath(window.location.pathname) !== null) {
+            if (window.location.pathname !== path || window.location.search || window.location.hash) {
+                window.history.replaceState(window.history.state, '', path);
+            }
+            document.title = activeProduct ? productPageTitle(activeProduct) : SITE_PREVIEW.title;
+        }
+        setShareUrl(`${window.location.origin}${path}`);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+    }, [activeProduct, slugs]);
 
     const getStock = (product, size) => {
         if (!product.linkedColor || product.category !== 'shirts') {
@@ -713,7 +792,7 @@ export default function Storefront({ catalog }) {
 
                     {filteredProducts.length > 0 ? (
                         <ul className="mt-5 grid grid-cols-2 gap-x-3 gap-y-8 sm:mt-6 sm:grid-cols-3 sm:gap-x-5 lg:grid-cols-4 lg:gap-y-10">
-                            {filteredProducts.map(product => <ProductTile key={product.id} product={product} onOpen={setActiveProduct} />)}
+                            {filteredProducts.map(product => <ProductTile key={product.id} product={product} href={productHref(product)} onOpen={setActiveProduct} />)}
                         </ul>
                     ) : (
                         <div className="mt-6 rounded-2xl border border-dashed border-line px-6 py-16 text-center">
@@ -768,7 +847,8 @@ export default function Storefront({ catalog }) {
             )}
 
             {activeProduct && (
-                <ProductSheet product={activeProduct} getStock={getStock} onClose={() => setActiveProduct(null)} onAdd={addToCart} />
+                <ProductSheet product={activeProduct} shareUrl={`${window.location.origin}${productHref(activeProduct)}`}
+                    getStock={getStock} onClose={() => setActiveProduct(null)} onAdd={addToCart} />
             )}
 
             {isCartOpen && bagStep === 'bag' && (

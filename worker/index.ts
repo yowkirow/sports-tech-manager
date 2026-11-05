@@ -9,6 +9,7 @@ import { handlePublicRequest } from './public-api.ts';
 import { handleProductionRequest } from './production-api.ts';
 import { handleMediaRequest, handleSmsRequest } from './media-api.ts';
 import { handlePinRequest, PIN_PATHS, pinStatus, requirePinUnlocked } from './pin.ts';
+import { isSharePage, sharePage } from './share-preview.ts';
 
 export type Env = AppEnv;
 
@@ -37,7 +38,7 @@ export default {
                 if (response) return response;
                 throw new HttpError(404, 'not_found', 'Endpoint not found.');
             }
-            if (path.startsWith('/api/media/objects/') && request.method === 'GET') {
+            if (path.startsWith('/api/media/objects/') && ['GET', 'HEAD'].includes(request.method)) {
                 const response = await handleMediaRequest(request, env);
                 if (response) return response;
                 throw new HttpError(404, 'not_found', 'File not found.');
@@ -84,6 +85,8 @@ export default {
                 throw new HttpError(405, 'method_not_allowed', 'This endpoint does not accept that method.');
             }
             if (!env.ASSETS) throw new HttpError(503, 'app_not_ready', 'Application assets are not configured.');
+            // The shop's home page and product links carry link previews for Messenger and Facebook.
+            if (!privatePage && isSharePage(path)) return await sharePage(request, env, env.ASSETS);
             const response = await env.ASSETS.fetch(request);
             if (privatePage) {
                 const headers = new Headers(response.headers);

@@ -266,8 +266,9 @@ The form language is blunt athletic retail: rounded enough to be touchable, neve
 - **Alerts:** Error, warning and success treatments use tinted borders/backgrounds with readable labels and icons.
 
 ### Product Tile and Product Sheet
-- **Tile:** Product imagery sits in a charcoal well; the product name is semibold, brand is muted, and price uses tabular numerals.
-- **Sheet:** Product detail opens in a dialog/sheet with square-ish media, radio-button size/quantity grids, sticky add-to-bag or checkout totals and factual shipping/payment copy.
+- **Tile:** Product imagery sits in a charcoal well; the product name is semibold, brand is muted, and price uses tabular numerals. Each tile is a real link to the product (`/p/<slug>`), so it can be long-pressed, copied or opened in a new tab; a plain click opens the sheet in place.
+- **Sheet:** Product detail opens in a dialog/sheet with square-ish media, radio-button size/quantity grids, sticky add-to-bag or checkout totals and factual shipping/payment copy. A 44px Share icon button (the Android-style share glyph, Muted Ink like the close button) sits left of the close button in the sheet header. Phones get the system share sheet; computers copy the link and confirm with a toast.
+- **Share card:** The shop's link preview (`public/og-image.jpg`, 1200x630) uses the storefront hero's look. Ground on the left carries the logo mark, the italic uppercase Barlow Condensed headline "Shirts & pickleball gear" at the 6rem display cap, the red truck with "Order by Thursday, ships Sunday via LBC", and the domain in Muted Ink. On the right, the court photo fades in from the ground, with the ball clear of the text. Product links preview with the product's own photo.
 
 ### Production / Print Queue
 - **Style:** Large Barlow Condensed job references lead each card. Counts sit in divided cells with tabular figures.

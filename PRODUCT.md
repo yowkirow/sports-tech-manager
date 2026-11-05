@@ -64,6 +64,10 @@ prints, not an anonymous merch store.
   receive it.
 - Order tracking is contact-verified: the customer's mobile number unlocks `/track/:id`; pending
   orders can be modified by the customer, and shipped orders show LBC's tracking number.
+- Product links (owner request 2026-11-05): every product has its own link,
+  sportstechph.store/p/<design>, that opens it in the shop. Shared in Messenger or Facebook, the link
+  shows the product's photo, name and price. The shop's own link shows a share card. The product
+  sheet has a Share button.
 - Ball pricing is tiered by quantity (1, 5, 10, 20, 50, 100 pieces).
 - Shirt sizes XS–2XL with brand-specific size guides.
 - Staff sign-in is email-code via Cloudflare Access; staging is a read-only snapshot with a visible

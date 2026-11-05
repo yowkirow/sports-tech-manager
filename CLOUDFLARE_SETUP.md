@@ -191,6 +191,7 @@ owner still approves which identities to enable.
 | `GET /health` | Non-sensitive service/version check; subject to the hostname's Access policy |
 | `GET /api/session` | Verified Access identity and active D1 membership required |
 | `/`, `/track/:id` | Storefront and contact-verified tracking; public in the eventual production deployment |
+| `/p/:product` | Shareable product link: the storefront with that product open, served with its link preview |
 | `/admin` | Authenticated owner/reseller workspace; print operators redirect to `/print` before management data loads |
 | `/print` | Assigned, owner-released production jobs only; requires the print feature flag |
 | `/api/public/*` | Sanitized catalog, server-priced checkout and order-scoped guest tracking/edit capabilities |
@@ -218,6 +219,40 @@ including `/health`; do not weaken the policy just to make a health probe public
 After sign-in, `/api/session` confirms the app-level member and `/health` reports
 the deployed Worker version. Dashboard sign-in alone does not prove that this
 separate application login works.
+
+## Product links and link previews
+
+Owner request (November 5, 2026): every product has a link that can be shared in
+Messenger, Facebook or anywhere else, and the link shows a preview.
+
+- **The link** is `https://www.sportstechph.store/p/<slug>`. The slug comes from the
+  product's name, because the catalog keys a product by its name and the product's id
+  changes on every edit. The owner's display number ("12. ", "27 ") is left out, so
+  renumbering a design keeps its link. The color is added only when two products would
+  otherwise share a link (the Black and White "Sypik Shirt with Vietnam Flag"). Older
+  forms keep working: a slug with the number, with or without the color, opens the same
+  product. Renaming a product changes its link; an old link to a renamed or removed
+  product shows the shop with a short notice. The rule lives in
+  `src/lib/productLinks.js`, shared by the storefront and the Worker.
+- **The storefront**: opening `/p/<slug>` opens that product's sheet. While a product
+  is open, the address bar, tab title, canonical link and `og:url` follow it, so the
+  address can be copied (Chrome on iOS shares the canonical link). Closing it returns to
+  `/`. Tracking and staff pages drop the shop home's canonical link, which the offline
+  app copy carries. Product tiles are real links (long-press or right-click to copy, or
+  open in a new tab). The sheet has a Share button: phones open the share sheet
+  (Messenger, Facebook…), computers copy the link.
+- **The preview**: link-preview crawlers don't run the app, so the Worker writes Open
+  Graph and Twitter tags into `index.html` for `/` and `/p/*` (`worker/share-preview.ts`).
+  The tags carry the title, description, photo, canonical URL and the product price in
+  PHP. A product shows its own photo with its name and price, for example
+  "12. White Sypik Philippines · ₱500", plus the shop's ordering facts. The home page
+  shows the share card `public/og-image.jpg` (1200x630). The page is fetched without
+  validators and served with `Cache-Control: no-cache` and no ETag, because it changes
+  with the catalog. A catalog failure never blocks the page: it falls back to the shop
+  card. Public product photos answer `HEAD` as well as `GET`, for crawlers that check an
+  image first.
+- Facebook caches a link's preview. To refresh one after changing a product's photo or
+  price, paste the link into Facebook's Sharing Debugger and choose Scrape Again.
 
 ## Customer emails (migration 0017)
 
