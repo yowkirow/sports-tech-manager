@@ -194,7 +194,7 @@ owner still approves which identities to enable.
 | `/p/:product` | Shareable product link: the storefront with that product open, served with its link preview |
 | `/admin` | Authenticated owner/reseller workspace; print operators redirect to `/print` before management data loads |
 | `/print` | Assigned, owner-released production jobs only; requires the print feature flag |
-| `/api/public/*` | Sanitized catalog, server-priced checkout and order-scoped guest tracking/edit capabilities |
+| `/api/public/*` | Sanitized catalog, server-priced checkout, voucher checks and order-scoped guest tracking/edit capabilities |
 | `/api/transactions`, `/api/orders/save` | Role-checked business reads and atomic, versioned mutations |
 | `/api/production/*` | Scoped partial print progress, owner release, QA, holds and reviewed job replacement |
 | `/api/media/*` | Validated uploads and public product/private receipt access |
@@ -206,6 +206,13 @@ Staging deliberately keeps it `false` while the imported financial snapshot is
 reviewed. Synthetic mutation tests use separate temporary resources, not live
 customer orders. `PRINT_QUEUE_ENABLED` gates both production APIs and employee
 account preparation; `VITE_PRINT_QUEUE_ENABLED` gates the corresponding UI.
+
+Voucher codes are never listed to the public. The catalog leaves them out, and the
+shop sends the one code a customer typed to `POST /api/public/vouchers/check`. That
+endpoint allows 10 checks per address every 10 minutes and returns only the code's
+discount, never its usage, limit or referrer. Checkout validates the code again.
+Like tracking and PIN unlocks, voucher checks stay available during read-only
+maintenance.
 
 Responses use `Cache-Control: no-store`. No private data or permissive CORS headers
 are returned to anonymous requests. Unexpected `/api` paths never fall back to a

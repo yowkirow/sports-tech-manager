@@ -281,6 +281,17 @@ async function loadCatalog(env: AppEnv): Promise<{ catalog: Catalog; revision: n
 export async function publicProducts(env: AppEnv): Promise<RecordData[]> {
     return (await loadCatalog(env)).catalog.products;
 }
+// Voucher codes are never listed publicly. The shop asks about the one code a customer typed
+// (rate-limited) and gets back only its discount; checkout validates the code again.
+async function checkVoucher(request: Request, env: AppEnv): Promise<Response> {
+    const limited = await rateLimit(request, env, 'voucher', 10);
+    if (limited) return limited;
+    const body = await readJson(request, 1024);
+    fields(body, ['code']);
+    const voucher = checkedVoucher((await loadCatalog(env)).catalog, body.code);
+    if (!voucher) failure('Enter a voucher code.');
+    return json({ voucher: { code: voucher.code, discountType: voucher.discountType, value: Number(voucher.value) } });
+}
 function address(value: unknown, optional = false): RecordData {
     fields(value, ['address', 'city', 'province', 'barangay']);
     return Object.fromEntries(['address', 'city', 'province', 'barangay'].map(key => [key, text(value[key], key, key === 'address' ? 300 : 100, !optional)]));
@@ -718,7 +729,11 @@ async function receiptDownload(request: Request, env: AppEnv, id: string) {
 
 export async function handlePublicRequest(request: Request, env: AppEnv, ctx?: Background): Promise<Response | null> {
     const path = new URL(request.url).pathname;
-    if (path === '/api/public/catalog' && request.method === 'GET') return json((await loadCatalog(env)).catalog);
+    if (path === '/api/public/catalog' && request.method === 'GET') {
+        const { vouchers: _private, ...catalog } = (await loadCatalog(env)).catalog;
+        return json(catalog);
+    }
+    if (path === '/api/public/vouchers/check' && request.method === 'POST') return checkVoucher(request, env);
     if (path === '/api/public/checkout' && request.method === 'POST') return checkout(request, env, ctx);
     if (path === '/api/public/track' && request.method === 'POST') return track(request, env);
     if (path === '/api/public/receipts' && request.method === 'POST') return uploadReceipt(request, env);

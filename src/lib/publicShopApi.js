@@ -12,6 +12,8 @@ export const trackOrder = async (contact, orderId) => {
     rememberTracking(result.order.id, result.token);
     return result;
 };
+// The shop never receives the list of voucher codes; it asks about the one the customer typed.
+export const checkVoucher = async code => (await apiRequest('/api/public/vouchers/check', { method: 'POST', body: { code } })).voucher;
 export const refreshTrackedOrder = (id, token = trackingToken(id)) => apiRequest(`/api/public/orders/${encodeURIComponent(id)}`, {
     headers: { Authorization: `Bearer ${token || ''}` }
 });

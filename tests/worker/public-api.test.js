@@ -3,6 +3,7 @@ import { readFileSync, readdirSync } from 'node:fs';
 import { DatabaseSync } from 'node:sqlite';
 import { test } from 'node:test';
 import { authorizedGuestOrder, handlePublicRequest, normalizeContact } from '../../worker/public-api.ts';
+import worker from '../../worker/index.ts';
 import { buildPublicCatalog } from '../../src/lib/publicCatalog.js';
 
 const migrationDirectory = new URL('../../worker/migrations/', import.meta.url);
@@ -101,6 +102,11 @@ async function call(env, path, body, token, method, ip) {
     return { status: response.status, body: await response.json(), headers: response.headers };
 }
 const code = expected => error => { assert.equal(error.code, expected, error.stack); return true; };
+const rejection = message => error => {
+    assert.equal(error.code, 'invalid_input', error.stack);
+    assert.equal(error.message, message);
+    return true;
+};
 function saleRows(env) {
     return env.DB.sqlite.prepare("SELECT * FROM transactions WHERE type='sale' ORDER BY id").all().map(row => ({ ...row, details: JSON.parse(row.details) }));
 }
@@ -117,15 +123,16 @@ function edit(order, overrides = {}) {
     };
 }
 
-test('catalog reconstructs products and returns only catalog/aggregate stock/voucher configuration', async t => {
+test('catalog reconstructs products and returns only catalog/aggregate stock, never voucher codes', async t => {
     const { env } = fixture(t);
     const order = await placed(env);
     const response = await call(env, '/api/public/catalog');
-    assert.deepEqual(Object.keys(response.body).sort(), ['brands', 'products', 'stock', 'vouchers']);
+    assert.deepEqual(Object.keys(response.body).sort(), ['brands', 'products', 'stock']);
     assert.equal(response.body.products.length, 2);
     assert.equal(response.body.stock['acc-practice-ball'], 500);
     const json = JSON.stringify(response.body);
-    for (const privateValue of ['Synthetic Customer', 'MUST NOT LEAK', 'SECRET', '09171234567', order.orderId, 'customerName', 'cost', 'proofOfPayment']) assert.ok(!json.includes(privateValue), privateValue);
+    for (const privateValue of ['Synthetic Customer', 'MUST NOT LEAK', 'SECRET', '09171234567', order.orderId, 'customerName', 'cost', 'proofOfPayment',
+        'SAVE', 'discountType', 'usageLimit']) assert.ok(!json.includes(privateValue), privateValue);
     insert(env, uid(9), 'delete_product', { name: 'Team Shirt' });
     env.DB.sqlite.prepare("UPDATE transactions SET date='2026-09-02T00:00:00Z' WHERE id=?").run(uid(9));
     assert.equal((await call(env, '/api/public/catalog')).body.products.length, 1);
@@ -148,7 +155,10 @@ test('minimal stock projection matches full legacy helpers without retrieving pr
     const expected = buildPublicCatalog(fullRows);
     const actual = await call(env, '/api/public/catalog');
     assert.deepEqual(actual.body.stock, expected.stock);
-    assert.deepEqual(actual.body.vouchers, expected.vouchers);
+    assert.equal(actual.body.vouchers, undefined);
+    // The projected usage still counts the order that used SAVE, as the full helper does (limit 1).
+    assert.equal(expected.vouchers.find(voucher => voucher.code === 'SAVE').used, 1);
+    await assert.rejects(call(env, '/api/public/vouchers/check', { code: 'SAVE' }), rejection('This voucher has reached its usage limit.'));
     const projected = env.DB.catalogSnapshots.at(-1).filter(row => ['sale', 'expense'].includes(row.type));
     assert.ok(projected.every(row => row.amount === '0'));
     const projectedJSON = JSON.stringify(projected);
@@ -257,6 +267,48 @@ test('checkout recomputes shipping/rush/discount; writes canonical unpaid flat r
     assert.equal(env.DB.sqlite.prepare('SELECT count(*) AS n FROM guest_checkout_receipts').get().n, 1);
     assert.equal(env.DB.sqlite.prepare('SELECT count(*) AS n FROM _guest_checkout_guards').get().n, 0);
     await assert.rejects(placed(env, { voucherCode: 'SAVE' }), code('invalid_input'));
+});
+
+test('voucher check confirms only the typed code and returns only its discount', async t => {
+    const { env } = fixture(t);
+    insert(env, uid(70), 'voucher', { code: 'OLD', active: true, discountType: 'fixed', value: 50, expiryDate: '2020-01-31' });
+    insert(env, uid(71), 'voucher', { code: 'OFF', active: false, discountType: 'fixed', value: 50 });
+    insert(env, uid(72), 'voucher', { code: 'BROKEN', active: true, discountType: 'percent', value: 150 });
+    const check = (body, ip) => call(env, '/api/public/vouchers/check', body, undefined, 'POST', ip);
+    const valid = await check({ code: ' save ' });
+    assert.equal(valid.status, 200);
+    assert.equal(valid.headers.get('cache-control'), 'no-store');
+    assert.deepEqual(valid.body, { voucher: { code: 'SAVE', discountType: 'percent', value: 10 } });
+    await assert.rejects(check({ code: 'NOPE' }), rejection('This voucher is invalid or inactive.'));
+    await assert.rejects(check({ code: 'OFF' }), rejection('This voucher is invalid or inactive.'));
+    await assert.rejects(check({ code: 'OLD' }), rejection('This voucher has expired.'));
+    await assert.rejects(check({ code: 'BROKEN' }), rejection('This voucher is not configured correctly.'));
+    await assert.rejects(check({ code: '   ' }), rejection('Enter a voucher code.'));
+    await assert.rejects(check({}), rejection('Enter a voucher code.'));
+    await assert.rejects(check({ code: 'SAVE', usageLimit: 99 }), rejection('This request contains unsupported fields.'));
+    await placed(env, { voucherCode: 'SAVE' });
+    await assert.rejects(check({ code: 'SAVE' }, '192.0.2.9'), rejection('This voucher has reached its usage limit.'));
+});
+
+test('voucher checks are rate-limited per address and stay available during read-only maintenance', async t => {
+    const { env } = fixture(t);
+    for (let i = 0; i < 10; i++) {
+        await assert.rejects(call(env, '/api/public/vouchers/check', { code: `GUESS${i}` }), rejection('This voucher is invalid or inactive.'));
+    }
+    const limited = await call(env, '/api/public/vouchers/check', { code: 'SAVE' });
+    assert.equal(limited.status, 429);
+    assert.ok(Number(limited.headers.get('Retry-After')) > 0);
+    assert.equal(limited.body.voucher, undefined);
+    assert.equal((await call(env, '/api/public/vouchers/check', { code: 'SAVE' }, undefined, 'POST', '192.0.2.2')).body.voucher.code, 'SAVE');
+
+    const readOnly = { ...env, MUTATIONS_ENABLED: 'false' };
+    const viaWorker = await worker.fetch(req('/api/public/vouchers/check', { code: 'save' }, undefined, 'POST', '192.0.2.3'), readOnly);
+    assert.equal(viaWorker.status, 200);
+    assert.deepEqual(await viaWorker.json(), { voucher: { code: 'SAVE', discountType: 'percent', value: 10 } });
+    const checkout = await worker.fetch(req('/api/public/checkout', intent({ voucherCode: 'SAVE' }), undefined, 'POST', '192.0.2.3'), readOnly);
+    assert.equal(checkout.status, 503);
+    assert.equal((await checkout.json()).error.code, 'maintenance_read_only');
+    assert.equal(saleRows(env).length, 0);
 });
 
 test('client financial/status injection, invalid quantities and unsupported variants are rejected', async t => {

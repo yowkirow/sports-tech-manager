@@ -5,7 +5,7 @@ import {
     PackageSearch, Plus, Search, Share2, ShoppingBag, Ticket, Truck, Upload, Wallet, X, Zap
 } from 'lucide-react';
 import { apiRequest } from '../../lib/apiClient';
-import { rememberTracking, trackOrder, uploadReceipt } from '../../lib/publicShopApi';
+import { checkVoucher, rememberTracking, trackOrder, uploadReceipt } from '../../lib/publicShopApi';
 import { findProductBySlug, parseProductPath, productPageTitle, productSlugs, SITE_PREVIEW } from '../../lib/productLinks';
 import { setShareUrl } from '../../lib/shareHead';
 import { useToast } from '../ui/Toast';
@@ -353,7 +353,7 @@ function ChoiceCard({ name, value, checked, onChange, icon: Icon, label, detail,
 
 export default function Storefront({ catalog }) {
     const { showToast } = useToast();
-    const { products = [], stock: rawInventory = {}, brands = [], vouchers = [] } = catalog || {};
+    const { products = [], stock: rawInventory = {}, brands = [] } = catalog || {};
     const checkoutRequest = useRef(null);
     const checkoutInFlight = useRef(false);
 
@@ -530,6 +530,7 @@ export default function Storefront({ catalog }) {
     // Voucher logic
     const [voucherCode, setVoucherCode] = useState('');
     const [appliedVoucher, setAppliedVoucher] = useState(null);
+    const [applyingVoucher, setApplyingVoucher] = useState(false);
 
     const pricingOptions = useMemo(() => ({
         discount: appliedVoucher ? { type: appliedVoucher.discountType, value: Number(appliedVoucher.value) } : null,
@@ -564,49 +565,23 @@ export default function Storefront({ catalog }) {
             .slice(0, 4); // Take up to 4 items
     }, [products, cart]);
 
-    const handleApplyVoucher = () => {
-        if (!voucherCode.trim()) return;
-
-        const voucher = vouchers.find(entry => entry.code.toUpperCase() === voucherCode.trim().toUpperCase());
-
-        if (!voucher || !voucher.active) {
-            showToast('Invalid or inactive voucher', 'error');
+    const handleApplyVoucher = async () => {
+        const code = voucherCode.trim();
+        if (!code || applyingVoucher) return;
+        setApplyingVoucher(true);
+        try {
+            // Only the server knows the codes; it checks this one and returns its discount.
+            const voucher = await checkVoucher(code);
+            setAppliedVoucher(voucher);
+            showToast(`Voucher applied: ${voucher.code}`, 'success');
+        } catch (error) {
             setAppliedVoucher(null);
-            return;
+            showToast(error?.code === 'network_error' || !error?.message
+                ? 'Couldn’t check the voucher. Check your connection and try again.'
+                : error.message, 'error');
+        } finally {
+            setApplyingVoucher(false);
         }
-
-        const details = voucher;
-        const value = Number(details.value);
-        if (!['fixed', 'percent'].includes(details.discountType) || !Number.isFinite(value) || value < 0
-            || (details.discountType === 'percent' && value > 100)) {
-            showToast('This voucher is not configured correctly. Please contact the store.', 'error');
-            return;
-        }
-
-        // check expiry
-        if (details.expiryDate) {
-            const expiry = new Date(details.expiryDate);
-            const now = new Date();
-            // Reset times for accurate date comparison
-            expiry.setHours(23, 59, 59, 999);
-            if (now > expiry) {
-                showToast('Voucher has expired', 'error');
-                return;
-            }
-        }
-
-        // check usage limit
-        if (details.usageLimit) {
-            const uniqueUses = details.used || 0;
-
-            if (uniqueUses >= details.usageLimit) {
-                showToast('Voucher usage limit reached', 'error');
-                return;
-            }
-        }
-
-        setAppliedVoucher(details);
-        showToast(`Voucher applied: ${details.code}`, 'success');
     };
 
     const handleRemoveVoucher = () => {
@@ -1073,7 +1048,16 @@ export default function Storefront({ catalog }) {
                                             onKeyDown={e => { if (e.key === 'Enter') { e.preventDefault(); handleApplyVoucher(); } }}
                                             className="field pl-10 uppercase" />
                                     </div>
-                                    <button type="button" onClick={handleApplyVoucher} className="btn-secondary">Apply</button>
+                                    <button type="button" onClick={handleApplyVoucher} disabled={applyingVoucher} className="btn-secondary relative">
+                                        {/* The spinner sits over the label so the field doesn't shift while the code is checked. */}
+                                        <span className={clsx(applyingVoucher && 'invisible')}>Apply</span>
+                                        {applyingVoucher && (
+                                            <span className="absolute inset-0 grid place-items-center">
+                                                <Loader2 size={18} className="animate-spin" aria-hidden="true" />
+                                                <span className="sr-only">Checking voucher</span>
+                                            </span>
+                                        )}
+                                    </button>
                                 </div>
                             ) : (
                                 <div className="flex items-center justify-between rounded-xl border border-emerald-500/40 bg-emerald-500/10 py-2 pr-2 pl-4">

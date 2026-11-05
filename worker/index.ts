@@ -24,9 +24,10 @@ export default {
             if (redirect) return redirect;
             const path = new URL(request.url).pathname;
             sameOriginMutation(request);
-            // Contact-verified tracking and PIN unlocks store no business data, so they stay
-            // available while financial writes are paused.
-            const readOnlyPost = request.method === 'POST' && (path === '/api/public/track' || PIN_PATHS.includes(path));
+            // Contact-verified tracking, voucher checks and PIN unlocks store no business data, so they
+            // stay available while financial writes are paused.
+            const readOnlyPost = request.method === 'POST'
+                && (path === '/api/public/track' || path === '/api/public/vouchers/check' || PIN_PATHS.includes(path));
             if (!['GET', 'HEAD', 'OPTIONS'].includes(request.method) && !readOnlyPost && env.MUTATIONS_ENABLED !== 'true') {
                 throw new HttpError(503, 'maintenance_read_only', 'This environment is temporarily read-only. Your changes have not been saved.');
             }
