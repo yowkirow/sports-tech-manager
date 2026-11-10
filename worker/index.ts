@@ -8,6 +8,7 @@ import { handleBusinessRequest } from './business-api.ts';
 import { handlePublicRequest } from './public-api.ts';
 import { handleProductionRequest } from './production-api.ts';
 import { handleMediaRequest, handleSmsRequest } from './media-api.ts';
+import { handleDtfRequest } from './dtf-api.ts';
 import { handlePinRequest, PIN_PATHS, pinStatus, requirePinUnlocked } from './pin.ts';
 import { isSharePage, sharePage } from './share-preview.ts';
 
@@ -76,6 +77,7 @@ export default {
                     await requirePinUnlocked(request, env, member, identity);
                     const response = await handleMediaRequest(request, env, member)
                         || await handleSmsRequest(request, env, member)
+                        || await handleDtfRequest(request, env, member)
                         || await handleProductionRequest(request, env, member)
                         || await handleBusinessRequest(request, env, member, ctx);
                     if (response) return response;

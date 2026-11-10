@@ -79,7 +79,7 @@ function safeSettings(settings: SmsSettings) {
     };
 }
 
-async function owner(env: AppEnv, member: Member | null): Promise<Member> {
+export async function owner(env: AppEnv, member: Member | null): Promise<Member> {
     if (!member || member.role !== 'owner') throw new HttpError(403, 'access_denied', 'Owner access is required.');
     const active = await env.DB.prepare("SELECT id FROM members WHERE id = ? AND role = 'owner' AND active = 1").bind(member.id).first();
     if (!active) throw new HttpError(403, 'access_denied', 'Owner access is required.');

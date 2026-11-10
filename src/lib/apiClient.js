@@ -34,14 +34,23 @@ async function decodeResponse(response) {
 }
 
 async function requestJson(path, options) {
+    return decodeResponse(await send(path, options));
+}
+
+async function send(path, options) {
     if (typeof path !== 'string' || !path.startsWith('/api/')) throw new TypeError('Use a same-origin API path.');
-    let response;
-    try { response = await fetch(path, { ...options, credentials: 'same-origin', redirect: 'error' }); }
+    try { return await fetch(path, { ...options, credentials: 'same-origin', redirect: 'error' }); }
     catch (error) {
         if (error?.name === 'AbortError') throw error;
         throw new ApiError('Unable to reach the app. Check your connection or reload to sign in again.', 0, 'network_error');
     }
-    return decodeResponse(response);
+}
+
+// A private file as text (DTF designs). Errors arrive as JSON, like every other API call.
+async function requestText(path, options) {
+    const response = await send(path, options);
+    if (!response.ok) await decodeResponse(response);
+    return response.text();
 }
 
 export async function apiRequest(path, { body, headers, ...options } = {}) {
@@ -78,5 +87,13 @@ export const api = {
     uploadPayoutReceipt: async image => requestJson('/api/media/payout-receipts', {
         method: 'POST', headers: { 'Content-Type': image.type || 'application/octet-stream' }, body: image
     }),
-    sendSms: details => apiRequest('/api/sms', { method: 'POST', body: { requestId: crypto.randomUUID(), ...details } })
+    sendSms: details => apiRequest('/api/sms', { method: 'POST', body: { requestId: crypto.randomUUID(), ...details } }),
+    // DTF sheet builder (owner only): the gallery of print-ready SVG designs.
+    dtf: {
+        list: () => apiRequest('/api/dtf/designs'),
+        create: design => apiRequest('/api/dtf/designs', { method: 'POST', body: design }),
+        update: (id, changes) => apiRequest(`/api/dtf/designs/${encodeURIComponent(id)}`, { method: 'PATCH', body: changes }),
+        remove: id => apiRequest(`/api/dtf/designs/${encodeURIComponent(id)}`, { method: 'DELETE' }),
+        svg: (url, options) => requestText(url, options)
+    }
 };
