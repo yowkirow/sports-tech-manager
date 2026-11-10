@@ -389,6 +389,14 @@ off, rather than asking first.
   collected, who sees it (LBC, textbee.dev for texts, Cloudflare for hosting and email),
   or the Pixel's events.
 
+## Installed app
+
+The installed app (manifest `start_url` `/admin`) opens on the Orders tab (owner request,
+November 10, 2026). In a browser tab, the admin still opens on the Point of Sale.
+`src/lib/appStart.js` tells them apart by the `(display-mode: standalone)` media query, or
+by `navigator.standalone` on iPhones. Installs made before this change follow it too:
+nothing about the install itself changes.
+
 ## Service worker
 
 The app installs a service worker (`vite-plugin-pwa`, `registerType: 'autoUpdate'`) that
