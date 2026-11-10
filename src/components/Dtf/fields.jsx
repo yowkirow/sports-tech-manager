@@ -1,6 +1,7 @@
 import { useEffect, useId, useState } from 'react';
 import { Minus, Plus } from 'lucide-react';
 import clsx from 'clsx';
+import { widthLimits } from '../../lib/dtfSize.js';
 
 /** 3.5 → "3.5", 2.125 → "2.13", 10 → "10". */
 export const inches = value => String(Math.round(value * 100) / 100);
@@ -17,7 +18,7 @@ const parse = text => {
  * A number typed in inches (or any unit). Every valid value is used as it is typed; a half-typed one
  * ("3.") waits, and leaving the field puts back the last valid value.
  */
-export function NumberField({ label, value, onChange, min, max, step = 0.1, unit = 'in', integer = false, className, labelClassName, inputClassName, disabled, describedBy }) {
+export function NumberField({ label, value, onChange, min, max, step = 0.1, unit = 'in', integer = false, className, labelClassName, inputClassName, unitClassName, disabled, describedBy }) {
     const id = useId();
     const [text, setText] = useState(String(value));
     useEffect(() => {
@@ -53,9 +54,43 @@ export function NumberField({ label, value, onChange, min, max, step = 0.1, unit
                     }}
                     className={clsx('field num aria-invalid:border-red-500/60', unit && 'pr-10', inputClassName)}
                 />
-                {unit && <span className="pointer-events-none absolute right-3.5 top-1/2 -translate-y-1/2 text-sm text-ink-3" aria-hidden="true">{unit}</span>}
+                {unit && <span className={clsx('pointer-events-none absolute right-3.5 top-1/2 -translate-y-1/2 text-sm text-ink-3', unitClassName)} aria-hidden="true">{unit}</span>}
             </div>
         </div>
+    );
+}
+
+/** A worked-out size to show: two decimals, but never rounded past the field's own limits. */
+function shownSize(exact, min, max) {
+    const rounded = Math.round(exact * 100) / 100;
+    if (rounded < min) return Math.ceil(exact * 100) / 100;
+    if (rounded > max) return Math.floor(exact * 100) / 100;
+    return rounded;
+}
+
+/**
+ * Width and height in inches, tied by the design's shape (ratio = height / width): type either and the other
+ * follows. Each field takes only sizes the gallery accepts on both sides (src/lib/dtfSize.js). The two fields
+ * come back side by side without a wrapper, so a grid row can give each its own column.
+ */
+export function SizeFields({ widthIn, ratio, onChange, disabled, fieldClassName, labelClassName, inputClassName, unitClassName, describedBy }) {
+    // The field being typed in keeps the number exactly as typed; the other shows the size worked out from it.
+    const [typed, setTyped] = useState(null);
+    const limits = widthLimits(ratio);
+    const heightIn = widthIn * ratio;
+    const range = {
+        width: limits ? [limits.min, limits.max] : [widthIn, widthIn],
+        height: limits ? [limits.min * ratio, limits.max * ratio] : [heightIn, heightIn]
+    };
+    const shown = (axis, exact) => (typed?.axis === axis && Math.abs(typed.value - exact) < 1e-6 ? typed.value : shownSize(exact, ...range[axis]));
+    const field = { disabled: disabled || !limits, className: fieldClassName, labelClassName, inputClassName, unitClassName, describedBy };
+    return (
+        <>
+            <NumberField label="Width" value={shown('width', widthIn)} min={range.width[0]} max={range.width[1]} {...field}
+                onChange={value => { setTyped({ axis: 'width', value }); onChange(value); }} />
+            <NumberField label="Height" value={shown('height', heightIn)} min={range.height[0]} max={range.height[1]} {...field}
+                onChange={value => { setTyped({ axis: 'height', value }); onChange(value / ratio); }} />
+        </>
     );
 }
 

@@ -77,7 +77,7 @@ export default function DtfSheets() {
 
     const sheetPicks = useMemo(() => picks.filter(pick => designsById.has(pick.designId)).map(pick => {
         const design = designsById.get(pick.designId);
-        return { ...pick, name: design.name, heightIn: heightOf(pick.widthIn, design) };
+        return { ...pick, name: design.name, heightIn: heightOf(pick.widthIn, design), ratio: design.heightIn / design.widthIn };
     }), [picks, designsById]);
     const layout = useMemo(() => layoutSheets(sheetPicks, settings), [sheetPicks, settings]);
     const counts = useMemo(() => {
@@ -134,6 +134,7 @@ export default function DtfSheets() {
     }
 
     const usableWidthIn = layout.settings.widthIn - 2 * layout.settings.marginIn;
+    const usableLengthIn = layout.settings.lengthIn - 2 * layout.settings.marginIn;
     // The shell's bottom padding stops at its full-height wrapper, so on phones this page clears the
     // 64px tab bar itself, or its last row would stay under the bar. The reading order is the phone's
     // (sheet, preview, designs); on a computer the preview stands beside the other two.
@@ -182,6 +183,7 @@ export default function DtfSheets() {
                     files={uploads.files}
                     leftOut={uploads.leftOut}
                     usableWidthIn={usableWidthIn}
+                    usableLengthIn={usableLengthIn}
                     onSaved={(design, svg) => {
                         rememberDesignFile(design.id, svg);
                         setDesigns(current => [...current.filter(item => item.id !== design.id), design].sort(byName));
