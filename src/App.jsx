@@ -10,6 +10,7 @@ import Dialog from './components/ui/Dialog';
 import Logo from './components/ui/Logo';
 import { ReadOnlyContext } from './components/ui/ReadOnly';
 import { setShareUrl } from './lib/shareHead';
+import { isInstalledApp, startTab } from './lib/appStart';
 
 const DashboardStats = lazy(() => import('./components/DashboardStats'));
 const TransactionList = lazy(() => import('./components/TransactionList'));
@@ -248,7 +249,7 @@ function ManagementApp({ session, onProfileChange, onLock }) {
         refetch
     } = useTransactions({ enabled: true, accountId: session.user.id });
 
-    const [activeTab, setActiveTab] = useState('pos');
+    const [activeTab, setActiveTab] = useState(() => startTab());
     const [showAddStockModal, setShowAddStockModal] = useState(false);
     const [isSidebarOpen, setIsSidebarOpen] = useState(false);
     const userRole = session.user.role;
@@ -591,8 +592,7 @@ export default function AppLoader() {
     const isTrackPath = /^\/track(?:\/|$)/.test(path);
     const isPrivacyPath = /^\/privacy\/?$/.test(path);
     React.useEffect(() => {
-        const standalone = window.matchMedia('(display-mode: standalone)').matches || window.navigator.standalone;
-        if (standalone && path === '/') window.location.replace('/admin');
+        if (isInstalledApp() && path === '/') window.location.replace('/admin');
     }, [path]);
     // The offline copy of the app is the shop home with its link-preview tags; on these pages it isn't.
     React.useEffect(() => {
