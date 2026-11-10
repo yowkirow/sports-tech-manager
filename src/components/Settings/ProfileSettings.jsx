@@ -5,6 +5,7 @@ import { User, Lock, Save, LogOut, Shield, MessageSquare, Send, Mail, Loader2 } 
 import ActivityLogViewer from './ActivityLogViewer';
 import ColorSettings from './ColorSettings';
 import BrandSettings from './BrandSettings';
+import BallShippingSettings from './BallShippingSettings';
 import ExpenseCategorySettings from './ExpenseCategorySettings';
 import TeamSettings from './TeamSettings';
 import { useReadOnly, READ_ONLY_HINT } from '../ui/ReadOnly';
@@ -414,6 +415,11 @@ export default function ProfileSettings({ user, onLogout, onProfileChange, trans
 
             {isAdmin && (
                 <div className="space-y-6 border-t border-line pt-6">
+                    <BallShippingSettings
+                        transactions={transactions}
+                        onAddTransaction={onAddTransaction}
+                    />
+
                     <ColorSettings
                         transactions={transactions}
                         onAddTransaction={onAddTransaction}

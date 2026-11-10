@@ -266,6 +266,26 @@ test('all supported owner lifecycle events insert atomically with exact values a
     assert.deepEqual(state(db), before);
 });
 
+test('the owner saves ball shipping rates as checked records; resellers cannot', async t => {
+    const db = new LocalD1(t);
+    const rates = (number, balls, patch = {}) => transaction(number, { type: 'shipping_rates', category: 'settings', amount: '0', details: { balls }, ...patch });
+    const saved = await insert(db, [rates(1, [{ from: 21, mm: 220, provincial: 340 }, { from: 1, mm: 150, provincial: 260 }])]);
+    assert.deepEqual(saved.rows[0].details.balls, [{ from: 21, mm: 220, provincial: 340 }, { from: 1, mm: 150, provincial: 260 }]);
+    assert.equal(saved.rows[0].details.createdBy, members.owner.email);
+    await insert(db, [rates(2, [])]);
+    const refused = [
+        [{ from: 2, mm: 150, provincial: 260 }], [{ from: 1, mm: 150.5, provincial: 260 }], [{ from: 1, mm: '150', provincial: 260 }],
+        [{ from: 1, mm: 150, provincial: 260 }, { from: 1, mm: 160, provincial: 270 }], [{ from: 1, mm: 150, provincial: 260, note: 'x' }],
+        [{ from: 1, mm: 150 }], 'x'
+    ];
+    for (const balls of refused) await assert.rejects(insert(db, [rates(3, balls)]), error('validation_error', 400), JSON.stringify(balls));
+    await assert.rejects(insert(db, [rates(4, [], { amount: '5' })]), error('validation_error', 400));
+    await assert.rejects(insert(db, [rates(5, [], { details: { balls: [], note: 'x' } })]), error('validation_error', 400));
+    await assert.rejects(insert(db, [rates(6, [], { details: null })]), error('validation_error', 400));
+    await assert.rejects(insert(db, [rates(7, [])], undefined, 'reseller'), error('forbidden', 403));
+    assert.equal(db.sqlite.prepare("SELECT count(*) AS n FROM transactions WHERE type='shipping_rates'").get().n, 2);
+});
+
 test('server generated IDs are stable on receipt replay and source IDs cannot be duplicated', async t => {
     const db = new LocalD1(t);
     const row = transaction(1);

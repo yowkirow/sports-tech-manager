@@ -8,6 +8,7 @@ import { buildPublicCatalog } from '../src/lib/publicCatalog.js';
 import { getStockKey } from '../src/lib/inventory.js';
 import { createOrderId, groupOrders } from '../src/lib/orderItems.js';
 import { getCartUnitPrice, priceOrder } from '../src/lib/orderPricing.js';
+import { ballShippingTiers, shippingFor, shippingPlan } from '../src/lib/shippingRates.js';
 import { buildOrderChanges, keepStoredPrintFields } from '../src/lib/orderEditingPure.js';
 import { normalizeCustomerEmail } from '../src/lib/customerEmail.js';
 import { background, sendOrderReceived, shippedTracking } from './notifications.ts';
@@ -15,7 +16,7 @@ import type { Background } from './notifications.ts';
 
 type RecordData = Record<string, any>;
 type Transaction = RecordData & { id: string; type: string; category: string; amount: string; date: string; details: RecordData };
-type Catalog = { products: RecordData[]; brands: RecordData[]; stock: Record<string, number>; vouchers: RecordData[] };
+type Catalog = { products: RecordData[]; brands: RecordData[]; stock: Record<string, number>; vouchers: RecordData[]; shippingRates: { balls: RecordData[] } };
 type ReceiptRow = { id: string; object_key: string; content_type: string; byte_size: number; order_id: string | null; capability_hash: string; expires_at: number };
 const encoder = new TextEncoder();
 const UUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
@@ -253,6 +254,12 @@ const voucherUsageSQL = `SELECT json_extract(details,'$.voucherCode') AS code,
         AND coalesce(json_extract(details,'$.removedFromOrder'),0) IN (0,'')
     GROUP BY json_extract(details,'$.voucherCode')`;
 const catalogCache = new WeakMap<D1Database, { catalog: Catalog; revision: number }>();
+// The owner's ball shipping rates in force: the newest record, in the catalog's own history order.
+const shippingRatesSQL = `SELECT details FROM transactions WHERE type='shipping_rates' ORDER BY date DESC,created_at DESC,id DESC LIMIT 1`;
+function storedDetails(value: unknown): unknown {
+    if (typeof value !== 'string') return null;
+    try { return JSON.parse(value); } catch { return null; }
+}
 
 async function loadCatalog(env: AppEnv): Promise<{ catalog: Catalog; revision: number }> {
     const cached = catalogCache.get(env.DB);
@@ -265,7 +272,8 @@ async function loadCatalog(env: AppEnv): Promise<{ catalog: Catalog; revision: n
     const results = await env.DB.batch([
         env.DB.prepare(catalogSnapshotSQL),
         env.DB.prepare('SELECT revision FROM system_state WHERE singleton = 1'),
-        env.DB.prepare(voucherUsageSQL)
+        env.DB.prepare(voucherUsageSQL),
+        env.DB.prepare(shippingRatesSQL)
     ]);
     const revision = (results[1]?.results[0] as { revision?: number } | undefined)?.revision;
     if (!Number.isSafeInteger(revision)) throw new HttpError(503, 'catalog_unavailable', 'The catalog is temporarily unavailable.');
@@ -273,7 +281,12 @@ async function loadCatalog(env: AppEnv): Promise<{ catalog: Catalog; revision: n
         const entry = row as { code: string; used: number };
         return [entry.code, entry.used] as const;
     }));
-    const snapshot = { catalog: buildPublicCatalog(decodeCatalogRows(results[0]?.results || []), usage), revision: revision! };
+    const rates = (results[3]?.results[0] as { details?: unknown } | undefined)?.details;
+    const catalog = {
+        ...buildPublicCatalog(decodeCatalogRows(results[0]?.results || []), usage),
+        shippingRates: { balls: ballShippingTiers(storedDetails(rates)) }
+    };
+    const snapshot = { catalog, revision: revision! };
     catalogCache.set(env.DB, snapshot);
     return snapshot;
 }
@@ -401,15 +414,18 @@ async function checkout(request: Request, env: AppEnv, ctx?: Background): Promis
     const { catalog, revision } = await loadCatalog(env);
     const items = checkedItems(catalog, intent.items);
     const voucher = checkedVoucher(catalog, intent.voucherCode);
+    const plan = shippingPlan(catalog.shippingRates.balls, intent.region);
+    const shipping = shippingFor(items, plan);
     const options = {
-        shippingFee: intent.region === 'MM' ? 100 : 200, isRushOrder: intent.rush, rushFeePerShirt: 100,
+        shippingFee: shipping.total, isRushOrder: intent.rush, rushFeePerShirt: 100,
         discount: voucher ? { type: voucher.discountType, value: Number(voucher.value) } : null
     };
     const priced = priceOrder(items, options);
     if (!Number.isSafeInteger(Math.round(priced.total * 100))) failure('The order total exceeds the supported amount.');
     const key = createOrderId();
     const date = new Date().toISOString();
-    const pricing = { ...options, version: 1, shippingLineId: items[0]!.id };
+    // An order paying ball shipping by count keeps those rates, so a later quantity change reprices it the same way.
+    const pricing = { ...options, version: 1, shippingLineId: items[0]!.id, ...(shipping.ballCount ? { ballShipping: plan } : {}) };
     let receiptHash: string | null = null;
     if (intent.receipt) {
         const claims = await verify(env, intent.receipt.token, 'receipt-upload');
@@ -501,7 +517,7 @@ const safeDetailKeys = [
 function safeDetails(source: RecordData): RecordData {
     const result = Object.fromEntries(safeDetailKeys.filter(key => Object.hasOwn(source, key)).map(key => [key, source[key]]));
     if (isObject(source.pricing)) {
-        result.pricing = Object.fromEntries(['version', 'discount', 'shippingFee', 'isRushOrder', 'rushFeePerShirt', 'shippingLineId'].filter(key => Object.hasOwn(source.pricing, key)).map(key => [key, source.pricing[key]]));
+        result.pricing = Object.fromEntries(['version', 'discount', 'shippingFee', 'isRushOrder', 'rushFeePerShirt', 'shippingLineId', 'ballShipping'].filter(key => Object.hasOwn(source.pricing, key)).map(key => [key, source.pricing[key]]));
     }
     if (isObject(source.shippingDetails)) {
         result.shippingDetails = Object.fromEntries(['address', 'city', 'province', 'barangay', 'contactNumber', 'region', 'shippingFee', 'isRushOrder', 'rushFee'].filter(key => Object.hasOwn(source.shippingDetails, key)).map(key => [key, source.shippingDetails[key]]));

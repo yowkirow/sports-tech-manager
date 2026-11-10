@@ -20,6 +20,7 @@ import { getMMCities, getAllProvinces, getCitiesByProvince, getBarangays } from 
 import { getSizeGuideForBrand } from '../../data/sizeGuides';
 import { getStockKey } from '../../lib/inventory';
 import { getBallUnitPrice, getCartUnitPrice, isBallProduct, priceOrder } from '../../lib/orderPricing';
+import { FLAT_SHIPPING, SHIPPING_REGIONS, shippingFor, shippingPlan } from '../../lib/shippingRates';
 
 const SIZES = ['XS', 'S', 'M', 'L', 'XL', '2XL'];
 const BALL_QUANTITIES = [1, 5, 10, 20, 50, 100];
@@ -206,7 +207,43 @@ function ShareButton({ product, url }) {
     );
 }
 
-function ProductSheet({ product, shareUrl, getStock, onClose, onAdd }) {
+/** "1–20", "21–49", "50+": the ball counts each shipping tier covers. */
+const tierRange = (tiers, index) => {
+    const from = tiers[index].from;
+    const next = tiers[index + 1]?.from;
+    if (next === undefined) return `${from}+`;
+    return next - 1 === from ? String(from) : `${from}–${next - 1}`;
+};
+
+/** The owner's ball shipping rates (src/lib/shippingRates.js), for the ball product sheet. */
+function BallShippingTable({ tiers }) {
+    return (
+        <div className="mt-5 rounded-xl border border-line p-4">
+            <h4 className="text-sm font-semibold">Shipping for balls</h4>
+            <p className="mt-1 text-sm text-ink-2">Balls ship at their own LBC rate, set by how many you order.</p>
+            <table className="num mt-3 w-full text-sm">
+                <thead>
+                    <tr className="text-left text-xs text-ink-2">
+                        <th scope="col" className="pb-1.5 font-medium">Balls</th>
+                        <th scope="col" className="pb-1.5 font-medium">Metro Manila</th>
+                        <th scope="col" className="pb-1.5 font-medium">Provincial</th>
+                    </tr>
+                </thead>
+                <tbody className="divide-y divide-line">
+                    {tiers.map((tier, index) => (
+                        <tr key={tier.from}>
+                            <th scope="row" className="py-1.5 text-left font-medium text-ink">{tierRange(tiers, index)}</th>
+                            <td className="py-1.5">{peso(tier.mm)}</td>
+                            <td className="py-1.5">{peso(tier.provincial)}</td>
+                        </tr>
+                    ))}
+                </tbody>
+            </table>
+        </div>
+    );
+}
+
+function ProductSheet({ product, shareUrl, getStock, ballTiers = [], onClose, onAdd }) {
     const kind = productKind(product);
     const images = product.images?.length ? product.images : [product.imageUrl].filter(Boolean);
     const [imageIdx, setImageIdx] = useState(0);
@@ -314,6 +351,7 @@ function ProductSheet({ product, shareUrl, getStock, onClose, onAdd }) {
                                     </button>
                                 ))}
                             </div>
+                            {ballTiers.length > 0 && <BallShippingTable tiers={ballTiers} />}
                         </div>
                     )}
 
@@ -414,6 +452,7 @@ async function orderSignature(intent) {
 export default function Storefront({ catalog }) {
     const { showToast } = useToast();
     const { products = [], stock: rawInventory = {}, brands = [] } = catalog || {};
+    const ballTiers = useMemo(() => catalog?.shippingRates?.balls || [], [catalog]);
     const [unconfirmedCheckout] = useState(restoreUnconfirmedCheckout);
     const checkoutRequest = useRef(unconfirmedCheckout);
     const forgetCheckout = () => { checkoutRequest.current = null; saveUnconfirmedCheckout(null); };
@@ -619,12 +658,17 @@ export default function Storefront({ catalog }) {
     const [appliedVoucher, setAppliedVoucher] = useState(null);
     const [applyingVoucher, setApplyingVoucher] = useState(false);
 
+    // Shipping for the bag in each area, priced as checkout does (src/lib/shippingRates.js): balls pay the owner's
+    // ball rates when set, on top of the flat fee for everything else.
+    const shippingByRegion = useMemo(() => Object.fromEntries(SHIPPING_REGIONS.map(region => [region, shippingFor(cart, shippingPlan(ballTiers, region))])),
+        [cart, ballTiers]);
+    const shipping = shippingByRegion[shippingRegion];
     const pricingOptions = useMemo(() => ({
         discount: appliedVoucher ? { type: appliedVoucher.discountType, value: Number(appliedVoucher.value) } : null,
-        shippingFee: shippingRegion === 'MM' ? 100 : 200,
+        shippingFee: shipping.total,
         isRushOrder,
         rushFeePerShirt: 100
-    }), [appliedVoucher, shippingRegion, isRushOrder]);
+    }), [appliedVoucher, shipping.total, isRushOrder]);
     const cartPricing = useMemo(() => priceOrder(cart.map(item => ({
         ...item, id: item.cartId, unitPrice: getCartUnitPrice(item)
     })), pricingOptions), [cart, pricingOptions]);
@@ -952,7 +996,7 @@ export default function Storefront({ catalog }) {
 
             {activeProduct && (
                 <ProductSheet product={activeProduct} shareUrl={`${window.location.origin}${productHref(activeProduct)}`}
-                    getStock={getStock} onClose={() => setActiveProduct(null)} onAdd={addToCart} />
+                    getStock={getStock} ballTiers={ballTiers} onClose={() => setActiveProduct(null)} onAdd={addToCart} />
             )}
 
             {isCartOpen && bagStep === 'bag' && (
@@ -1064,9 +1108,9 @@ export default function Storefront({ catalog }) {
                             <h3 id="ck-delivery" className="section-title">Delivery</h3>
                             <div role="radiogroup" aria-label="Shipping area" className="grid gap-2">
                                 <ChoiceCard name="region" value="MM" checked={shippingRegion === 'MM'} onChange={() => setShippingRegion('MM')}
-                                    icon={Building2} label="Metro Manila" detail="LBC standard shipping" aside="₱100" />
+                                    icon={Building2} label="Metro Manila" detail="LBC standard shipping" aside={peso(shippingByRegion.MM.total)} />
                                 <ChoiceCard name="region" value="Provincial" checked={shippingRegion === 'Provincial'} onChange={() => setShippingRegion('Provincial')}
-                                    icon={MapPin} label="Outside Metro Manila" detail="LBC standard shipping" aside="₱200" />
+                                    icon={MapPin} label="Outside Metro Manila" detail="LBC standard shipping" aside={peso(shippingByRegion.Provincial.total)} />
                             </div>
                             {shippingRegion === 'Provincial' && (
                                 <Field id="ck-province" label="Province">
@@ -1104,7 +1148,12 @@ export default function Storefront({ catalog }) {
                                 <input id="ck-street" className="field" autoComplete="street-address" placeholder="House no., street, building" required value={shippingAddress} onChange={e => setShippingAddress(e.target.value)} />
                             </Field>
                             <div className="rounded-xl border border-line bg-raised p-4 text-sm">
-                                <p className="font-semibold">Standard shipping: LBC, {shippingRegion === 'MM' ? '₱100' : '₱200'} fixed rate</p>
+                                <p className="font-semibold">
+                                    {!shipping.ballCount ? <>Standard shipping: LBC, {peso(FLAT_SHIPPING[shippingRegion])} fixed rate</>
+                                        : shipping.flat ? <>LBC shipping: {peso(shipping.flat)} fixed rate, plus {peso(shipping.balls)} for <span className="num">{shipping.ballCount}</span> balls</>
+                                            : <>LBC shipping for <span className="num">{shipping.ballCount}</span> balls: {peso(shipping.balls)}</>}
+                                </p>
+                                {shipping.ballCount > 0 && <p className="mt-1 text-ink-2">Balls ship at their own rate, set by how many you order.</p>}
                                 <p className="mt-1 text-ink-2">Cutoff every Thursday. Shipping day every Sunday.</p>
                                 <p className="mt-1 text-ink-2">For other couriers (J&amp;T, Lalamove), buyer shoulders the cost.</p>
                             </div>
@@ -1200,7 +1249,12 @@ export default function Storefront({ catalog }) {
                             <h3 id="ck-summary" className="section-title text-base">Order summary</h3>
                             <dl className="num mt-3 space-y-2 text-sm">
                                 <div className="flex justify-between"><dt className="text-ink-2">Subtotal ({itemCount} {itemCount === 1 ? 'item' : 'items'})</dt><dd>{peso(subtotal)}</dd></div>
-                                <div className="flex justify-between"><dt className="text-ink-2">Shipping ({shippingRegion === 'MM' ? 'Metro Manila' : 'Provincial'})</dt><dd>{peso(cartPricing.shippingFee)}</dd></div>
+                                {(!shipping.ballCount || shipping.flat > 0) && (
+                                    <div className="flex justify-between"><dt className="text-ink-2">Shipping ({shippingRegion === 'MM' ? 'Metro Manila' : 'Provincial'})</dt><dd>{peso(shipping.ballCount ? shipping.flat : cartPricing.shippingFee)}</dd></div>
+                                )}
+                                {shipping.ballCount > 0 && (
+                                    <div className="flex justify-between"><dt className="text-ink-2">Ball shipping ({shipping.ballCount} {shipping.ballCount === 1 ? 'ball' : 'balls'})</dt><dd>{peso(shipping.balls)}</dd></div>
+                                )}
                                 {appliedVoucher && (
                                     <div className="flex justify-between text-emerald-300"><dt>Voucher ({appliedVoucher.code})</dt><dd>−{peso(discountAmount, { maximumFractionDigits: 2 })}</dd></div>
                                 )}

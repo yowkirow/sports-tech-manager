@@ -229,6 +229,36 @@ After sign-in, `/api/session` confirms the app-level member and `/health` report
 the deployed Worker version. Dashboard sign-in alone does not prove that this
 separate application login works.
 
+## Shop shipping and ball rates
+
+Owner request (November 10, 2026). Every shop order pays LBC's flat fee for its area:
+₱100 Metro Manila or ₱200 provincial. LBC charges more to ship pickleball balls than that
+covers, so the owner can set ball shipping in Settings › Ball shipping. Tiers go by ball
+count, each with a Metro Manila and a provincial fee in whole pesos. A tier covers its
+count and up, until the next tier starts. `src/lib/shippingRates.js` holds the rules, and
+the shop, checkout and order editing all use it.
+
+- **Charging**: with tiers set, balls pay the tier their count reaches, added to the flat
+  fee for everything else in the order. An order of only balls pays only ball shipping.
+  With no tiers set, balls ride the flat fee as before.
+- **Storage**: the rates are `shipping_rates` transactions with `details.balls` holding
+  `{ from, mm, provincial }`. The newest record is in force, and saving an empty list
+  turns ball rates off. Only the owner can write one: resellers may only submit sales,
+  and print staff can't write transactions.
+- **Checks**: `POST /api/transactions` refuses a record unless every tier reads back
+  whole: the first from 1 ball, no two starting at the same count, at most 12 tiers,
+  whole-peso fees up to ₱100,000, and no amount. Anything malformed that reaches the
+  table anyway reads as "no rates", so it can't break checkout.
+- **Catalog**: `/api/public/catalog` includes `shippingRates.balls`, read in the same
+  batch as the catalog revision. The shop shows the tiers on the ball product sheet,
+  prices each area's card at checkout, and splits Shipping and Ball shipping in the
+  summary. Checkout prices from the same rates on the server.
+- **Orders**: an order that pays ball shipping saves its area's plan in
+  `pricing.ballShipping` (`flatFee` and `ballTiers`). When a customer or the owner
+  changes its quantities or items, its shipping is worked out again from that saved plan,
+  not from today's rates. Name, address and status edits keep the stored amounts.
+  Reseller and POS orders don't pay shipping, so this doesn't apply to them.
+
 ## DTF sheets (migration 0020)
 
 Owner request (November 9, 2026): the owner orders DTF prints by the meter, and the
