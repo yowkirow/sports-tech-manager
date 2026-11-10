@@ -3,34 +3,39 @@ import { AlertTriangle, X } from 'lucide-react';
 import Dialog from '../ui/Dialog';
 import { api } from '../../lib/apiClient';
 import { MAX_SVG_BYTES, designNameFromFile, heightFor, prepareSvgDesign, svgUrl } from '../../lib/svgDesign.js';
-import { NumberField, inches } from './fields';
+import { clampWidth, sizeProblem, widthLimits } from '../../lib/dtfSize.js';
+import { SizeFields, inches } from './fields';
 import { leftOutMessage } from './DesignGallery';
 
 const DEFAULT_WIDTH = 4;
+const EPSILON = 1e-6;
+const shapeOf = prepared => prepared.viewBox[3] / prepared.viewBox[2];
 
-/** The print width to start from: the file's own size when it gives one in real units, else a guess to check. */
+/**
+ * The print width to start from: the file's own size when it gives one in real units, else a guess to check.
+ * Either way it stays inside the sizes the gallery takes for the design's shape.
+ */
 function startingWidth(prepared) {
     const suggested = prepared.suggestedWidthIn;
+    let start = { widthIn: DEFAULT_WIDTH, note: 'The file doesn\'t say how big to print it. Set the width or the height.' };
     if (suggested && prepared.suggestionFromUnits && suggested >= 0.25 && suggested <= 60) {
-        return { widthIn: Math.round(suggested * 100) / 100, note: 'From the size saved in the file.' };
+        start = { widthIn: Math.round(suggested * 100) / 100, note: 'From the size saved in the file.' };
+    } else if (suggested && suggested >= 0.5 && suggested <= 22) {
+        start = { widthIn: Math.round(suggested * 100) / 100, note: 'Guessed from the file\'s pixel size. Check it.' };
     }
-    if (suggested && suggested >= 0.5 && suggested <= 22) {
-        return { widthIn: Math.round(suggested * 100) / 100, note: 'Guessed from the file\'s pixel size. Check it.' };
-    }
-    return { widthIn: DEFAULT_WIDTH, note: 'The file doesn\'t say how big to print it. Set the width.' };
+    const widthIn = clampWidth(start.widthIn, shapeOf(prepared));
+    return widthIn === start.widthIn ? start : { widthIn, note: 'Resized to fit the gallery\'s size limits. Check it.' };
 }
 
 function problemWith(item) {
     if (item.status !== 'ready' && item.status !== 'failed') return null;
     if (!item.name.trim()) return 'Give the design a name.';
-    const height = heightFor(item.widthIn, item.prepared.viewBox);
-    if (height < 0.1) return 'At this width the design is too thin to print. Make it wider.';
-    if (height > 120) return 'At this width the design is too tall. Make it narrower.';
-    return null;
+    if (!widthLimits(shapeOf(item.prepared))) return 'This design is too thin to print at any size. Check the file.';
+    return sizeProblem(item.widthIn, heightFor(item.widthIn, item.prepared.viewBox));
 }
 
 /** Checks, names and sizes each chosen SVG, then adds them to the gallery. */
-export default function UploadDesignsDialog({ files, leftOut = [], usableWidthIn, onClose, onSaved }) {
+export default function UploadDesignsDialog({ files, leftOut = [], usableWidthIn, usableLengthIn, onClose, onSaved }) {
     const [items, setItems] = useState(() => files.map(file => ({
         key: crypto.randomUUID(), id: crypto.randomUUID(), file, status: 'preparing', name: designNameFromFile(file.name)
     })));
@@ -92,7 +97,7 @@ export default function UploadDesignsDialog({ files, leftOut = [], usableWidthIn
         <Dialog
             onClose={() => { if (!saving) onClose(0); }}
             title="Add designs"
-            description="Check each design's name and print width. Its height follows its shape."
+            description="Check each design's name and print size. Type its width or its height; the other follows its shape."
             size="lg"
             bodyClassName="px-5"
             footer={(
@@ -144,14 +149,16 @@ export default function UploadDesignsDialog({ files, leftOut = [], usableWidthIn
                                             <input id={`dtf-name-${item.key}`} value={item.name} maxLength={120} disabled={!editable}
                                                 onChange={event => update(item.key, { name: event.target.value })} className="field" autoComplete="off" />
                                         </div>
-                                        <div className="flex flex-wrap items-end gap-x-4 gap-y-2">
-                                            <NumberField label="Print width" value={item.widthIn} min={0.1} max={60} className="w-32" disabled={!editable}
+                                        <div className="flex flex-wrap items-end gap-x-3 gap-y-2">
+                                            <SizeFields widthIn={item.widthIn} ratio={shapeOf(item.prepared)} disabled={!editable} fieldClassName="w-28"
                                                 onChange={widthIn => update(item.key, { widthIn, note: null })} />
-                                            <p className="num pb-3 text-sm text-ink-2">× {inches(height)} in tall</p>
                                         </div>
                                         {item.note && <p className="text-sm text-ink-2">{item.note}</p>}
-                                        {item.widthIn > usableWidthIn && (
+                                        {item.widthIn > usableWidthIn + EPSILON && (
                                             <p className="text-sm text-amber-200">Wider than the sheet&apos;s <span className="num">{inches(usableWidthIn)}&nbsp;in</span>; it won&apos;t fit until you make it smaller.</p>
+                                        )}
+                                        {item.widthIn <= usableWidthIn + EPSILON && height > usableLengthIn + EPSILON && (
+                                            <p className="text-sm text-amber-200">Taller than the sheet&apos;s <span className="num">{inches(usableLengthIn)}&nbsp;in</span>; it won&apos;t fit until you make it smaller.</p>
                                         )}
                                         {problem && <p role="alert" className="text-sm text-red-300">{problem}</p>}
                                         {item.status === 'failed' && <p role="alert" className="text-sm text-red-300">{item.error}</p>}

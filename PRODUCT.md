@@ -81,7 +81,8 @@ prints, not an anonymous merch store.
   The owner uploads SVG designs once into a private gallery, picks designs and copies, and gets them
   spread evenly in straight rows for easy cutting, previewed to scale with inch rulers, then downloads
   one 300 DPI transparent PNG per sheet for the supplier. Extra sheets are added when needed, with
-  the meters shown.
+  the meters shown. A design is sized by typing its width or its height in inches (owner request
+  2026-11-10); the other follows its shape.
 - Ball pricing is tiered by quantity (1, 5, 10, 20, 50, 100 pieces).
 - Shirt sizes XS–2XL with brand-specific size guides.
 - Staff sign-in is email-code via Cloudflare Access; staging is a read-only snapshot with a visible

@@ -236,9 +236,11 @@ supplier's meter is a 22 x 39 in sheet. Admin > Stock > DTF sheets keeps the own
 designs in a gallery, places the ones picked on the sheet, and downloads print files.
 
 - **Gallery**: upload SVGs once (several at a time, or dropped on the gallery), each with a
-  name and a print width in inches; the height follows the design's shape. Later, Add puts
-  a design on the sheet. Edit renames or resizes one; Delete archives it (`archived_at`), so
-  it can be restored in D1.
+  name and a print size in inches. Type the width or the height and the other follows the
+  design's shape (`src/lib/dtfSize.js` keeps both sides within the gallery's limits, 0.1 to
+  60 in wide and 0.1 to 120 in tall). Later, Add puts a design on the sheet, where each pick
+  can be resized the same way. Edit renames or resizes one; Delete archives it
+  (`archived_at`), so it can be restored in D1.
 - **Upload cleaning** (`src/lib/svgDesign.js`, in the browser): scripts, embedded HTML,
   event handlers, animation, links, external files and other programs' private data
   (Illustrator, Inkscape) are removed. CSS is written onto the elements and every id gets

@@ -2,7 +2,8 @@ import { useState } from 'react';
 import { Trash2 } from 'lucide-react';
 import Dialog from '../ui/Dialog';
 import { api } from '../../lib/apiClient';
-import { NumberField, heightOf, inches } from './fields';
+import { sizeProblem, widthLimits } from '../../lib/dtfSize.js';
+import { SizeFields, heightOf } from './fields';
 
 /** Renames or resizes a saved design, or deletes it from the gallery. */
 export default function EditDesignDialog({ design, file, onClose, onSaved, onDeleted }) {
@@ -10,14 +11,15 @@ export default function EditDesignDialog({ design, file, onClose, onSaved, onDel
     const [widthIn, setWidthIn] = useState(design.widthIn);
     const [busy, setBusy] = useState(false);
     const [error, setError] = useState('');
+    const ratio = design.heightIn / design.widthIn;
     const heightIn = heightOf(widthIn, design);
     const trimmed = name.replace(/\s+/g, ' ').trim();
     const changes = {
         ...(trimmed !== design.name ? { name: trimmed } : {}),
-        ...(widthIn !== design.widthIn ? { widthIn, heightIn } : {})
+        ...(Math.abs(widthIn - design.widthIn) > 1e-9 ? { widthIn, heightIn } : {})
     };
-    const invalid = !trimmed ? 'Give the design a name.' : heightIn < 0.1 ? 'At this width the design is too thin to print.'
-        : heightIn > 120 ? 'At this width the design is too tall.' : '';
+    const invalid = !trimmed ? 'Give the design a name.'
+        : !widthLimits(ratio) ? 'This design is too thin to print at any size.' : sizeProblem(widthIn, heightIn) || '';
 
     const run = async action => {
         setBusy(true);
@@ -42,7 +44,7 @@ export default function EditDesignDialog({ design, file, onClose, onSaved, onDel
         <Dialog
             onClose={() => { if (!busy) onClose(); }}
             title="Edit design"
-            description="The print width is the size it starts at when you add it to a sheet. Prints already on the sheet keep theirs."
+            description="This is the size it starts at when you add it to a sheet. Type its width or its height; the other follows its shape. Prints already on the sheet keep theirs."
             footer={(
                 <div className="flex flex-col-reverse gap-3 sm:flex-row sm:items-center sm:justify-between">
                     <button type="button" onClick={remove} disabled={busy} className="btn-danger">
@@ -63,9 +65,8 @@ export default function EditDesignDialog({ design, file, onClose, onSaved, onDel
                     <label htmlFor="dtf-edit-name" className="field-label">Name</label>
                     <input id="dtf-edit-name" value={name} maxLength={120} onChange={event => setName(event.target.value)} className="field" autoComplete="off" data-autofocus />
                 </div>
-                <div className="flex flex-wrap items-end gap-x-4 gap-y-2">
-                    <NumberField label="Print width" value={widthIn} min={0.1} max={60} className="w-32" onChange={setWidthIn} />
-                    <p className="num pb-3 text-sm text-ink-2">× {inches(heightIn)} in tall</p>
+                <div className="flex flex-wrap items-end gap-x-3 gap-y-2">
+                    <SizeFields widthIn={widthIn} ratio={ratio} onChange={setWidthIn} fieldClassName="w-32" />
                 </div>
                 {(invalid || error) && <p role="alert" className="text-sm text-red-300">{error || invalid}</p>}
             </div>
