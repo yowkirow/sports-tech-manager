@@ -16,8 +16,8 @@ web
   browse shirts and pickleball gear, pick sizes or ball quantities, check out with a Philippine
   address, and later return to `/track/:id` to see where their order is.
 - **The owner**: full admin. Runs point of sale, orders, sales, expenses, inventory, supplier orders,
-  vouchers, ad reporting, the Downtown Dinks club ledger, production releases and settings, on phone
-  and desktop.
+  DTF sheets, vouchers, ad reporting, the Downtown Dinks club ledger, production releases and
+  settings, on phone and desktop.
 - **Resellers**: sell at fixed ₱400 pricing; may edit only their own unpaid pending orders.
 - **One print employee**: uses `/print` on a phone and must see only owner-released print jobs, grouped
   into one package per order, with only the customer's name and LBC booking number for the package label
@@ -77,6 +77,11 @@ prints, not an anonymous merch store.
   `/privacy`, and the browser's Global Privacy Control turns it off. The shop never sends Meta
   customers' names, numbers, addresses, emails or order numbers, and the Pixel never runs on order,
   staff or print pages.
+- DTF sheets (owner request 2026-11-09): the owner buys DTF prints by the meter, a 22 x 39 in sheet.
+  The owner uploads SVG designs once into a private gallery, picks designs and copies, and gets them
+  spread evenly in straight rows for easy cutting, previewed to scale with inch rulers, then downloads
+  one 300 DPI transparent PNG per sheet for the supplier. Extra sheets are added when needed, with
+  the meters shown.
 - Ball pricing is tiered by quantity (1, 5, 10, 20, 50, 100 pieces).
 - Shirt sizes XS–2XL with brand-specific size guides.
 - Staff sign-in is email-code via Cloudflare Access; staging is a read-only snapshot with a visible

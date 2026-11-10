@@ -199,6 +199,7 @@ owner still approves which identities to enable.
 | `/api/transactions`, `/api/orders/save` | Role-checked business reads and atomic, versioned mutations |
 | `/api/production/*` | Scoped partial print progress, owner release, QA, holds and reviewed job replacement |
 | `/api/media/*` | Validated uploads and public product/private receipt access |
+| `/api/dtf/designs` | Owner-only gallery of print-ready SVG designs for DTF sheets (see "DTF sheets") |
 | `/api/settings/sms`, `/api/sms` | Owner-only encrypted gateway settings; actual SMS delivery disabled in staging |
 | `/api/notifications/test` | Owner-only sample customer email to the signed-in owner, at most once a minute; nothing is sent where the `EMAIL` binding is missing (staging) |
 
@@ -227,6 +228,60 @@ including `/health`; do not weaken the policy just to make a health probe public
 After sign-in, `/api/session` confirms the app-level member and `/health` reports
 the deployed Worker version. Dashboard sign-in alone does not prove that this
 separate application login works.
+
+## DTF sheets (migration 0020)
+
+Owner request (November 9, 2026): the owner orders DTF prints by the meter, and the
+supplier's meter is a 22 x 39 in sheet. Admin > Stock > DTF sheets keeps the owner's SVG
+designs in a gallery, places the ones picked on the sheet, and downloads print files.
+
+- **Gallery**: upload SVGs once (several at a time, or dropped on the gallery), each with a
+  name and a print width in inches; the height follows the design's shape. Later, Add puts
+  a design on the sheet. Edit renames or resizes one; Delete archives it (`archived_at`), so
+  it can be restored in D1.
+- **Upload cleaning** (`src/lib/svgDesign.js`, in the browser): scripts, embedded HTML,
+  event handlers, animation, links, external files and other programs' private data
+  (Illustrator, Inkscape) are removed. CSS is written onto the elements and every id gets
+  the design's prefix, so two designs on one sheet never restyle each other; links inside
+  the file (gradients, clip paths, masks, filters) follow the renamed ids. Empty margins
+  are trimmed, so sizes and gaps are measured from the artwork. A size saved in real units
+  (in, mm, cm, pt) prefills the width. The owner is warned about live text (convert it to
+  outlines), embedded photos and anything removed.
+- **Storage**: `dtf_designs` (name, `width_mils` and `height_mils` in thousandths of an inch,
+  `media_id`, `archived_at`). The SVG is a private `media_objects` row at
+  `dtf-designs/{id}` in R2. `/api/media/objects/{id}` serves it only to the owner and only
+  as a download (`application/octet-stream`, `Content-Disposition: attachment`, `nosniff`,
+  `private, no-store`), so a stored SVG can never open as a page on the shop's domain. The
+  app fetches it and shows it in an img element from a blob URL, where an SVG can't run
+  scripts or load anything. The product photo uploader still refuses SVG. A save that
+  fails removes its file unless the design was saved after all; when D1 can't be checked,
+  the file stays and `unconfirmed_dtf_design_upload` is logged (`orphaned_dtf_design_upload`
+  when R2 refused the delete). Such a file is harmless and can be deleted from R2 once no
+  `media_objects` row points at it.
+- **API** (`worker/dtf-api.ts`; active owner, Access and the daily PIN; refused while
+  read-only): `GET /api/dtf/designs`; `POST /api/dtf/designs` with `{ id, name, widthIn,
+  heightIn, svg }` (the app picks the id, so a retried upload returns the saved design and
+  the same id with another file is refused); `PATCH /api/dtf/designs/{id}` with a name and/or
+  both sizes; `DELETE /api/dtf/designs/{id}` archives. The server checks each SVG again (at
+  most 5 MB, an `<svg>` root, none of the removed content) and refuses one that skipped the
+  app's cleaning.
+- **Layout** (`src/lib/dtfLayout.js`): designs stay upright, copies of a design together,
+  tallest first, in straight rows at least the minimum gap apart (default 0.5 in) inside the
+  edge margin (default 0.25 in). When they don't fit, another sheet is added and the rows
+  are balanced across the sheets. Then the spare film is shared out: every gap in a row, and
+  between rows, is the same, the space to the sheet's edge included, so the designs spread
+  over the whole sheet and every cut is a straight line (across the sheet between rows, then
+  between the designs in a row). A design too big for the sheet is reported on its row. The
+  sheet size, margin and gap are editable and remembered on the device, with what's on the
+  sheet.
+- **Preview**: the sheet to scale with inch rulers, dashed cut guides and zoom; the film
+  needed in meters (39 in = 1 m); a pager with "Download all" when there are several
+  sheets; and the size and position of a selected print.
+- **Print files** (`src/lib/dtfExport.js`, `src/lib/pngStream.js`): one PNG per sheet,
+  `dtf-YYYY-MM-DD-sheet-N-of-M-22x39in.png`, 6600 x 11700 px at 300 DPI (recorded in the
+  file), transparent background, no cut guides or rulers. The sheet is drawn in 512-row
+  strips from the vector designs and compressed as it goes (the browser's
+  `CompressionStream`), so memory stays small enough for a phone.
 
 ## Product links and link previews
 

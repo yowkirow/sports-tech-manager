@@ -1,7 +1,7 @@
 import React, { lazy, Suspense, useState } from 'react';
 import useTransactions from './hooks/useTransactions';
 import { createPortal } from 'react-dom';
-import { LayoutDashboard, Store, ShoppingBag, Package, LogOut, Lock, Wallet, Banknote, Menu, Link2, Ticket, Settings as SettingsIcon, ClipboardList, TrendingUp, Trophy, Printer, RefreshCw } from 'lucide-react';
+import { LayoutDashboard, Store, ShoppingBag, Package, LogOut, Lock, Wallet, Banknote, Menu, Link2, Ticket, Settings as SettingsIcon, ClipboardList, TrendingUp, Trophy, Printer, RefreshCw, Layers } from 'lucide-react';
 import clsx from 'clsx';
 import { useToast } from './components/ui/Toast';
 import { api, apiRequest, PIN_REQUIRED_EVENT, PIN_UNLOCKED_EVENT } from './lib/apiClient';
@@ -22,6 +22,7 @@ const Sales = lazy(() => import('./components/Sales'));
 const DowntownDinks = lazy(() => import('./components/DowntownDinks'));
 const VoucherManager = lazy(() => import('./components/Vouchers/VoucherManager'));
 const SupplierManager = lazy(() => import('./components/Supplier/SupplierManager'));
+const DtfSheets = lazy(() => import('./components/Dtf/DtfSheets'));
 const AdsReporting = lazy(() => import('./components/Reports/AdsReporting'));
 const Storefront = lazy(() => import('./components/Shop/Storefront'));
 const Login = lazy(() => import('./components/Auth/Login'));
@@ -35,7 +36,7 @@ const printQueueEnabled = import.meta.env.VITE_PRINT_QUEUE_ENABLED === 'true';
 
 const TAB_TITLES = {
     pos: 'Point of Sale', orders: 'Orders', sales: 'Sales', expenses: 'Expenses', 'downtown-dinks': 'Downtown Dinks',
-    dashboard: 'Dashboard', inventory: 'Inventory', supplier: 'Supplier Order', vouchers: 'Vouchers', reports: 'Reports',
+    dashboard: 'Dashboard', inventory: 'Inventory', supplier: 'Supplier Order', dtf: 'DTF sheets', vouchers: 'Vouchers', reports: 'Reports',
     production: 'Production', settings: 'Settings', 'add-stock': 'Receive Stock'
 };
 
@@ -53,6 +54,7 @@ const navGroups = (isOwner) => [
     isOwner && { label: 'Stock', items: [
         { id: 'inventory', label: 'Inventory', icon: ShoppingBag },
         { id: 'supplier', label: 'Supplier Order', icon: ClipboardList },
+        { id: 'dtf', label: 'DTF sheets', icon: Layers },
         ...(printQueueEnabled ? [{ id: 'production', label: 'Production', icon: Printer }] : []),
     ] },
     isOwner && { label: 'Club', items: [
@@ -497,6 +499,12 @@ function ManagementApp({ session, onProfileChange, onLock }) {
                                     <SupplierManager
                                         transactions={effectiveTransactions}
                                     />
+                                </div>
+                            )}
+
+                            {isOwner && activeTab === 'dtf' && (
+                                <div className="animate-fade-in">
+                                    <DtfSheets />
                                 </div>
                             )}
 
