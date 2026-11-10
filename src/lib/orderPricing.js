@@ -222,7 +222,9 @@ export const getOrderPricingOptions = (rows) => {
             shippingFee: money(shippingFeeCents),
             isRushOrder: Boolean(snapshot.isRushOrder),
             rushFeePerShirt: money(optionalMoneyCents(snapshot.rushFeePerShirt ?? DEFAULT_RUSH_FEE_PER_SHIRT, 'Saved rush fee per shirt')),
-            shippingLineId: getShippingLineId(normalizedRows, shippingFeeCents, snapshot.shippingLineId)
+            shippingLineId: getShippingLineId(normalizedRows, shippingFeeCents, snapshot.shippingLineId),
+            // Ball shipping rates saved with a shop order (src/lib/shippingRates.js); order editing checks and applies them.
+            ...(snapshot.ballShipping !== undefined ? { ballShipping: snapshot.ballShipping } : {})
         };
     }
 

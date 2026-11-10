@@ -1,5 +1,6 @@
 import { getOrderPricingOptions, priceOrder } from './orderPricing.js';
 import { getItemCategory } from './orderItems.js';
+import { savedShippingPlan, shippingFor } from './shippingRates.js';
 
 const money = value => Math.round(Number(value) * 100) / 100;
 
@@ -84,9 +85,15 @@ export const priceOrderChanges = (order, drafts) => {
         };
     });
     const preserveAllocations = items.length === order.items.length && items.every(item => item.preserveOriginalAmount);
+    // A shop order that pays ball shipping by count keeps the rates it was placed with; when its items or quantities
+    // change, its shipping is worked out again from them (src/lib/shippingRates.js).
+    const plan = savedShippingPlan(options.ballShipping);
+    const pricedOptions = plan && !preserveAllocations
+        ? { ...options, shippingFee: shippingFor(items, plan).total, ballShipping: plan }
+        : options;
     const priced = preserveAllocations
         ? priceOrder(items.map(item => ({ ...item, priceAdjustment: 0 })), { ...options, discount: null })
-        : priceOrder(items, options);
+        : priceOrder(items, pricedOptions);
     if (preserveAllocations) {
         // Address/status-only edits retain historical per-line allocations, not just the order total.
         priced.items = priced.items.map((item, index) => {
@@ -105,7 +112,7 @@ export const priceOrderChanges = (order, drafts) => {
         priced.rushFeeAmount = money(priced.items.reduce((sum, item) => sum + item.rushFee, 0));
         priced.total = money(priced.items.reduce((sum, item) => sum + item.amount, 0));
     }
-    return { ...priced, options };
+    return { ...priced, options: pricedOptions };
 };
 
 export const buildOrderChanges = (order, drafts, commonDetails = {}, recordUpdates = {}) => {
@@ -116,13 +123,15 @@ export const buildOrderChanges = (order, drafts, commonDetails = {}, recordUpdat
         return original && !draft.productChanged && draft.priceAdjustment === undefined
             && Number(draft.quantity ?? draft.details?.quantity) === Number(original.details.quantity);
     });
+    const ballShipping = savedShippingPlan(priced.options.ballShipping);
     const pricing = {
         version: 1,
         discount: priced.options.discount,
         shippingFee: priced.shippingFee,
         isRushOrder: priced.options.isRushOrder,
         rushFeePerShirt: priced.options.rushFeePerShirt,
-        shippingLineId: priced.items.find(item => item.shippingShare > 0)?.id || priced.items[0].id
+        shippingLineId: priced.items.find(item => item.shippingShare > 0)?.id || priced.items[0].id,
+        ...(ballShipping ? { ballShipping } : {})
     };
     const byTransaction = new Map();
     priced.items.forEach(item => {

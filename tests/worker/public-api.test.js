@@ -127,7 +127,8 @@ test('catalog reconstructs products and returns only catalog/aggregate stock, ne
     const { env } = fixture(t);
     const order = await placed(env);
     const response = await call(env, '/api/public/catalog');
-    assert.deepEqual(Object.keys(response.body).sort(), ['brands', 'products', 'stock']);
+    assert.deepEqual(Object.keys(response.body).sort(), ['brands', 'products', 'shippingRates', 'stock']);
+    assert.deepEqual(response.body.shippingRates, { balls: [] }, 'no ball shipping rates until the owner sets them');
     assert.equal(response.body.products.length, 2);
     assert.equal(response.body.stock['acc-practice-ball'], 500);
     const json = JSON.stringify(response.body);
@@ -388,6 +389,62 @@ test('ball tiers use established shared prices; shirts are preorder and accessor
     assert.equal((await placed(env, { rush: true, items: [{ productId: uid(2), size: 'N/A', quantity: 100 }] })).total, 7100);
     await assert.rejects(placed(env, { items: [{ productId: uid(2), size: 'N/A', quantity: 401 }] }), code('invalid_input'));
     assert.equal((await placed(env, { rush: false, items: [{ productId: uid(1), size: 'XS', quantity: 500 }] })).total, 175100);
+});
+
+// Synthetic rates, not the shop's.
+const BALL_RATES = [{ from: 1, mm: 150, provincial: 260 }, { from: 21, mm: 220, provincial: 340 }];
+function setBallRates(env, id, balls, date) {
+    insert(env, id, 'shipping_rates', { balls }, '0', 'settings');
+    env.DB.sqlite.prepare('UPDATE transactions SET date=? WHERE id=?').run(date, id);
+}
+const ballLine = quantity => ({ productId: uid(2), size: 'N/A', quantity });
+const shirtLine = quantity => ({ productId: uid(1), size: 'M', quantity });
+
+test('owner ball shipping rates are charged by count, on top of the flat fee for the rest of the order', async t => {
+    const { env } = fixture(t);
+    assert.equal((await placed(env, { rush: false, items: [ballLine(10)] })).total, 1100, 'no rates yet: balls ride the flat fee');
+    setBallRates(env, uid(40), BALL_RATES, '2026-09-02T00:00:00.000Z');
+    assert.deepEqual((await call(env, '/api/public/catalog')).body.shippingRates, { balls: BALL_RATES });
+
+    assert.equal((await placed(env, { rush: false, items: [ballLine(10)] })).total, 1000 + 150, 'only balls: only ball shipping');
+    const mixed = await placed(env, { rush: false, region: 'Provincial', items: [shirtLine(1), ballLine(25)] });
+    assert.equal(mixed.total, 350 + 25 * 90 + 200 + 340, 'shirt + balls + provincial flat fee + 25-ball provincial fee');
+    const mixedRows = saleRows(env).filter(row => row.order_id === mixed.orderId);
+    assert.equal(mixedRows[0].details.pricing.shippingFee, 540);
+    assert.deepEqual(mixedRows[0].details.pricing.ballShipping, { flatFee: 200, ballTiers: [{ from: 1, fee: 260 }, { from: 21, fee: 340 }] });
+    assert.equal(mixedRows[0].details.shippingDetails.shippingFee, 540);
+
+    const shirts = await placed(env, { rush: false, items: [shirtLine(1)] });
+    assert.equal(shirts.total, 450, 'no balls: the flat fee only');
+    assert.equal(saleRows(env).find(row => row.order_id === shirts.orderId).details.pricing.ballShipping, undefined);
+
+    setBallRates(env, uid(41), [], '2026-09-03T00:00:00.000Z');
+    assert.equal((await placed(env, { rush: false, items: [ballLine(10)] })).total, 1100, 'a newer empty record turns ball rates off');
+});
+
+test('a quantity edit reprices ball shipping from the rates the order was placed with', async t => {
+    const { env } = fixture(t);
+    setBallRates(env, uid(40), BALL_RATES, '2026-09-02T00:00:00.000Z');
+    const initial = await placed(env, { rush: false, items: [shirtLine(1), ballLine(10)] });
+    assert.equal(initial.total, 350 + 1000 + 100 + 150);
+    // The owner changes the rates afterwards; this order keeps the ones it was placed with.
+    setBallRates(env, uid(41), [{ from: 1, mm: 999, provincial: 999 }], '2026-09-03T00:00:00.000Z');
+    const order = (await call(env, `/api/public/orders/${initial.orderId}`, undefined, initial.token)).body.order;
+    assert.deepEqual(order.items[0].details.pricing.ballShipping, { flatFee: 100, ballTiers: [{ from: 1, fee: 150 }, { from: 21, fee: 220 }] },
+        'the customer\'s page gets the saved rates, so its edit preview matches');
+    const shirt = order.items.find(item => item.details.category === 'shirts');
+    const balls = order.items.find(item => item.details.category === 'balls');
+    const line = (item, quantity) => ({ id: item.id, quantity, size: item.details.size, color: item.details.color });
+    const more = await call(env, `/api/public/orders/${initial.orderId}/save`, edit(order, { items: [line(shirt, 1), line(balls, 30)] }), initial.token);
+    assert.equal(more.body.order.totalAmount, 350 + 30 * 90 + 100 + 220, '30 balls reach the next tier');
+    const onlyBalls = await call(env, `/api/public/orders/${initial.orderId}/save`, edit(more.body.order, { items: [line(balls, 30)] }), more.body.token);
+    assert.equal(onlyBalls.body.order.totalAmount, 30 * 90 + 220, 'without the shirt, only ball shipping is left');
+    const saved = saleRows(env).find(row => row.id === balls.id);
+    assert.equal(saved.details.pricing.shippingFee, 220);
+    assert.deepEqual(saved.details.pricing.ballShipping.ballTiers.map(tier => tier.fee), [150, 220]);
+    const renamed = await call(env, `/api/public/orders/${initial.orderId}/save`, edit(onlyBalls.body.order, { customerName: 'Synthetic Renamed' }), onlyBalls.body.token);
+    assert.equal(renamed.body.order.totalAmount, 30 * 90 + 220, 'a name-only edit keeps the stored shipping');
+    assert.equal(saleRows(env).find(row => row.id === balls.id).details.pricing.ballShipping.flatFee, 100);
 });
 
 test('tracking verifies full normalized contact before returning only the scoped order', async t => {

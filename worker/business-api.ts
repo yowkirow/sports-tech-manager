@@ -9,6 +9,7 @@ import {
 import { background, savesShipped, sendOrderReceived, sendShippedEmail, sendTestEmail } from './notifications.ts';
 import type { Background } from './notifications.ts';
 import { normalizeCustomerEmail } from '../src/lib/customerEmail.js';
+import { ballShippingTiers } from '../src/lib/shippingRates.js';
 
 type Bind = string | number | null;
 type Data = Record<string, unknown>;
@@ -16,7 +17,7 @@ type Role = Member['role'];
 const BUSINESS: Role[] = ['owner', 'reseller'];
 const ALL_ROLES: Role[] = [...BUSINESS, 'print_operator'];
 const CATALOG = ['define_product', 'delete_product', 'define_brand', 'delete_brand', 'define_color', 'delete_color'];
-const TYPES = new Set([...CATALOG, 'sale', 'expense', 'update_stock', 'club_income', 'voucher']);
+const TYPES = new Set([...CATALOG, 'sale', 'expense', 'update_stock', 'club_income', 'voucher', 'shipping_rates']);
 const UUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
 const encoder = new TextEncoder();
 const REVISION = '(SELECT revision FROM system_state WHERE singleton = 1)';
@@ -61,6 +62,17 @@ function bounded(value: unknown): string {
         throw new HttpError(413, 'payload_too_large', 'This request is too large.');
     }
     return result;
+}
+
+/** Shop checkout prices ball shipping from these records (src/lib/shippingRates.js), so one must hold together as written. */
+function checkShippingRates(details: unknown, amount: unknown): void {
+    const record = fields(details, ['balls']);
+    if (!Array.isArray(record.balls)) invalid('Ball shipping rates must be a list.');
+    for (const tier of record.balls) fields(tier, ['from', 'mm', 'provincial']);
+    if (record.balls.length && ballShippingTiers(record).length !== record.balls.length) {
+        invalid('Each ball shipping tier needs the ball count it starts from (the first from 1, no two the same) and whole-peso fees up to ₱100,000.');
+    }
+    if (money(amount) !== '0') invalid('Shipping rates carry no amount.');
 }
 
 function allow(member: Member, roles: Role[]): void {
@@ -295,6 +307,7 @@ function newRows(input: unknown, member: Member): NewRow[] {
             throw new HttpError(403, 'forbidden', 'Resellers may only submit their own POS orders.');
         }
         if (row.details != null && !isObject(row.details)) invalid('Transaction details must be an object or null.');
+        if (type === 'shipping_rates') checkShippingRates(row.details, row.amount);
         const details = row.details == null && type !== 'sale' ? null : {
             ...(row.details as Data | undefined), createdBy: member.email, userRole: member.role
         };

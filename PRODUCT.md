@@ -45,7 +45,10 @@ prints, not an anonymous merch store.
 ## Operating Context
 
 - Storefront checkout is server-priced. Shipping: ₱100 Metro Manila, ₱200 provincial (LBC standard;
-  other couriers at buyer's cost). Rush: ₱100 per shirt. Vouchers (fixed or percent). Payment:
+  other couriers at buyer's cost). Balls can ship at their own rate (owner request 2026-11-10): the
+  owner sets tiers by ball count for each area in Settings › Ball shipping. Ball shipping is added to
+  the flat fee for the rest of the order, and an order of only balls pays only ball shipping; with no
+  tiers set, balls ride the flat fee. Rush: ₱100 per shirt. Vouchers (fixed or percent). Payment:
   Cash on Delivery, GCash, or bank transfer; GCash/bank need a payment-proof upload against the QR
   in `public/payment-qr.jpeg` ("verify 'Sports Tech' name before paying").
 - Shipping schedule: cutoff every Thursday, shipping every Sunday.
