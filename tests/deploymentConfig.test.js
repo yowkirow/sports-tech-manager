@@ -59,3 +59,9 @@ test('production deploy rebuilds non-staging assets and migrations target only p
     assert.equal(scripts['db:production'],
         'wrangler d1 migrations apply sportstech-production --remote --config wrangler.production.jsonc');
 });
+
+test('only production records subscription charges, daily at 00:05 in Manila (16:05 UTC)', () => {
+    assert.deepEqual(production.triggers, { crons: ['5 16 * * *'] });
+    // Staging is read-only, so it has nothing to record.
+    assert.equal(Object.hasOwn(staging, 'triggers'), false);
+});

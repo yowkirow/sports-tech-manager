@@ -3,16 +3,7 @@ import { api } from '../../lib/apiClient';
 import { useToast } from '../ui/Toast';
 import { Tag, Plus, X, Save, Loader2 } from 'lucide-react';
 import { useReadOnly, READ_ONLY_HINT } from '../ui/ReadOnly';
-
-const DEFAULT_CATEGORIES = [
-    'Rent',
-    'Utilities',
-    'Marketing/Ads',
-    'Packaging',
-    'Software/Subscriptions',
-    'Transportation',
-    'Other'
-];
+import { DEFAULT_EXPENSE_CATEGORIES as DEFAULT_CATEGORIES } from '../../lib/expenseCategories';
 
 export default function ExpenseCategorySettings() {
     const { showToast } = useToast();

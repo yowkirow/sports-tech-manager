@@ -15,7 +15,8 @@ web
 - **Customers** buying from the public storefront at www.sportstechph.store, mostly on phones. They
   browse shirts and pickleball gear, pick sizes or ball quantities, check out with a Philippine
   address, and later return to `/track/:id` to see where their order is.
-- **The owner**: full admin. Runs point of sale, orders, sales, expenses, inventory, supplier orders,
+- **The owner**: full admin. Runs point of sale, orders, sales, expenses (subscriptions record their own
+  charges), inventory, supplier orders,
   DTF sheets, vouchers, ad reporting, the Downtown Dinks club ledger, production releases and
   settings, on phone and desktop.
 - **Resellers**: sell at fixed ₱400 pricing; may edit only their own unpaid pending orders.

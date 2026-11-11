@@ -13,6 +13,9 @@
   "limits": {
     "cpu_ms": 1000
   },
+  "triggers": {
+    "crons": ["5 16 * * *"]
+  },
   "vars": {
     "ENVIRONMENT": "production",
     "ACCESS_TEAM_DOMAIN": "jolly-fog-e8df.cloudflareaccess.com",
