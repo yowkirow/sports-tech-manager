@@ -728,7 +728,7 @@ gate. Historical already-ready orders are not given retroactive jobs for a payme
 change. Employees cannot release work, approve QA, change quantities on orders, mark
 payments or ship orders.
 
-### Print wallet (migrations 0007 and 0018)
+### Print wallet (migrations 0007, 0018 and 0021)
 
 The employee's `/print` dashboard shows a shirt counter and wallet; the owner sees each
 print operator's counts and records payouts under Production > Employee accounts.
@@ -745,6 +745,15 @@ print operator's counts and records payouts under Production > Employee accounts
 - **Money:** integer centavos only. Payouts are owner-only, whole PHP 1,000 steps,
   idempotent by request ID, capped at the balance due inside the atomic D1 batch, and
   append-only (no update or delete).
+- **Expenses** (migration 0021, owner request, November 2026): staff pay counts as an
+  expense. The same atomic batch that records a payout writes a General expense with the
+  payout's ID, peso amount and time: "Print staff pay: {name} ({note})", with
+  `details.subCategory` "Print staff pay" and `details.payoutId`. Reports counts it as a
+  production cost. The expense stays matched to the payout: `PATCH` and `DELETE
+  /api/transactions/{id}` refuse any change except its reimbursement status (409
+  `staff_pay_locked`), and a new record or edit that sets `payoutId` is refused (400). The
+  Expenses screen shows it as a Staff payout without Edit or Delete. Migration 0021 wrote
+  the same expense for payouts recorded before it, skipping any ID already used.
 - **History** (owner request, November 3, 2026): print staff open History on `/print` (a tab
   next to Queue, or "See my history and payouts" under My shirts). Newest first, by
   Philippine day, it lists every quantity they recorded as printed, each quality check of
@@ -778,7 +787,10 @@ Apply `0007_print_wallet.sql` with `npm run db:staging`, then `npm run db:produc
 **before** deploying code that reads it. The cutover `load-target` preflight requires the
 target's applied migration count to match this repository, so land 0007 only after cutover.
 `0018_print_payout_receipts.sql` (the receipts table and two history indexes) is additive and
-applies the same way, before deploying the code that reads it.
+applies the same way, before deploying the code that reads it. `0021_staff_pay_expenses.sql`
+is the exception: it only inserts the expenses of payouts recorded before this release, and the
+Worker reads no new schema. Deploy the Worker first, then apply 0021, so a payout recorded in
+between still gets its expense (0021 skips IDs the new Worker already wrote).
 
 ## Protected import and production cutover
 

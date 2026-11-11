@@ -68,7 +68,7 @@ const AdsReporting = ({ transactions }) => {
                             </tr>
 
                             <tr className="border-b border-line transition-colors hover:bg-white/[0.04]">
-                                <td className="px-5 py-4 text-ink-2">Less (Blank shirt, Print, Packaging, Shipping)</td>
+                                <td className="px-5 py-4 text-ink-2">Less (Blank shirt, Print, Print staff pay, Packaging, Shipping)</td>
                                 <td className="num border-l border-line px-5 py-4 text-right font-semibold text-red-300">
                                     ₱{formatCurrency(reportData.totalProductionExpense)}
                                 </td>

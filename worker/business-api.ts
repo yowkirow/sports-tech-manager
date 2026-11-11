@@ -10,6 +10,7 @@ import { background, savesShipped, sendOrderReceived, sendShippedEmail, sendTest
 import type { Background } from './notifications.ts';
 import { normalizeCustomerEmail } from '../src/lib/customerEmail.js';
 import { ballShippingTiers } from '../src/lib/shippingRates.js';
+import { isStaffPayExpense } from '../src/lib/staffPay.js';
 
 type Bind = string | number | null;
 type Data = Record<string, unknown>;
@@ -73,6 +74,20 @@ function checkShippingRates(details: unknown, amount: unknown): void {
         invalid('Each ball shipping tier needs the ball count it starts from (the first from 1, no two the same) and whole-peso fees up to ₱100,000.');
     }
     if (money(amount) !== '0') invalid('Shipping rates carry no amount.');
+}
+
+// A staff payout writes its own expense (production-api.ts), which mirrors the append-only payout:
+// clients can't mint one, and only its reimbursement status can change.
+const STAFF_PAY_ONLY = 'Staff pay is recorded with Record payout under Production.';
+const REIMBURSEMENT_FIELDS = new Set(['reimbursed', 'reimbursedAmount', 'createdBy', 'userRole']);
+function checkPayoutReference(type: string, details: unknown): void {
+    if (type === 'expense' && isObject(details) && Object.hasOwn(details, 'payoutId')) invalid(STAFF_PAY_ONLY);
+}
+function reimbursementOnly(stored: Data, updates: Data, deleting: boolean): boolean {
+    if (deleting || Object.keys(updates).some(key => key !== 'details') || !isObject(updates.details)) return false;
+    const fixed = (details: Data) => canonical(Object.fromEntries(
+        Object.entries(details).filter(([key]) => !REIMBURSEMENT_FIELDS.has(key))));
+    return fixed(updates.details) === fixed(stored);
 }
 
 function allow(member: Member, roles: Role[]): void {
@@ -308,6 +323,7 @@ function newRows(input: unknown, member: Member): NewRow[] {
         }
         if (row.details != null && !isObject(row.details)) invalid('Transaction details must be an object or null.');
         if (type === 'shipping_rates') checkShippingRates(row.details, row.amount);
+        checkPayoutReference(type, row.details);
         const details = row.details == null && type !== 'sale' ? null : {
             ...(row.details as Data | undefined), createdBy: member.email, userRole: member.role
         };
@@ -500,6 +516,13 @@ async function changeTransaction(
     if (!row || !snapshotMatches(row, expected)) {
         throw new HttpError(409, 'transaction_conflict', 'The source changed or was deleted. Refresh before retrying.');
     }
+    const stored: unknown = row.details === null ? null : JSON.parse(row.details);
+    if (isStaffPayExpense({ type: row.type, details: stored })) {
+        if (!reimbursementOnly(stored as Data, updates, deleting)) {
+            throw new HttpError(409, 'staff_pay_locked',
+                'This expense is a staff payout recorded under Production. Only its reimbursement status can change.');
+        }
+    } else if (!deleting) checkPayoutReference(row.type, updates.details);
     const key = row.type === 'sale' ? detailsOrderId(expected.details, id) : null;
     if (key !== null && row.order_id !== null && key !== row.order_id) {
         throw new HttpError(409, 'transaction_conflict', 'The source order identity is inconsistent.');
@@ -525,11 +548,10 @@ async function changeTransaction(
         let details = row.details;
         if (Object.hasOwn(updates, 'details')) {
             if (updates.details !== null && !isObject(updates.details)) invalid('Updated details must be an object or null.');
-            const previous: unknown = row.details === null ? null : JSON.parse(row.details);
             details = updates.details === null ? null : canonical({
                 ...updates.details,
-                createdBy: isObject(previous) && typeof previous.createdBy === 'string' ? previous.createdBy : member.email,
-                userRole: isObject(previous) && typeof previous.userRole === 'string' ? previous.userRole : member.role
+                createdBy: isObject(stored) && typeof stored.createdBy === 'string' ? stored.createdBy : member.email,
+                userRole: isObject(stored) && typeof stored.userRole === 'string' ? stored.userRole : member.role
             });
         }
         mutation.add(`UPDATE transactions SET amount = ?, date = ?, description = ?, category = ?, details = ?

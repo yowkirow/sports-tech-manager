@@ -1,6 +1,7 @@
 import assert from 'node:assert/strict';
 import test from 'node:test';
 import { buildPlReport, expenseGroup } from '../src/lib/plReport.js';
+import { STAFF_PAY_CATEGORY } from '../src/lib/staffPay.js';
 import { isReturnedSale, isVoidedSale } from '../src/lib/transactionStatus.js';
 
 const sale = (id, amount, shirts, details = {}) => ({
@@ -46,6 +47,10 @@ test('DTF printing and LBC shipping are production costs, and advertising is alw
         expense(80, 'general', 'Bank charge')
     ].map(expenseGroup);
     assert.deepEqual(groups, ['production', 'production', 'production', 'production', 'ads', 'ads', 'ads', 'other', 'other']);
+});
+
+test('print staff pay from Production payouts is a production cost, like the print itself', () => {
+    assert.equal(expenseGroup(expense(2000, 'general', STAFF_PAY_CATEGORY)), 'production');
 });
 
 test('the P&L totals each cost group per shirt and leaves Downtown Dinks expenses out', () => {

@@ -1,9 +1,10 @@
 import React, { useState, useMemo } from 'react';
-import { Search, Trash2, Calendar, Plus, User, Edit2, Check } from 'lucide-react';
+import { Search, Trash2, Calendar, Plus, User, Edit2, Check, Banknote } from 'lucide-react';
 import clsx from 'clsx';
 import { createPortal } from 'react-dom';
 import AddExpenseForm from './Expenses/AddExpenseForm';
 import { useReadOnly, READ_ONLY_HINT } from './ui/ReadOnly';
+import { isStaffPayExpense, STAFF_PAY_LOCKED_HINT } from '../lib/staffPay';
 
 const CLUB_SLUG = 'downtown-dinks';
 
@@ -106,46 +107,57 @@ const Expenses = ({ transactions, onDeleteTransaction, onAddTransaction, onUpdat
         return <span className={clsx('badge capitalize', tone)}>{label}</span>;
     };
 
-    const renderActions = (transaction, className = '') => (
-        <div className={clsx("flex min-w-[132px] justify-center gap-1", className)}>
-            <button
-                type="button"
-                onClick={() => toggleReimbursed(transaction)}
-                disabled={readOnly}
-                className={clsx(
-                    "icon-btn",
-                    isFullyReimbursed(transaction) ? "text-emerald-300" : "text-ink-2"
-                )}
-                title={readOnly ? READ_ONLY_HINT : (isFullyReimbursed(transaction) ? "Unmark Reimbursed" : "Mark as Fully Reimbursed")}
-                aria-label={isFullyReimbursed(transaction) ? "Unmark Reimbursed" : "Mark as Fully Reimbursed"}
-            >
-                <Check size={16} aria-hidden="true" />
-            </button>
-            <button
-                type="button"
-                onClick={() => {
-                    setEditingTransaction(transaction);
-                    setShowAddModal(true);
-                }}
-                disabled={readOnly}
-                className="icon-btn"
-                title={readOnly ? READ_ONLY_HINT : 'Edit'}
-                aria-label="Edit"
-            >
-                <Edit2 size={16} aria-hidden="true" />
-            </button>
-            <button
-                type="button"
-                onClick={() => onDeleteTransaction(transaction.id)}
-                disabled={readOnly}
-                className="icon-btn hover:text-red-300"
-                title={readOnly ? READ_ONLY_HINT : 'Delete'}
-                aria-label="Delete"
-            >
-                <Trash2 size={16} aria-hidden="true" />
-            </button>
-        </div>
+    const renderStaffPay = (transaction) => isStaffPayExpense(transaction) && (
+        <span className="badge border-line text-ink-2">
+            <Banknote size={12} aria-hidden="true" /> Staff payout
+        </span>
     );
+
+    const renderActions = (transaction, className = '') => {
+        // A staff payout's expense mirrors the payout: only the reimbursement toggle stays.
+        const locked = isStaffPayExpense(transaction);
+        const lockedTitle = (title) => readOnly ? READ_ONLY_HINT : locked ? STAFF_PAY_LOCKED_HINT : title;
+        return (
+            <div className={clsx("flex min-w-[132px] justify-center gap-1", className)}>
+                <button
+                    type="button"
+                    onClick={() => toggleReimbursed(transaction)}
+                    disabled={readOnly}
+                    className={clsx(
+                        "icon-btn",
+                        isFullyReimbursed(transaction) ? "text-emerald-300" : "text-ink-2"
+                    )}
+                    title={readOnly ? READ_ONLY_HINT : (isFullyReimbursed(transaction) ? "Unmark Reimbursed" : "Mark as Fully Reimbursed")}
+                    aria-label={isFullyReimbursed(transaction) ? "Unmark Reimbursed" : "Mark as Fully Reimbursed"}
+                >
+                    <Check size={16} aria-hidden="true" />
+                </button>
+                <button
+                    type="button"
+                    onClick={() => {
+                        setEditingTransaction(transaction);
+                        setShowAddModal(true);
+                    }}
+                    disabled={readOnly || locked}
+                    className="icon-btn"
+                    title={lockedTitle('Edit')}
+                    aria-label="Edit"
+                >
+                    <Edit2 size={16} aria-hidden="true" />
+                </button>
+                <button
+                    type="button"
+                    onClick={() => onDeleteTransaction(transaction.id)}
+                    disabled={readOnly || locked}
+                    className="icon-btn hover:text-red-300"
+                    title={lockedTitle('Delete')}
+                    aria-label="Delete"
+                >
+                    <Trash2 size={16} aria-hidden="true" />
+                </button>
+            </div>
+        );
+    };
 
     return (
         <div className="space-y-5">
@@ -238,6 +250,7 @@ const Expenses = ({ transactions, onDeleteTransaction, onAddTransaction, onUpdat
                                                 <User size={12} aria-hidden="true" /> {t.details.createdBy.split('@')[0]}
                                             </span>
                                         )}
+                                        {renderStaffPay(t)}
                                     </div>
 
                                     <div className="mt-4 flex justify-end border-t border-line pt-3">
@@ -280,6 +293,7 @@ const Expenses = ({ transactions, onDeleteTransaction, onAddTransaction, onUpdat
                                                         <User size={12} aria-hidden="true" /> {t.details.createdBy.split('@')[0]}
                                                     </span>
                                                 )}
+                                                {renderStaffPay(t)}
                                             </div>
                                         </td>
                                         <td className="px-3 py-3">

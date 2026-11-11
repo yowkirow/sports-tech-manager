@@ -514,6 +514,33 @@ test('owner expense updates use full snapshots and preserve creator attribution'
     assert.equal(result.row.details.userRole, 'owner');
 });
 
+test('a staff payout expense stays matched to its payout: only its reimbursement status changes', async t => {
+    const db = new LocalD1(t);
+    const paid = transaction(1, {
+        category: 'general', amount: '2000', description: 'Print staff pay: Sam',
+        details: { club: null, createdBy: members.owner.email, isGeneral: true, payoutId: id(1), reimbursed: false,
+            reimbursedAmount: 0, subCategory: 'Print staff pay', userRole: 'owner' }
+    });
+    seed(db, paid);
+    const path = `/api/transactions/${id(1)}`;
+    const change = (updates, requestId) => call(db, 'owner', path, 'PATCH', { expected: paid, updates, requestId });
+    const locked = error('staff_pay_locked', 409);
+    await assert.rejects(change({ amount: '1000' }, 'amount'), locked);
+    await assert.rejects(change({ details: { ...paid.details, subCategory: 'Salary' } }, 'category'), locked);
+    await assert.rejects(change({ description: 'Pay', details: { ...paid.details, reimbursed: true } }, 'mixed'), locked);
+    await assert.rejects(call(db, 'owner', path, 'DELETE', { expected: paid, requestId: 'delete' }), locked);
+    const reimbursed = await change({ details: { ...paid.details, reimbursed: true, reimbursedAmount: 2000 } }, 'reimburse');
+    assert.deepEqual([reimbursed.row.description, reimbursed.row.details.reimbursed, reimbursed.row.details.reimbursedAmount],
+        ['Print staff pay: Sam', true, 2000]);
+
+    // Only Record payout writes one: an expense can't claim a payout, or be turned into one.
+    await assert.rejects(insert(db, [transaction(2, { details: { payoutId: id(9) } })]), error('validation_error', 400));
+    const plain = (await insert(db, [transaction(3)])).rows[0];
+    await assert.rejects(call(db, 'owner', `/api/transactions/${id(3)}`, 'PATCH', {
+        expected: plain, updates: { details: { quantity: 1, payoutId: id(9) } }, requestId: 'claim'
+    }), error('validation_error', 400));
+});
+
 test('deletion retains audit/receipts and tombstones prevent ID recreation', async t => {
     const db = new LocalD1(t);
     const saved = await insert(db, [sale(1)]);

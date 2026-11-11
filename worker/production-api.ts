@@ -3,6 +3,7 @@ import type { AppEnv } from './env.ts';
 import { HttpError } from './errors.ts';
 import { isObject, json, readJson } from './http.ts';
 import { canonical } from './order-store.ts';
+import { STAFF_PAY_CATEGORY } from '../src/lib/staffPay.js';
 export { productionReadyGuard } from './production-ready.ts';
 
 type Row = Record<string, unknown>;
@@ -820,12 +821,28 @@ async function recordPayout(db: D1Database, member: Member, body: Row, requestId
             statement(db, 'INSERT INTO print_payouts(id,operator_id,amount_centavos,note,created_by) VALUES (?,?,?,?,?)',
                 [id, operator.id, amount, note, member.id]),
             guard(db, 'write', 'changes()=1'),
+            ...staffPayExpense(db, member, operator, id, note),
             ...(receiptId ? attachWrites(db, member, id, receiptId) : [])
         ];
         saved = await (await mutation(db, member, requestId, hash, writes, PAYOUT_RESPONSE, [id],
             'This payout is more than the balance due, or the balance just changed. Nothing was recorded; reload the wallet.')).json();
     }
     return json({ ...(saved as Row), wallet: await walletOf(db, operator, manilaWeekStart()) });
+}
+// Staff pay is an expense too (owner request, November 2026). The payout writes its General expense
+// in the same atomic batch, with the payout's ID, peso amount and time, so the two never disagree.
+// Migration 0021 wrote the same row for earlier payouts; keep both in step.
+function staffPayExpense(db: D1Database, member: Member, operator: Operator, payoutId: string, note: string): D1PreparedStatement[] {
+    const details = canonical({
+        subCategory: STAFF_PAY_CATEGORY, isGeneral: true, club: null, reimbursed: false, reimbursedAmount: 0,
+        payoutId, createdBy: member.email, userRole: member.role
+    });
+    return [
+        statement(db, `INSERT INTO transactions(id,type,category,amount,date,description,details)
+            SELECT id,'expense','general',CAST(amount_centavos/100 AS TEXT),created_at,?,? FROM print_payouts WHERE id=?`,
+        [`${STAFF_PAY_CATEGORY}: ${operator.name}${note ? ` (${note})` : ''}`, details, payoutId]),
+        guard(db, 'write', 'changes()=1')
+    ];
 }
 
 // Payout receipts (owner request 2026-11-03): a photo or screenshot of the transfer, uploaded through
