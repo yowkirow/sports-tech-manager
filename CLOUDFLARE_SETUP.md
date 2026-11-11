@@ -259,6 +259,34 @@ the shop, checkout and order editing all use it.
   not from today's rates. Name, address and status edits keep the stored amounts.
   Reseller and POS orders don't pay shipping, so this doesn't apply to them.
 
+## Subscriptions (recurring expenses)
+
+Owner request (November 11, 2026): "add a recurring expense for subscriptions". Under
+Expenses › Subscriptions the owner adds what they pay every month or year (software, rent),
+and each charge goes into Expenses on its day without being entered by hand.
+`src/lib/recurringExpenses.js` holds the rules; the app and the Worker both use it.
+
+- **Storage**: a subscription is a `recurring_expense` transaction with no amount of its own
+  and `details` `{ name, amount, subCategory, frequency: monthly | yearly, startsOn, club }`.
+  Only the owner can write one. `POST /api/transactions` refuses it unless it is complete
+  (amount ₱0.01 to ₱1,000,000 to the centavo, a real first-charge day within a year of today,
+  the category, and SportsTech or Downtown Dinks). Its schedule (`startsOn`, `frequency`)
+  can't change; `PATCH` may change the name, amount, category and assignment, which apply
+  from the next charge. Stopping a subscription deletes the record; its charges stay.
+- **Charges**: a charge is an ordinary General expense (Marketing/Ads charges are `ads`) dated
+  9:00 AM in Manila on its day: the first charge day each month or year, or the month's last
+  day when shorter (31 Jan → 28 Feb; 29 Feb → 28 Feb). `details.recurringId` and
+  `recurringDate` name its subscription and day, and its ID is derived from them, so it is
+  recorded once and a charge the owner deletes stays deleted (tombstone). It counts in
+  Expenses, the Dashboard and Reports like any expense, and can be edited, reimbursed or
+  deleted. Only the Worker records charges: a new expense or edit that sets or moves
+  `recurringId` / `recurringDate` is refused (400).
+- **When**: production's cron (`triggers.crons` `5 16 * * *`, 00:05 in Manila) records every
+  charge due by that day, so a missed night catches up the next. Staging has no cron and is
+  read-only. After adding a subscription whose first charge is today or earlier, the app
+  calls `POST /api/recurring-expenses/charge` (owner only, body `{}`, returns
+  `{ inserted }`) so those charges appear at once; it is safe to repeat.
+
 ## DTF sheets (migration 0020)
 
 Owner request (November 9, 2026): the owner orders DTF prints by the meter, and the

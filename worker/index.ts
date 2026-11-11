@@ -11,6 +11,8 @@ import { handleMediaRequest, handleSmsRequest } from './media-api.ts';
 import { handleDtfRequest } from './dtf-api.ts';
 import { handlePinRequest, PIN_PATHS, pinStatus, requirePinUnlocked } from './pin.ts';
 import { isSharePage, sharePage } from './share-preview.ts';
+import { recordDueCharges } from './recurring-expenses.ts';
+import { manilaToday } from '../src/lib/recurringExpenses.js';
 
 export type Env = AppEnv;
 
@@ -119,5 +121,13 @@ export default {
                 }
             }, status);
         }
+    },
+
+    // Subscription charges, daily at 00:05 in Manila (production's cron in wrangler.production.jsonc).
+    // A failed run is retried by the next one, which records every charge still missing.
+    async scheduled(controller: ScheduledController, env: Env): Promise<void> {
+        if (!['staging', 'production'].includes(env.ENVIRONMENT) || env.MUTATIONS_ENABLED !== 'true') return;
+        const inserted = await recordDueCharges(env.DB, manilaToday(new Date(controller.scheduledTime)));
+        console.log(JSON.stringify({ code: 'subscription_charges_recorded', inserted }));
     }
 } satisfies ExportedHandler<Env>;

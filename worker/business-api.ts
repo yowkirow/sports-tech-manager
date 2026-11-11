@@ -11,6 +11,8 @@ import type { Background } from './notifications.ts';
 import { normalizeCustomerEmail } from '../src/lib/customerEmail.js';
 import { ballShippingTiers } from '../src/lib/shippingRates.js';
 import { isStaffPayExpense } from '../src/lib/staffPay.js';
+import { firstChargeProblem, manilaToday, readSubscription, RECURRING_EXPENSE } from '../src/lib/recurringExpenses.js';
+import { recordDueCharges } from './recurring-expenses.ts';
 
 type Bind = string | number | null;
 type Data = Record<string, unknown>;
@@ -18,7 +20,7 @@ type Role = Member['role'];
 const BUSINESS: Role[] = ['owner', 'reseller'];
 const ALL_ROLES: Role[] = [...BUSINESS, 'print_operator'];
 const CATALOG = ['define_product', 'delete_product', 'define_brand', 'delete_brand', 'define_color', 'delete_color'];
-const TYPES = new Set([...CATALOG, 'sale', 'expense', 'update_stock', 'club_income', 'voucher', 'shipping_rates']);
+const TYPES = new Set([...CATALOG, 'sale', 'expense', 'update_stock', 'club_income', 'voucher', 'shipping_rates', RECURRING_EXPENSE]);
 const UUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
 const encoder = new TextEncoder();
 const REVISION = '(SELECT revision FROM system_state WHERE singleton = 1)';
@@ -88,6 +90,34 @@ function reimbursementOnly(stored: Data, updates: Data, deleting: boolean): bool
     const fixed = (details: Data) => canonical(Object.fromEntries(
         Object.entries(details).filter(([key]) => !REIMBURSEMENT_FIELDS.has(key))));
     return fixed(updates.details) === fixed(stored);
+}
+
+// Subscriptions (src/lib/recurringExpenses.js): the Worker records their charges from these records,
+// so each must hold together as written. The schedule never changes once saved, so charges already
+// recorded keep their days; name, amount, category and assignment apply to charges from then on.
+function checkSubscription(details: unknown, amount: unknown, stored?: unknown): void {
+    const record = fields(details, ['name', 'amount', 'subCategory', 'frequency', 'startsOn'],
+        ['club', 'createdBy', 'userRole', 'updatedBy', 'updatedAt']);
+    const subscription = readSubscription(record);
+    if (!subscription) {
+        invalid('A subscription needs a name, an amount from ₱0.01 to ₱1,000,000, a category, monthly or yearly, and its first charge day.');
+    }
+    if (money(amount) !== '0') invalid('A subscription carries no amount of its own; its charges do.');
+    if (stored === undefined) {
+        const problem = firstChargeProblem(subscription.startsOn, manilaToday());
+        if (problem) invalid(problem);
+    } else if (!isObject(stored) || stored.startsOn !== subscription.startsOn || stored.frequency !== subscription.frequency) {
+        invalid('A subscription’s schedule can’t change. Stop it and add a new one.');
+    }
+}
+// Only the Worker records subscription charges (recurring-expenses.ts), keyed by subscription and
+// day: an expense can't claim to be one, and a charge keeps its subscription and day.
+function checkRecurringReference(type: string, details: unknown, stored: unknown = null): void {
+    if (type !== 'expense' || !isObject(details)) return;
+    const kept = isObject(stored) ? stored : {};
+    if (['recurringId', 'recurringDate'].some(key => Object.hasOwn(details, key) && details[key] !== kept[key])) {
+        invalid('Subscription charges are recorded automatically on their day.');
+    }
 }
 
 function allow(member: Member, roles: Role[]): void {
@@ -323,7 +353,9 @@ function newRows(input: unknown, member: Member): NewRow[] {
         }
         if (row.details != null && !isObject(row.details)) invalid('Transaction details must be an object or null.');
         if (type === 'shipping_rates') checkShippingRates(row.details, row.amount);
+        if (type === RECURRING_EXPENSE) checkSubscription(row.details, row.amount);
         checkPayoutReference(type, row.details);
+        checkRecurringReference(type, row.details);
         const details = row.details == null && type !== 'sale' ? null : {
             ...(row.details as Data | undefined), createdBy: member.email, userRole: member.role
         };
@@ -523,6 +555,15 @@ async function changeTransaction(
                 'This expense is a staff payout recorded under Production. Only its reimbursement status can change.');
         }
     } else if (!deleting) checkPayoutReference(row.type, updates.details);
+    if (!deleting) {
+        if (row.type === RECURRING_EXPENSE) {
+            if (Object.keys(updates).some(key => key !== 'details' && key !== 'description')) {
+                invalid('Change a subscription’s name, amount, category or assignment only.');
+            }
+            checkSubscription(updates.details, row.amount, stored);
+        }
+        checkRecurringReference(row.type, updates.details, stored);
+    }
     const key = row.type === 'sale' ? detailsOrderId(expected.details, id) : null;
     if (key !== null && row.order_id !== null && key !== row.order_id) {
         throw new HttpError(409, 'transaction_conflict', 'The source order identity is inconsistent.');
@@ -936,6 +977,12 @@ export async function handleBusinessRequest(request: Request, env: AppEnv, membe
         if (path === '/api/notifications/test' && method === 'POST') {
             allow(member, ['owner']);
             return json({ email: await sendTestEmail(env, member) });
+        }
+        // Records the subscription charges due by today now, instead of at the next nightly run.
+        if (path === '/api/recurring-expenses/charge' && method === 'POST') {
+            allow(member, ['owner']);
+            fields(await readJson(request), []);
+            return json({ inserted: await recordDueCharges(env.DB) });
         }
         const deletePath = /^\/api\/orders\/([^/]+)$/.exec(path);
         if (deletePath && method === 'DELETE') {

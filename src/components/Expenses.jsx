@@ -1,10 +1,12 @@
 import React, { useState, useMemo } from 'react';
-import { Search, Trash2, Calendar, Plus, User, Edit2, Check, Banknote } from 'lucide-react';
+import { Search, Trash2, Calendar, Plus, User, Edit2, Check, Banknote, Repeat } from 'lucide-react';
 import clsx from 'clsx';
 import { createPortal } from 'react-dom';
 import AddExpenseForm from './Expenses/AddExpenseForm';
+import Subscriptions from './Expenses/Subscriptions';
 import { useReadOnly, READ_ONLY_HINT } from './ui/ReadOnly';
 import { isStaffPayExpense, STAFF_PAY_LOCKED_HINT } from '../lib/staffPay';
+import { isSubscriptionCharge } from '../lib/recurringExpenses';
 
 const CLUB_SLUG = 'downtown-dinks';
 
@@ -16,7 +18,7 @@ const FILTERS = [
     { value: 'downtown_dinks', label: 'Downtown Dinks' }
 ];
 
-const Expenses = ({ transactions, onDeleteTransaction, onAddTransaction, onUpdateTransaction }) => {
+const Expenses = ({ transactions, onDeleteTransaction, onAddTransaction, onUpdateTransaction, onChargesRecorded }) => {
     const [searchTerm, setSearchTerm] = useState('');
     const [filterCategory, setFilterCategory] = useState('all');
     const [showAddModal, setShowAddModal] = useState(false);
@@ -107,11 +109,16 @@ const Expenses = ({ transactions, onDeleteTransaction, onAddTransaction, onUpdat
         return <span className={clsx('badge capitalize', tone)}>{label}</span>;
     };
 
-    const renderStaffPay = (transaction) => isStaffPayExpense(transaction) && (
+    // Where a record came from, when the app wrote it: a staff payout or a subscription's charge.
+    const renderSource = (transaction) => isStaffPayExpense(transaction) ? (
         <span className="badge border-line text-ink-2">
             <Banknote size={12} aria-hidden="true" /> Staff payout
         </span>
-    );
+    ) : isSubscriptionCharge(transaction) ? (
+        <span className="badge border-line text-ink-2">
+            <Repeat size={12} aria-hidden="true" /> Subscription
+        </span>
+    ) : null;
 
     const renderActions = (transaction, className = '') => {
         // A staff payout's expense mirrors the payout: only the reimbursement toggle stays.
@@ -175,6 +182,14 @@ const Expenses = ({ transactions, onDeleteTransaction, onAddTransaction, onUpdat
                     <p className="display mt-2 text-3xl num">{expenses.filter(isFullyReimbursed).length}</p>
                 </div>
             </div>
+
+            <Subscriptions
+                transactions={transactions}
+                onAddTransaction={onAddTransaction}
+                onUpdateTransaction={onUpdateTransaction}
+                onDeleteTransaction={onDeleteTransaction}
+                onChargesRecorded={onChargesRecorded}
+            />
 
             <section className="surface overflow-hidden">
                 <div className="flex flex-col gap-4 border-b border-line p-4 sm:p-5">
@@ -250,7 +265,7 @@ const Expenses = ({ transactions, onDeleteTransaction, onAddTransaction, onUpdat
                                                 <User size={12} aria-hidden="true" /> {t.details.createdBy.split('@')[0]}
                                             </span>
                                         )}
-                                        {renderStaffPay(t)}
+                                        {renderSource(t)}
                                     </div>
 
                                     <div className="mt-4 flex justify-end border-t border-line pt-3">
@@ -293,7 +308,7 @@ const Expenses = ({ transactions, onDeleteTransaction, onAddTransaction, onUpdat
                                                         <User size={12} aria-hidden="true" /> {t.details.createdBy.split('@')[0]}
                                                     </span>
                                                 )}
-                                                {renderStaffPay(t)}
+                                                {renderSource(t)}
                                             </div>
                                         </td>
                                         <td className="px-3 py-3">

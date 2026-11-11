@@ -5,16 +5,7 @@ import { useActivityLog } from '../../hooks/useActivityLog';
 import { api } from '../../lib/apiClient';
 import { withLocalDate } from '../../lib/transactionDate';
 import { useReadOnly, READ_ONLY_HINT } from '../ui/ReadOnly';
-
-const DEFAULT_CATEGORIES = [
-    'Rent',
-    'Utilities',
-    'Marketing/Ads',
-    'Packaging',
-    'Software/Subscriptions',
-    'Transportation',
-    'Other'
-];
+import { DEFAULT_EXPENSE_CATEGORIES as DEFAULT_CATEGORIES } from '../../lib/expenseCategories';
 
 const CLUB_SLUG = 'downtown-dinks';
 

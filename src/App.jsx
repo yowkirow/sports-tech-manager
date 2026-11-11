@@ -458,6 +458,7 @@ function ManagementApp({ session, onProfileChange, onLock }) {
                                         onDeleteTransaction={deleteTransaction}
                                         onAddTransaction={addToServer}
                                         onUpdateTransaction={updateOnServer}
+                                        onChargesRecorded={refetch}
                                     />
                                 </div>
                             )}
