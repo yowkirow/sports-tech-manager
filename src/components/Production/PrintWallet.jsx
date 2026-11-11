@@ -131,7 +131,7 @@ export function OperatorPayout({ wallet, reload, online, stale }) {
         mutation.run('/api/production/payouts', {
             operatorId: wallet.memberId, amountCentavos: selected, ...(note.trim() ? { note: note.trim() } : {}),
             ...(receipt ? { receiptId: receipt.id } : {})
-        }, `${walletPeso(selected)} payout recorded for ${wallet.name}${receipt ? ' with the receipt' : ''}.`, () => setOpen(false));
+        }, `${walletPeso(selected)} payout recorded for ${wallet.name}${receipt ? ' with the receipt' : ''} and added to Expenses.`, () => setOpen(false));
     };
     return <>
         <button type="button" className="production-button"
@@ -162,8 +162,9 @@ export function OperatorPayout({ wallet, reload, online, stale }) {
                         <input value={note} maxLength={200} autoComplete="off" placeholder="For example: GCash, 6 Oct"
                             onChange={event => setNote(event.target.value)} aria-describedby={`${formId}-note`} />
                     </label>
-                    <p id={`${formId}-note`} className="production-help">{wallet.name} sees this payout and note in their history.
-                        Payouts can’t be edited or deleted. Pay is {walletPeso(wallet.rateCentavos)} for each complete {wallet.rateShirts} accepted shirts.</p>
+                    <p id={`${formId}-note`} className="production-help">{wallet.name} sees this payout and note in their history,
+                        and it’s added to Expenses as Print staff pay. Payouts can’t be edited or deleted.
+                        Pay is {walletPeso(wallet.rateCentavos)} for each complete {wallet.rateShirts} accepted shirts.</p>
                     {selected && <ReceiptField name={wallet.name} receipt={receipt} uploader={uploader} disabled={locked}
                         onChoose={attach} onRemove={() => setReceipt(null)} />}
                     {selected && <label className="production-checkbox">

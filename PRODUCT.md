@@ -22,7 +22,8 @@ web
 - **One print employee**: uses `/print` on a phone and must see only owner-released print jobs, grouped
   into one package per order, with only the customer's name and LBC booking number for the package label
   (no contacts, addresses, order numbers or money), plus their own shirt counter and pay wallet (₱1,000
-  per complete 30 owner-accepted shirts; the owner records payouts) and their own history: what they
+  per complete 30 owner-accepted shirts; the owner records payouts, which also go into Expenses as
+  Print staff pay) and their own history: what they
   printed, the owner's checks and each payout with the GCash or bank receipt the owner attached.
   The owner checks each customer's package once all its shirts are printed, never shirt by shirt.
 

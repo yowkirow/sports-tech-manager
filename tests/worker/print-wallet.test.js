@@ -13,6 +13,7 @@ const directory = new URL('../../worker/migrations/', import.meta.url);
 const names = readdirSync(directory).filter(name => name.endsWith('.sql')).sort();
 const migrations = names.map(name => readFileSync(new URL(name, directory), 'utf8'));
 const walletMigration = readFileSync(new URL('0007_print_wallet.sql', directory), 'utf8');
+const staffPayMigration = readFileSync(new URL('0021_staff_pay_expenses.sql', directory), 'utf8');
 const SOURCE = '00000000-0000-4000-8000-000000000001';
 const owner = { id: 'owner', email: 'owner@example.invalid', role: 'owner' };
 const printer = { id: 'printer', email: 'printer@example.invalid', role: 'print_operator' };
@@ -24,10 +25,11 @@ let sequence = 0;
 const requestId = () => `wallet-test-${++sequence}`;
 
 // Same harness as production.test.js: real SQLite migrations and atomic batch rollback.
+// `before` stops at that migration, to set up data written before it.
 class LocalD1 {
-    constructor(t) {
+    constructor(t, before = '9999') {
         this.sqlite = new DatabaseSync(':memory:');
-        for (const migration of migrations) this.sqlite.exec(migration);
+        names.forEach((name, index) => { if (name < before) this.sqlite.exec(migrations[index]); });
         this.beforeBatch = null;
         t.after(() => this.sqlite.close());
     }
@@ -69,8 +71,8 @@ class LocalD1 {
         }
     }
 }
-function fixture(t, quantity = 100) {
-    const db = new LocalD1(t);
+function fixture(t, quantity = 100, before = undefined) {
+    const db = new LocalD1(t, before);
     for (const member of [owner, printer, other, former, reseller]) {
         db.sqlite.prepare('INSERT INTO members(id,email,role,active) VALUES (?,?,?,?)')
             .run(member.id, member.email, member.role, member === former ? 0 : 1);
@@ -130,6 +132,8 @@ const payout = (f, operatorId, amountCentavos, extra = {}) =>
     call(f, '/payouts', { operatorId, amountCentavos, requestId: requestId(), ...extra });
 const payoutRows = f => f.db.sqlite.prepare('SELECT operator_id,amount_centavos,note,created_by FROM print_payouts ORDER BY rowid').all()
     .map(row => ({ ...row }));
+const expenseRows = f => f.db.sqlite.prepare(`SELECT id,type,category,amount,date,description,details
+    FROM transactions WHERE type='expense' ORDER BY rowid`).all().map(row => ({ ...row }));
 const qaOperators = f => f.db.sqlite.prepare("SELECT operator_id FROM production_events WHERE action='qa' ORDER BY id").all()
     .map(row => row.operator_id);
 
@@ -306,6 +310,62 @@ test('concurrent payouts cannot overdraw and a duplicate request ID pays once', 
     assert.deepEqual(payoutRows(f).map(row => row.amount_centavos), [2 * K, K, K]);
     assert.equal((await wallet(f)).balanceCentavos, 0);
     assert.equal(f.db.sqlite.prepare('SELECT count(*) AS n FROM _production_guards').get().n, 0);
+});
+
+// The payout's expense, exactly as the Worker and migration 0021 store it (canonical key order).
+const staffPay = (paid, description) => ({
+    id: paid.id, type: 'expense', category: 'general', amount: String(paid.amountCentavos / 100), date: paid.createdAt, description,
+    details: JSON.stringify({ club: null, createdBy: owner.email, isGeneral: true, payoutId: paid.id,
+        reimbursed: false, reimbursedAmount: 0, subCategory: 'Print staff pay', userRole: 'owner' })
+});
+
+test('each payout is also a Print staff pay expense, written in the same batch or not at all', async t => {
+    const f = fixture(t, 120);
+    await accept(f, await job(f), 120);
+    const body = { operatorId: printer.id, amountCentavos: 2 * K, note: 'GCash, 6 Oct', requestId: requestId() };
+    const first = await call(f, '/payouts', body);
+    await call(f, '/payouts', body);
+    const second = await payout(f, printer.id, K);
+    assert.deepEqual(expenseRows(f), [
+        staffPay(first.payout, 'Print staff pay: Sam (GCash, 6 Oct)'), staffPay(second.payout, 'Print staff pay: Sam')
+    ]);
+    // A refused payout writes no expense, and an expense that can't be written refuses the payout.
+    await assert.rejects(payout(f, printer.id, 2 * K), failure(409, 'production_conflict'));
+    f.db.sqlite.exec(`CREATE TRIGGER refuse_expense BEFORE INSERT ON transactions WHEN NEW.type='expense'
+        BEGIN SELECT RAISE(ABORT, 'CHECK constraint failed: refuse_expense'); END`);
+    await assert.rejects(payout(f, printer.id, K), failure(409, 'production_conflict'));
+    assert.equal(payoutRows(f).length, 2);
+    assert.equal(expenseRows(f).length, 2);
+    assert.equal((await wallet(f)).balanceCentavos, K);
+});
+
+test('migration 0021 writes the same expense for payouts recorded before it, once', async t => {
+    const live = fixture(t, 60);
+    await accept(live, await job(live), 60);
+    const recorded = (await payout(live, printer.id, 2 * K, { note: 'GCash, 6 Oct' })).payout;
+
+    const f = fixture(t, 60, '0021');
+    const insert = f.db.sqlite.prepare(`INSERT INTO print_payouts(id,operator_id,amount_centavos,note,created_by,created_at)
+        VALUES (?,?,?,?,'owner',?)`);
+    insert.run(recorded.id, 'printer', 2 * K, 'GCash, 6 Oct', recorded.createdAt);
+    const nameless = { id: '00000000-0000-4000-8000-000000000021', amountCentavos: K, createdAt: '2026-10-25T02:00:00.000Z' };
+    insert.run(nameless.id, 'former', K, '', nameless.createdAt);
+    // Already a transaction, and deleted as one: both are left alone.
+    const taken = '00000000-0000-4000-8000-000000000022';
+    const deleted = '00000000-0000-4000-8000-000000000023';
+    insert.run(taken, 'printer', K, '', '2026-10-26T02:00:00.000Z');
+    insert.run(deleted, 'printer', K, '', '2026-10-27T02:00:00.000Z');
+    f.db.sqlite.prepare(`INSERT INTO transactions(id,type,category,amount,date,description,details)
+        VALUES (?,'expense','general','5','2026-10-26T02:00:00Z','Kept',NULL)`).run(taken);
+    f.db.sqlite.prepare("INSERT INTO transaction_tombstones(id,actor_id,request_id) VALUES (?,'owner','deleted')").run(deleted);
+
+    f.db.sqlite.exec(staffPayMigration);
+    f.db.sqlite.exec(staffPayMigration);
+    assert.deepEqual(expenseRows(f), [
+        { id: taken, type: 'expense', category: 'general', amount: '5', date: '2026-10-26T02:00:00Z', description: 'Kept', details: null },
+        staffPay(nameless, 'Print staff pay: Print operator'),
+        expenseRows(live)[0]
+    ]);
 });
 
 test('payouts are owner-only and only to print-operator accounts; offboarded operators can still be paid', async t => {
