@@ -1,7 +1,7 @@
 import React, { lazy, Suspense, useState } from 'react';
 import useTransactions from './hooks/useTransactions';
 import { createPortal } from 'react-dom';
-import { LayoutDashboard, Store, ShoppingBag, Package, LogOut, Lock, Wallet, Banknote, Menu, Link2, Ticket, Settings as SettingsIcon, ClipboardList, TrendingUp, Trophy, Printer, RefreshCw, Layers } from 'lucide-react';
+import { LayoutDashboard, Store, ShoppingBag, Package, LogOut, Lock, Wallet, Banknote, Menu, Link2, Ticket, Settings as SettingsIcon, ClipboardList, TrendingUp, Trophy, Printer, RefreshCw, Layers, Shirt } from 'lucide-react';
 import clsx from 'clsx';
 import { useToast } from './components/ui/Toast';
 import { api, apiRequest, PIN_REQUIRED_EVENT, PIN_UNLOCKED_EVENT } from './lib/apiClient';
@@ -15,6 +15,7 @@ import { isInstalledApp, startTab } from './lib/appStart';
 const DashboardStats = lazy(() => import('./components/DashboardStats'));
 const TransactionList = lazy(() => import('./components/TransactionList'));
 const InventoryList = lazy(() => import('./components/InventoryList'));
+const BlankShirts = lazy(() => import('./components/Blanks/BlankShirts'));
 const AddStockForm = lazy(() => import('./components/Inventory/AddStockForm'));
 const POSInterface = lazy(() => import('./components/POS/POSInterface'));
 const OrderManagement = lazy(() => import('./components/Orders/OrderManagement'));
@@ -37,7 +38,7 @@ const printQueueEnabled = import.meta.env.VITE_PRINT_QUEUE_ENABLED === 'true';
 
 const TAB_TITLES = {
     pos: 'Point of Sale', orders: 'Orders', sales: 'Sales', expenses: 'Expenses', 'downtown-dinks': 'Downtown Dinks',
-    dashboard: 'Dashboard', inventory: 'Inventory', supplier: 'Supplier Order', dtf: 'DTF sheets', vouchers: 'Vouchers', reports: 'Reports',
+    dashboard: 'Dashboard', inventory: 'Inventory', blanks: 'Blank shirts', supplier: 'Supplier Order', dtf: 'DTF sheets', vouchers: 'Vouchers', reports: 'Reports',
     production: 'Production', settings: 'Settings', 'add-stock': 'Receive Stock'
 };
 
@@ -54,6 +55,7 @@ const navGroups = (isOwner) => [
     ] },
     isOwner && { label: 'Stock', items: [
         { id: 'inventory', label: 'Inventory', icon: ShoppingBag },
+        { id: 'blanks', label: 'Blank shirts', icon: Shirt },
         { id: 'supplier', label: 'Supplier Order', icon: ClipboardList },
         { id: 'dtf', label: 'DTF sheets', icon: Layers },
         ...(printQueueEnabled ? [{ id: 'production', label: 'Production', icon: Printer }] : []),
@@ -482,6 +484,12 @@ function ManagementApp({ session, onProfileChange, onLock }) {
                                         onDeleteTransaction={deleteFromServer}
                                         onOpenAddStock={() => setShowAddStockModal(true)}
                                     />
+                                </div>
+                            )}
+
+                            {isOwner && activeTab === 'blanks' && (
+                                <div className="animate-fade-in">
+                                    <BlankShirts transactions={transactions} onAddTransaction={addToServer} />
                                 </div>
                             )}
 

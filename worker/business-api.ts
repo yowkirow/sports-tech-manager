@@ -12,6 +12,7 @@ import { normalizeCustomerEmail } from '../src/lib/customerEmail.js';
 import { ballShippingTiers } from '../src/lib/shippingRates.js';
 import { isStaffPayExpense } from '../src/lib/staffPay.js';
 import { firstChargeProblem, manilaToday, readSubscription, RECURRING_EXPENSE } from '../src/lib/recurringExpenses.js';
+import { BLANK_COUNT, MAX_BLANK_COLORS, readBlankCount } from '../src/lib/blankCounts.js';
 import { recordDueCharges } from './recurring-expenses.ts';
 
 type Bind = string | number | null;
@@ -20,7 +21,7 @@ type Role = Member['role'];
 const BUSINESS: Role[] = ['owner', 'reseller'];
 const ALL_ROLES: Role[] = [...BUSINESS, 'print_operator'];
 const CATALOG = ['define_product', 'delete_product', 'define_brand', 'delete_brand', 'define_color', 'delete_color'];
-const TYPES = new Set([...CATALOG, 'sale', 'expense', 'update_stock', 'club_income', 'voucher', 'shipping_rates', RECURRING_EXPENSE]);
+const TYPES = new Set([...CATALOG, 'sale', 'expense', 'update_stock', 'club_income', 'voucher', 'shipping_rates', RECURRING_EXPENSE, BLANK_COUNT]);
 const UUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
 const encoder = new TextEncoder();
 const REVISION = '(SELECT revision FROM system_state WHERE singleton = 1)';
@@ -118,6 +119,16 @@ function checkRecurringReference(type: string, details: unknown, stored: unknown
     if (['recurringId', 'recurringDate'].some(key => Object.hasOwn(details, key) && details[key] !== kept[key])) {
         invalid('Subscription charges are recorded automatically on their day.');
     }
+}
+
+// Blank shirts on the shelf (src/lib/blankCounts.js): print staff read the newest count, so it must
+// hold together as written. A count is never edited; the owner enters a new one.
+function checkBlankCount(details: unknown, amount: unknown): void {
+    fields(details, ['rows'], ['note']);
+    if (!readBlankCount(details)) {
+        invalid(`A blank shirt count lists 1 to ${MAX_BLANK_COLORS} colors, each once, with a whole number from 0 to 100,000 for each size XS to 2XL, and a note of up to 200 characters.`);
+    }
+    if (money(amount) !== '0') invalid('A blank shirt count carries no amount.');
 }
 
 function allow(member: Member, roles: Role[]): void {
@@ -354,6 +365,7 @@ function newRows(input: unknown, member: Member): NewRow[] {
         if (row.details != null && !isObject(row.details)) invalid('Transaction details must be an object or null.');
         if (type === 'shipping_rates') checkShippingRates(row.details, row.amount);
         if (type === RECURRING_EXPENSE) checkSubscription(row.details, row.amount);
+        if (type === BLANK_COUNT) checkBlankCount(row.details, row.amount);
         checkPayoutReference(type, row.details);
         checkRecurringReference(type, row.details);
         const details = row.details == null && type !== 'sale' ? null : {
@@ -556,6 +568,7 @@ async function changeTransaction(
         }
     } else if (!deleting) checkPayoutReference(row.type, updates.details);
     if (!deleting) {
+        if (row.type === BLANK_COUNT) invalid('Enter a new blank shirt count instead of changing an old one.');
         if (row.type === RECURRING_EXPENSE) {
             if (Object.keys(updates).some(key => key !== 'details' && key !== 'description')) {
                 invalid('Change a subscription’s name, amount, category or assignment only.');

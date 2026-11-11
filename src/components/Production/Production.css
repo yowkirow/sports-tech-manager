@@ -541,10 +541,11 @@
 .production-qa-wait-lines, .production-qa-waiting .production-help { color: #fbbf24; }
 .production-qa-waiting > p { color: var(--color-ink-2); }
 .production-qa-waiting .production-qa-waiting-for { display: flex; align-items: center; gap: 8px; margin-top: 8px; color: var(--color-ink); font-weight: 600; }
-/* Print staff views (owner request 2026-11-03): Queue and History, as one segmented control. */
+/* Print staff views: Queue, Blanks (owner request 2026-11-11) and History, as one segmented control. */
 .print-views {
     display: grid;
-    grid-template-columns: repeat(2, minmax(0, 1fr));
+    grid-auto-flow: column;
+    grid-auto-columns: minmax(0, 1fr);
     gap: 4px;
     padding: 4px;
     margin-bottom: 20px;
