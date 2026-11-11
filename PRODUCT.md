@@ -16,13 +16,14 @@ web
   browse shirts and pickleball gear, pick sizes or ball quantities, check out with a Philippine
   address, and later return to `/track/:id` to see where their order is.
 - **The owner**: full admin. Runs point of sale, orders, sales, expenses (subscriptions record their own
-  charges), inventory, supplier orders,
+  charges), inventory, the blank shirt count (what's on the shelf, entered by hand), supplier orders,
   DTF sheets, vouchers, ad reporting, the Downtown Dinks club ledger, production releases and
   settings, on phone and desktop.
 - **Resellers**: sell at fixed ₱400 pricing; may edit only their own unpaid pending orders.
 - **One print employee**: uses `/print` on a phone and must see only owner-released print jobs, grouped
   into one package per order, with only the customer's name and LBC booking number for the package label
-  (no contacts, addresses, order numbers or money), plus their own shirt counter and pay wallet (₱1,000
+  (no contacts, addresses, order numbers or money), plus the owner's blank shirt count (read only), their
+  own shirt counter and pay wallet (₱1,000
   per complete 30 owner-accepted shirts; the owner records payouts, which also go into Expenses as
   Print staff pay) and their own history: what they
   printed, the owner's checks and each payout with the GCash or bank receipt the owner attached.

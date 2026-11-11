@@ -1,5 +1,6 @@
 import { useCallback, useEffect, useRef, useState } from 'react';
 import { api, apiRequest } from '../../lib/apiClient.js';
+import { readBlankCount } from '../../lib/blankCounts.js';
 import { newProductionRequest, productionError } from '../../lib/production.js';
 import { prepareReceiptImage } from '../../lib/receiptImage.js';
 import { useToast } from '../ui/Toast.jsx';
@@ -194,6 +195,40 @@ export function usePrintHistory({ memberId = null, enabled = true } = {}) {
         return () => { ++generation.current; setLoading(false); };
     }, [enabled, load]);
     return { ...state, loading, error: failure?.error ?? null, olderFailed: !!failure?.older, load, more };
+}
+
+// The owner's newest blank shirt count (src/lib/blankCounts.js), for print staff. Loads each time the
+// Blanks tab opens, and on Reload.
+export function useBlankCount({ enabled = true } = {}) {
+    const [state, setState] = useState({ blanks: null, loaded: false });
+    const [loading, setLoading] = useState(false);
+    const [error, setError] = useState(null);
+    const generation = useRef(0);
+    const load = useCallback(async () => {
+        if (!enabled) return;
+        const current = ++generation.current;
+        setLoading(true);
+        try {
+            const result = await apiRequest('/api/production/blanks');
+            const blanks = result?.blanks === null ? null : readBlankCount(result?.blanks);
+            if (result?.blanks !== null && (!blanks || typeof result.blanks.countedAt !== 'string')) {
+                throw new Error('The blank shirt count could not be verified. Reload to try again.');
+            }
+            if (current !== generation.current) return;
+            setState({ blanks: blanks && { ...blanks, countedAt: result.blanks.countedAt }, loaded: true });
+            setError(null);
+        } catch (failure) {
+            if (current === generation.current) setError(failure);
+        } finally {
+            if (current === generation.current) setLoading(false);
+        }
+    }, [enabled]);
+    useEffect(() => {
+        if (!enabled) return undefined;
+        load();
+        return () => { ++generation.current; setLoading(false); };
+    }, [enabled, load]);
+    return { ...state, loading, error, load };
 }
 
 // Prepares (see receiptImage.js) and uploads one payout receipt image. The upload is private and

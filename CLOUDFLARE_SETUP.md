@@ -287,6 +287,28 @@ and each charge goes into Expenses on its day without being entered by hand.
   calls `POST /api/recurring-expenses/charge` (owner only, body `{}`, returns
   `{ inserted }`) so those charges appear at once; it is safe to repeat.
 
+## Blank shirt count
+
+Owner request (November 11, 2026): "Add a dashboard for the actual number of blank shirts (I'll
+input it), also the print staff can see it." Under Stock › Blank shirts the owner enters the
+blank shirts on the shelf by color and size (XS to 2XL), and the print staff see the same board,
+read only, under Blanks on `/print`. `src/lib/blankCounts.js` holds the rules; the app and the
+Worker both use it.
+
+- **Storage**: each save is a `blank_count` transaction holding the whole board:
+  `details.rows` lists `{ color, hex, sizes: { XS, S, M, L, XL, 2XL } }`, with an optional
+  `details.note`. The newest count is the board. Only the owner can write one, and
+  `POST /api/transactions` refuses it unless it reads back whole: 1 to 60 colors, each once,
+  a whole number from 0 to 100,000 for every size, a note of up to 200 characters, and no
+  amount. A count is never edited (`PATCH` is refused); deleting the newest brings back the
+  one before it.
+- **Print staff**: `GET /api/production/blanks` (the owner or an active print operator, with the
+  print queue on) returns `{ blanks: { rows, note, countedAt } | null }`: only the board, its
+  note and when it was saved, never who saved it.
+- **Separate from Inventory**: Inventory still works blank shirts out from what was bought and
+  sold. A count changes neither Inventory nor the shop's stock nor any money total. No
+  migration.
+
 ## DTF sheets (migration 0020)
 
 Owner request (November 9, 2026): the owner orders DTF prints by the meter, and the

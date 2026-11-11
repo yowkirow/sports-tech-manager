@@ -4,6 +4,7 @@ import { HttpError } from './errors.ts';
 import { isObject, json, readJson } from './http.ts';
 import { canonical } from './order-store.ts';
 import { STAFF_PAY_CATEGORY } from '../src/lib/staffPay.js';
+import { BLANK_COUNT, readBlankCount } from '../src/lib/blankCounts.js';
 export { productionReadyGuard } from './production-ready.ts';
 
 type Row = Record<string, unknown>;
@@ -964,6 +965,15 @@ async function getHistory(db: D1Database, member: Member, url: URL): Promise<Res
     return json({ memberId: operator.id, name: operator.name, entries, next: last ? `${last.at}|${last.kind}|${last.ref}` : null });
 }
 
+// Blank shirts on the shelf (owner request, November 2026): the owner's newest count, which print staff
+// read on /print. Only the board, its note and when it was saved go out; never who saved it.
+async function getBlanks(db: D1Database): Promise<Response> {
+    const [latest] = await rows<{ details: string | null; date: string }>(db, `SELECT details,date FROM transactions WHERE type=?
+        ORDER BY substr(date,1,19) DESC,created_at DESC,id DESC LIMIT 1`, [BLANK_COUNT]);
+    const count = latest?.details ? readBlankCount(JSON.parse(latest.details)) : null;
+    return json({ blanks: latest && count ? { ...count, countedAt: latest.date } : null });
+}
+
 export async function handleProductionRequest(request: Request, env: AppEnv, member: Member): Promise<Response | null> {
     const url = new URL(request.url);
     const memberPath = /^\/api\/members(?:\/([^/]+))?$/.exec(url.pathname);
@@ -977,6 +987,7 @@ export async function handleProductionRequest(request: Request, env: AppEnv, mem
         if (url.pathname === '/api/production/sources') return getSources(env.DB, url);
         if (url.pathname === '/api/production/wallet') return getWallet(env.DB, member, url);
         if (url.pathname === '/api/production/history') return getHistory(env.DB, member, url);
+        if (url.pathname === '/api/production/blanks') return getBlanks(env.DB);
     }
     if (request.method !== 'POST' && !memberMutation) fail('This print route does not exist.', 'not_found', 404);
     const input = await readJson(request, 16384);

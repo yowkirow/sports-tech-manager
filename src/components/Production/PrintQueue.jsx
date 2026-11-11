@@ -2,10 +2,11 @@ import React, { useCallback, useMemo, useRef, useState } from 'react';
 import { AlertCircle, Check, CheckCircle2, ChevronDown, Printer } from 'lucide-react';
 import LoadingState from '../ui/LoadingState.jsx';
 import { packageItems, packageStatus, packageSummary, printPackages, productionQuantity, visiblePrintPackages } from '../../lib/production.js';
-import { usePrintHistory, useProductionData, useProductionMutation, useProductionWallet } from './productionHooks.js';
+import { useBlankCount, usePrintHistory, useProductionData, useProductionMutation, useProductionWallet } from './productionHooks.js';
 import { JobActivity, JobCounts, JobCustomer, JobHeading, JobInstructions, JobPhoto, MutationNotice, ProductionHeader, ProductionNotice } from './ProductionParts.jsx';
 import { MyShirts } from './PrintWallet.jsx';
 import { PrintHistory } from './PrintHistory.jsx';
+import { PrintBlanks } from './PrintBlanks.jsx';
 import { useReadOnly, READ_ONLY_HINT } from '../ui/ReadOnly';
 import './Production.css';
 
@@ -98,10 +99,11 @@ function PrintPackage({ pkg, open, onToggle, reload, online, stale }) {
     </li>;
 }
 
-const VIEWS = [{ id: 'queue', label: 'Queue' }, { id: 'history', label: 'History' }];
+const VIEWS = [{ id: 'queue', label: 'Queue' }, { id: 'blanks', label: 'Blanks' }, { id: 'history', label: 'History' }];
 
-// Print staff switch between the queue and their history (owner request 2026-11-03). Both panels
-// stay mounted, so typed quantities and notes survive a look at the history.
+// Print staff switch between the queue, the blank shirts the owner counted (owner request 2026-11-11) and
+// their history (owner request 2026-11-03). Every panel stays mounted, so typed quantities and notes survive
+// a look at the others.
 function ViewTabs({ view, onChange }) {
     const tabs = useRef({});
     const keyboard = (event, index) => {
@@ -112,7 +114,7 @@ function ViewTabs({ view, onChange }) {
         onChange(VIEWS[next].id);
         tabs.current[VIEWS[next].id]?.focus();
     };
-    return <div className="print-views" role="tablist" aria-label="Print queue and history">
+    return <div className="print-views" role="tablist" aria-label="Print queue, blanks and history">
         {VIEWS.map((item, index) => <button key={item.id} ref={node => { tabs.current[item.id] = node; }} type="button" role="tab"
             id={`print-tab-${item.id}`} aria-controls={`print-panel-${item.id}`} aria-selected={view === item.id}
             tabIndex={view === item.id ? 0 : -1} className="print-view-tab" onClick={() => onChange(item.id)} onKeyDown={event => keyboard(event, index)}>
@@ -127,11 +129,14 @@ export default function PrintQueue({ userRole }) {
     const wallet = useProductionWallet(showWallet);
     const [view, setView] = useState('queue');
     const history = usePrintHistory({ enabled: showWallet && view === 'history' });
+    const blanks = useBlankCount({ enabled: showWallet && view === 'blanks' });
     const { load: loadJobs } = data;
     const { load: loadWallet } = wallet;
     const { load: loadHistory } = history;
+    const { load: loadBlanks } = blanks;
     const reload = useCallback(() => Promise.all([loadJobs(), loadWallet()]), [loadJobs, loadWallet]);
-    const reloadAll = useCallback(() => Promise.all([reload(), view === 'history' ? loadHistory() : null]), [reload, view, loadHistory]);
+    const reloadAll = useCallback(() => Promise.all([reload(), view === 'history' ? loadHistory() : null, view === 'blanks' ? loadBlanks() : null]),
+        [reload, view, loadHistory, loadBlanks]);
     const showHistory = () => {
         setView('history');
         document.getElementById('print-tab-history')?.focus();
@@ -150,8 +155,9 @@ export default function PrintQueue({ userRole }) {
     const toPrint = shown.reduce((total, pkg) => total + pkg.visibleJobs.reduce((sum, job) => sum + job.remainingToPrint, 0), 0);
     const plural = (count, word) => `${count} ${word}${count === 1 ? '' : 's'}`;
     return <section className="production" aria-label="Employee print queue">
-        <ProductionHeader title="Print queue" subtitle={view === 'history' ? 'Your prints, the owner’s checks and your payouts.' : 'Only jobs assigned and released to you appear here.'}
-            loading={data.loading || history.loading} onReload={reloadAll} />
+        <ProductionHeader title="Print queue" subtitle={view === 'history' ? 'Your prints, the owner’s checks and your payouts.'
+            : view === 'blanks' ? 'Blank shirts on the shelf, as the owner last counted them.' : 'Only jobs assigned and released to you appear here.'}
+            loading={data.loading || history.loading || blanks.loading} onReload={reloadAll} />
         {showWallet && <ViewTabs view={view} onChange={setView} />}
         {!data.online && <ProductionNotice error>You are offline. Notes stay on this screen. Reconnect and reload before saving.</ProductionNotice>}
         <div role={showWallet ? 'tabpanel' : undefined} id="print-panel-queue" aria-labelledby={showWallet ? 'print-tab-queue' : undefined}
@@ -190,6 +196,9 @@ export default function PrintQueue({ userRole }) {
                 </>}
             </>}
         </div>
+        {showWallet && <div role="tabpanel" id="print-panel-blanks" aria-labelledby="print-tab-blanks" hidden={view !== 'blanks'}>
+            {view === 'blanks' && <PrintBlanks blanks={blanks} />}
+        </div>}
         {showWallet && <div role="tabpanel" id="print-panel-history" aria-labelledby="print-tab-history" hidden={view !== 'history'}>
             {view === 'history' && <PrintHistory history={history} wallet={wallet.wallet} online={data.online} />}
         </div>}
