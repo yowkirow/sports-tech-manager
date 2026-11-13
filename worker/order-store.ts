@@ -180,6 +180,11 @@ export {
     canonical, detailsOrderId
 };
 
+/** Newest first, as the transaction feed lists records: by second, then fractional digits, then ID. */
+export const historyOrder = (prefix = '') => `substr(${prefix}date, 1, 19) DESC,
+    substr((CASE WHEN length(${prefix}date) > 20 THEN substr(${prefix}date, 21, length(${prefix}date) - 21)
+        ELSE '' END) || '000000000', 1, 9) DESC, ${prefix}id DESC`;
+
 function removed(details: unknown): boolean {
     return object(details) && (details.removedFromOrder === true || details.removedFromOrder === 'true');
 }

@@ -34,6 +34,26 @@ export const reconstructBrands = (transactions = []) => {
     return [...brands.values()];
 };
 
+const DEFAULT_COLORS = [
+    { name: 'White', hex: '#FFFFFF' },
+    { name: 'Black', hex: '#000000' },
+    { name: 'Kiwi', hex: '#bef264' },
+    { name: 'Cream', hex: '#fef3c7' },
+    { name: 'Baby Blue', hex: '#bae6fd' }
+];
+
+/** The shirt colors: the five defaults, then every color the owner added or deleted, in order. */
+export const reconstructColors = (transactions = []) => {
+    const colors = new Map(DEFAULT_COLORS.map(color => [color.name.toLowerCase(), { ...color }]));
+    for (const transaction of [...transactions].reverse()) {
+        const name = transaction.details?.name;
+        if (typeof name !== 'string' || !name) continue;
+        if (transaction.type === 'define_color') colors.set(name.toLowerCase(), { name: name.trim(), hex: transaction.details.hex || '#334155' });
+        if (transaction.type === 'delete_color') colors.delete(name.toLowerCase());
+    }
+    return [...colors.values()];
+};
+
 export const buildPublicCatalog = (transactions = [], voucherUsage) => {
     const usage = voucherUsage || getVoucherUsage(transactions);
     const codes = new Set();
