@@ -2,9 +2,10 @@ import type { Member } from './auth.ts';
 import type { AppEnv } from './env.ts';
 import { HttpError } from './errors.ts';
 import { isObject, json, readJson } from './http.ts';
-import { canonical } from './order-store.ts';
+import { canonical, historyOrder } from './order-store.ts';
 import { STAFF_PAY_CATEGORY } from '../src/lib/staffPay.js';
-import { BLANK_COUNT, readBlankCount } from '../src/lib/blankCounts.js';
+import { BLANK_COUNT, countedByName, MAX_BLANK_COLORS, readBlankCount, suggestedBlankColors, blankHex } from '../src/lib/blankCounts.js';
+import { reconstructColors, reconstructProducts } from '../src/lib/publicCatalog.js';
 export { productionReadyGuard } from './production-ready.ts';
 
 type Row = Record<string, unknown>;
@@ -965,13 +966,56 @@ async function getHistory(db: D1Database, member: Member, url: URL): Promise<Res
     return json({ memberId: operator.id, name: operator.name, entries, next: last ? `${last.at}|${last.kind}|${last.ref}` : null });
 }
 
-// Blank shirts on the shelf (owner request, November 2026): the owner's newest count, which print staff
-// read on /print. Only the board, its note and when it was saved go out; never who saved it.
-async function getBlanks(db: D1Database): Promise<Response> {
-    const [latest] = await rows<{ details: string | null; date: string }>(db, `SELECT details,date FROM transactions WHERE type=?
-        ORDER BY substr(date,1,19) DESC,created_at DESC,id DESC LIMIT 1`, [BLANK_COUNT]);
-    const count = latest?.details ? readBlankCount(JSON.parse(latest.details)) : null;
-    return json({ blanks: latest && count ? { ...count, countedAt: latest.date } : null });
+// Blank shirts on the shelf (owner requests, November 11 and 13, 2026): the newest count, which the owner
+// and the print staff both enter. Staff get the board, its note, when it was saved and the name of who
+// counted it, never an email, plus the shop's shirt colors to count with.
+const NEWEST_COUNT = `SELECT id FROM transactions WHERE type='${BLANK_COUNT}' ORDER BY ${historyOrder()} LIMIT 1`;
+async function getBlanks(db: D1Database, member: Member): Promise<Response> {
+    const [counts, colorRows, productRows] = await db.batch<{ id?: string; type?: string; date?: string; details: string | null }>([
+        statement(db, `SELECT id,date,details FROM transactions WHERE id=(${NEWEST_COUNT})`),
+        statement(db, `SELECT type,details FROM transactions WHERE type IN ('define_color','delete_color')
+            AND json_type(details,'$.name')='text' ORDER BY ${historyOrder()}`),
+        statement(db, `SELECT type,json_object('name',json_extract(details,'$.name'),'linkedColor',json_extract(details,'$.linkedColor'),
+            'category',json_extract(details,'$.category')) AS details FROM transactions WHERE type IN ('define_product','delete_product')
+            AND json_type(details,'$.name')='text' ORDER BY ${historyOrder()}`)
+    ]);
+    const parsed = (result: typeof counts) => (result?.results ?? []).map(row => ({ type: row.type, details: row.details === null ? null : JSON.parse(row.details) }));
+    const colors = reconstructColors(parsed(colorRows)).map(color => ({ name: color.name, hex: blankHex(color.hex) }));
+    const latest = counts?.results[0];
+    const details = latest?.details ? JSON.parse(latest.details) : null;
+    const board = details ? readBlankCount(details) : null;
+    return json({
+        blanks: latest && board ? { ...board, id: latest.id, countedAt: latest.date, countedBy: countedByName(details),
+            byYou: details.createdBy === member.email } : null,
+        colors, suggested: suggestedBlankColors(reconstructProducts(parsed(productRows)), colors)
+    });
+}
+
+// One save path for the owner and the print staff. `basedOn` is the count the person started from (null
+// for a first count): if anyone saved a newer one meanwhile, nothing is saved and the app shows them it.
+async function saveBlanks(db: D1Database, member: Member, body: Row, requestId: string, hash: string): Promise<Response> {
+    fields(body, ['rows', 'basedOn', 'requestId'], ['note']);
+    const board = readBlankCount({ rows: body.rows, note: body.note });
+    if (!board) {
+        fail(`A blank shirt count lists 1 to ${MAX_BLANK_COLORS} colors, each once, with a whole number from 0 to 100,000 for each size XS to 2XL, and a note of up to 200 characters.`);
+    }
+    if (body.basedOn !== null && (typeof body.basedOn !== 'string' || !UUID.test(body.basedOn))) fail('Reload the blank shirt count, then save yours again.');
+    const basedOn = body.basedOn === null ? null : (body.basedOn as string).toLowerCase();
+    const countedBy = member.role === 'owner' ? 'Owner' : (await operators(db, member.id))[0]?.name ?? 'Print operator';
+    const id = crypto.randomUUID();
+    const details = canonical({
+        rows: board.rows, ...(board.note ? { note: board.note } : {}), countedBy, createdBy: member.email, userRole: member.role
+    });
+    const writes = [
+        guard(db, 'conflict', `(${NEWEST_COUNT}) IS ?`, [basedOn]),
+        // Stamped at least a millisecond after the count it replaces, so the new count always lists first.
+        statement(db, `INSERT INTO transactions(id,type,category,amount,date,description,details)
+            VALUES (?,'${BLANK_COUNT}','stock','0',max(${now},coalesce(strftime('%Y-%m-%dT%H:%M:%fZ',
+                (SELECT date FROM transactions WHERE id=(${NEWEST_COUNT})),'+0.001 seconds'),'')),'Blank shirt count',?)`, [id, details]),
+        guard(db, 'write', 'changes()=1')
+    ];
+    return mutation(db, member, requestId, hash, writes, "SELECT json_object('id',id,'countedAt',date) FROM transactions WHERE id=?", [id],
+        'A newer blank shirt count was saved while you had yours open. Nothing was saved; check it, then save yours again.');
 }
 
 export async function handleProductionRequest(request: Request, env: AppEnv, member: Member): Promise<Response | null> {
@@ -980,14 +1024,16 @@ export async function handleProductionRequest(request: Request, env: AppEnv, mem
     const memberMutation = memberPath && ((request.method === 'POST' && !memberPath[1]) || (request.method === 'PATCH' && memberPath[1]));
     if (!url.pathname.startsWith('/api/production/') && !memberMutation) return null;
     if (env.PRINT_QUEUE_ENABLED !== 'true') fail('Print production is not enabled.', 'not_found', 404);
-    const ownerOnly = !!memberMutation || url.pathname === '/api/production/sources' || request.method === 'POST' && !url.pathname.endsWith('/progress');
+    // Print staff may record their own progress and the blank shirt count; every other change is the owner's.
+    const staffPost = url.pathname.endsWith('/progress') || url.pathname === '/api/production/blanks';
+    const ownerOnly = !!memberMutation || url.pathname === '/api/production/sources' || request.method === 'POST' && !staffPost;
     await activeActor(env.DB, member, ownerOnly);
     if (request.method === 'GET') {
         if (url.pathname === '/api/production/jobs') return getJobs(env.DB, member, url, env.GUEST_TOKEN_SECRET);
         if (url.pathname === '/api/production/sources') return getSources(env.DB, url);
         if (url.pathname === '/api/production/wallet') return getWallet(env.DB, member, url);
         if (url.pathname === '/api/production/history') return getHistory(env.DB, member, url);
-        if (url.pathname === '/api/production/blanks') return getBlanks(env.DB);
+        if (url.pathname === '/api/production/blanks') return getBlanks(env.DB, member);
     }
     if (request.method !== 'POST' && !memberMutation) fail('This print route does not exist.', 'not_found', 404);
     const input = await readJson(request, 16384);
@@ -1005,6 +1051,7 @@ export async function handleProductionRequest(request: Request, env: AppEnv, mem
     }
     const saved = await receipt(env.DB, member, requestId, hash);
     if (saved) return json(saved);
+    if (url.pathname === '/api/production/blanks') return saveBlanks(env.DB, member, input, requestId, hash);
     if (memberMutation) return changeMember(env.DB, member, memberPath?.[1], input, requestId, hash);
     const payoutReceipt = /^\/api\/production\/payouts\/([0-9a-f-]{36})\/receipt$/i.exec(url.pathname);
     if (payoutReceipt) return attachReceipt(env.DB, env.MEDIA, member, payoutReceipt[1]!.toLowerCase(), input, requestId, hash);

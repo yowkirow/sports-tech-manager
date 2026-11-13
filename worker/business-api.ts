@@ -4,7 +4,7 @@ import { HttpError } from './errors.ts';
 import { isObject, json, readJson } from './http.ts';
 import { saveResellerOrderChanges } from './reseller-order-store.ts';
 import {
-    canonical, decimal, detailsOrderId, OrderStoreError, PRODUCTION_READY_CONDITION, saveOrderChanges, timestamp
+    canonical, decimal, detailsOrderId, historyOrder, OrderStoreError, PRODUCTION_READY_CONDITION, saveOrderChanges, timestamp
 } from './order-store.ts';
 import { background, savesShipped, sendOrderReceived, sendShippedEmail, sendTestEmail } from './notifications.ts';
 import type { Background } from './notifications.ts';
@@ -12,7 +12,7 @@ import { normalizeCustomerEmail } from '../src/lib/customerEmail.js';
 import { ballShippingTiers } from '../src/lib/shippingRates.js';
 import { isStaffPayExpense } from '../src/lib/staffPay.js';
 import { firstChargeProblem, manilaToday, readSubscription, RECURRING_EXPENSE } from '../src/lib/recurringExpenses.js';
-import { BLANK_COUNT, MAX_BLANK_COLORS, readBlankCount } from '../src/lib/blankCounts.js';
+import { BLANK_COUNT } from '../src/lib/blankCounts.js';
 import { recordDueCharges } from './recurring-expenses.ts';
 
 type Bind = string | number | null;
@@ -21,15 +21,12 @@ type Role = Member['role'];
 const BUSINESS: Role[] = ['owner', 'reseller'];
 const ALL_ROLES: Role[] = [...BUSINESS, 'print_operator'];
 const CATALOG = ['define_product', 'delete_product', 'define_brand', 'delete_brand', 'define_color', 'delete_color'];
-const TYPES = new Set([...CATALOG, 'sale', 'expense', 'update_stock', 'club_income', 'voucher', 'shipping_rates', RECURRING_EXPENSE, BLANK_COUNT]);
+const TYPES = new Set([...CATALOG, 'sale', 'expense', 'update_stock', 'club_income', 'voucher', 'shipping_rates', RECURRING_EXPENSE]);
 const UUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
 const encoder = new TextEncoder();
 const REVISION = '(SELECT revision FROM system_state WHERE singleton = 1)';
 const REPLAY = 'EXISTS (SELECT 1 FROM mutation_receipts WHERE actor_id = ? AND request_id = ?)';
 const ACTIVE = 'EXISTS (SELECT 1 FROM members WHERE id = ? AND email = ? AND role = ? AND active = 1)';
-const historyOrder = (prefix = '') => `substr(${prefix}date, 1, 19) DESC,
-    substr((CASE WHEN length(${prefix}date) > 20 THEN substr(${prefix}date, 21, length(${prefix}date) - 21)
-        ELSE '' END) || '000000000', 1, 9) DESC, ${prefix}id DESC`;
 
 function invalid(message: string): never {
     throw new HttpError(400, 'validation_error', message);
@@ -119,16 +116,6 @@ function checkRecurringReference(type: string, details: unknown, stored: unknown
     if (['recurringId', 'recurringDate'].some(key => Object.hasOwn(details, key) && details[key] !== kept[key])) {
         invalid('Subscription charges are recorded automatically on their day.');
     }
-}
-
-// Blank shirts on the shelf (src/lib/blankCounts.js): print staff read the newest count, so it must
-// hold together as written. A count is never edited; the owner enters a new one.
-function checkBlankCount(details: unknown, amount: unknown): void {
-    fields(details, ['rows'], ['note']);
-    if (!readBlankCount(details)) {
-        invalid(`A blank shirt count lists 1 to ${MAX_BLANK_COLORS} colors, each once, with a whole number from 0 to 100,000 for each size XS to 2XL, and a note of up to 200 characters.`);
-    }
-    if (money(amount) !== '0') invalid('A blank shirt count carries no amount.');
 }
 
 function allow(member: Member, roles: Role[]): void {
@@ -358,6 +345,9 @@ function newRows(input: unknown, member: Member): NewRow[] {
         if (ids.has(id)) invalid('Duplicate transaction IDs.');
         ids.add(id);
         const type = text(row.type, 'type', 64);
+        // Owner and print staff save counts through /api/production/blanks, which checks that nobody saved
+        // a newer one meanwhile (production-api.ts saveBlanks).
+        if (type === BLANK_COUNT) invalid('Blank shirt counts save from the Blank shirts screen. Reload the app, then save the count again.');
         if (!TYPES.has(type)) invalid('Unsupported transaction type.');
         if (member.role === 'reseller' && type !== 'sale') {
             throw new HttpError(403, 'forbidden', 'Resellers may only submit their own POS orders.');
@@ -365,7 +355,6 @@ function newRows(input: unknown, member: Member): NewRow[] {
         if (row.details != null && !isObject(row.details)) invalid('Transaction details must be an object or null.');
         if (type === 'shipping_rates') checkShippingRates(row.details, row.amount);
         if (type === RECURRING_EXPENSE) checkSubscription(row.details, row.amount);
-        if (type === BLANK_COUNT) checkBlankCount(row.details, row.amount);
         checkPayoutReference(type, row.details);
         checkRecurringReference(type, row.details);
         const details = row.details == null && type !== 'sale' ? null : {

@@ -156,7 +156,7 @@ export default function PrintQueue({ userRole }) {
     const plural = (count, word) => `${count} ${word}${count === 1 ? '' : 's'}`;
     return <section className="production" aria-label="Employee print queue">
         <ProductionHeader title="Print queue" subtitle={view === 'history' ? 'Your prints, the owner’s checks and your payouts.'
-            : view === 'blanks' ? 'Blank shirts on the shelf, as the owner last counted them.' : 'Only jobs assigned and released to you appear here.'}
+            : view === 'blanks' ? 'Blank shirts on the shelf, from the latest count.' : 'Only jobs assigned and released to you appear here.'}
             loading={data.loading || history.loading || blanks.loading} onReload={reloadAll} />
         {showWallet && <ViewTabs view={view} onChange={setView} />}
         {!data.online && <ProductionNotice error>You are offline. Notes stay on this screen. Reconnect and reload before saving.</ProductionNotice>}
@@ -197,7 +197,7 @@ export default function PrintQueue({ userRole }) {
             </>}
         </div>
         {showWallet && <div role="tabpanel" id="print-panel-blanks" aria-labelledby="print-tab-blanks" hidden={view !== 'blanks'}>
-            {view === 'blanks' && <PrintBlanks blanks={blanks} />}
+            {view === 'blanks' && <PrintBlanks blanks={blanks} online={data.online} />}
         </div>}
         {showWallet && <div role="tabpanel" id="print-panel-history" aria-labelledby="print-tab-history" hidden={view !== 'history'}>
             {view === 'history' && <PrintHistory history={history} wallet={wallet.wallet} online={data.online} />}

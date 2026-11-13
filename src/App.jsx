@@ -489,7 +489,7 @@ function ManagementApp({ session, onProfileChange, onLock }) {
 
                             {isOwner && activeTab === 'blanks' && (
                                 <div className="animate-fade-in">
-                                    <BlankShirts transactions={transactions} onAddTransaction={addToServer} />
+                                    <BlankShirts transactions={transactions} onChanged={refetch} userEmail={session.user.email} />
                                 </div>
                             )}
 

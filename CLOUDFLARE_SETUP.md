@@ -289,22 +289,32 @@ and each charge goes into Expenses on its day without being entered by hand.
 
 ## Blank shirt count
 
-Owner request (November 11, 2026): "Add a dashboard for the actual number of blank shirts (I'll
-input it), also the print staff can see it." Under Stock › Blank shirts the owner enters the
-blank shirts on the shelf by color and size (XS to 2XL), and the print staff see the same board,
-read only, under Blanks on `/print`. `src/lib/blankCounts.js` holds the rules; the app and the
-Worker both use it.
+Owner requests (November 11 and 13, 2026): "Add a dashboard for the actual number of blank
+shirts (I'll input it), also the print staff can see it", then "the print staff can input stocks
+as well." Under Stock › Blank shirts the owner enters the blank shirts on the shelf by color and
+size (XS to 2XL); the print staff see and update the same board under Blanks on `/print`.
+`src/lib/blankCounts.js` holds the rules; the app and the Worker both use it.
 
 - **Storage**: each save is a `blank_count` transaction holding the whole board:
   `details.rows` lists `{ color, hex, sizes: { XS, S, M, L, XL, 2XL } }`, with an optional
-  `details.note`. The newest count is the board. Only the owner can write one, and
-  `POST /api/transactions` refuses it unless it reads back whole: 1 to 60 colors, each once,
-  a whole number from 0 to 100,000 for every size, a note of up to 200 characters, and no
-  amount. A count is never edited (`PATCH` is refused); deleting the newest brings back the
-  one before it.
-- **Print staff**: `GET /api/production/blanks` (the owner or an active print operator, with the
-  print queue on) returns `{ blanks: { rows, note, countedAt } | null }`: only the board, its
-  note and when it was saved, never who saved it.
+  `details.note`, plus `countedBy` (the name the board shows: "Owner", or the print operator's
+  profile name), `createdBy` (the saver's email) and `userRole`. The newest count, in the
+  transaction feed's order, is the board. A count is never edited (`PATCH` is refused);
+  deleting the newest brings back the one before it.
+- **Saving**: the owner and active print operators save through `POST /api/production/blanks`
+  (print queue on) with `{ rows, note?, basedOn, requestId }`. The Worker reads the board back
+  whole (1 to 60 colors, each once, a whole number from 0 to 100,000 for every size, a note of
+  up to 200 characters) and sets who counted and when itself. `basedOn` is the id of the count
+  the person started from (`null` for a first count): if it is no longer the newest (someone
+  saved a newer one, or it was deleted), nothing is written and it answers
+  `409 production_conflict`; the app reloads the board and says what changed, offering "Replace
+  with my count" when someone saved a newer one. A new count is stamped at least a millisecond
+  after the one it replaces, so it always lists first. The same `requestId` replays the first save.
+  `POST /api/transactions` refuses `blank_count` rows.
+- **Reading**: `GET /api/production/blanks` returns `{ blanks: { rows, note, id, countedAt,
+  countedBy, byYou } | null, colors, suggested }`: the board, the shop's colors and, for a first
+  count, the colors the shop's shirts use (most-used first). Never an email. The owner's screen
+  reads the same records from the transaction feed.
 - **Separate from Inventory**: Inventory still works blank shirts out from what was bought and
   sold. A count changes neither Inventory nor the shop's stock nor any money total. No
   migration.

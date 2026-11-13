@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useRef, useState } from 'react';
 import { api, apiRequest } from '../../lib/apiClient.js';
-import { readBlankCount } from '../../lib/blankCounts.js';
+import { readCountColors, readSavedBlankCount } from '../../lib/blankCounts.js';
 import { newProductionRequest, productionError } from '../../lib/production.js';
 import { prepareReceiptImage } from '../../lib/receiptImage.js';
 import { useToast } from '../ui/Toast.jsx';
@@ -197,10 +197,10 @@ export function usePrintHistory({ memberId = null, enabled = true } = {}) {
     return { ...state, loading, error: failure?.error ?? null, olderFailed: !!failure?.older, load, more };
 }
 
-// The owner's newest blank shirt count (src/lib/blankCounts.js), for print staff. Loads each time the
-// Blanks tab opens, and on Reload.
+// The newest blank shirt count (src/lib/blankCounts.js) with the shop's colors to count with, for print
+// staff. Loads each time the Blanks tab opens, on Reload and after a save.
 export function useBlankCount({ enabled = true } = {}) {
-    const [state, setState] = useState({ blanks: null, loaded: false });
+    const [state, setState] = useState({ blanks: null, colors: [], suggested: [], loaded: false });
     const [loading, setLoading] = useState(false);
     const [error, setError] = useState(null);
     const generation = useRef(0);
@@ -210,12 +210,10 @@ export function useBlankCount({ enabled = true } = {}) {
         setLoading(true);
         try {
             const result = await apiRequest('/api/production/blanks');
-            const blanks = result?.blanks === null ? null : readBlankCount(result?.blanks);
-            if (result?.blanks !== null && (!blanks || typeof result.blanks.countedAt !== 'string')) {
-                throw new Error('The blank shirt count could not be verified. Reload to try again.');
-            }
+            const blanks = result?.blanks === null ? null : readSavedBlankCount(result?.blanks);
+            if (result?.blanks !== null && !blanks) throw new Error('The blank shirt count could not be verified. Reload to try again.');
             if (current !== generation.current) return;
-            setState({ blanks: blanks && { ...blanks, countedAt: result.blanks.countedAt }, loaded: true });
+            setState({ blanks, ...readCountColors(result), loaded: true });
             setError(null);
         } catch (failure) {
             if (current === generation.current) setError(failure);

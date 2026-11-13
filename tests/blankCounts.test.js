@@ -1,7 +1,8 @@
 import assert from 'node:assert/strict';
 import test from 'node:test';
 import {
-    BLANK_COUNT, blankTotals, countedWhen, currentBlankCount, readBlankCount, rowTotal, suggestedBlankColors
+    BLANK_COUNT, blankTotals, countedByName, countedWhen, currentBlankCount, readBlankCount, readCountColors, readSavedBlankCount,
+    rowTotal, suggestedBlankColors, whoCounted
 } from '../src/lib/blankCounts.js';
 
 const sizes = (patch = {}) => ({ XS: 0, S: 6, M: 8, L: 15, XL: 6, '2XL': 9, ...patch });
@@ -36,14 +37,39 @@ test('a count is a whole board: each color once, every size XS to 2XL as a whole
 test('the newest count in the feed is the board, with totals by color, by size and overall', () => {
     const feed = [
         { id: 'sale', type: 'sale', date: '2026-11-11T08:00:00Z', details: {} },
-        { id: 'new', type: BLANK_COUNT, date: '2026-11-11T07:00:00Z', details: board() },
+        { id: 'new', type: BLANK_COUNT, date: '2026-11-11T07:00:00Z',
+            details: { ...board(), countedBy: 'Sam', createdBy: 'printer@example.invalid', userRole: 'print_operator' } },
         { id: 'old', type: BLANK_COUNT, date: '2026-11-01T07:00:00Z', details: board({ rows: [{ color: 'White', sizes: sizes() }] }) }
     ];
-    const count = currentBlankCount(feed);
-    assert.equal(count.countedAt, '2026-11-11T07:00:00Z');
+    const count = currentBlankCount(feed, 'owner@example.invalid');
+    assert.deepEqual([count.id, count.countedAt, count.countedBy, count.byYou], ['new', '2026-11-11T07:00:00Z', 'Sam', false]);
+    assert.equal(currentBlankCount(feed, 'printer@example.invalid').byYou, true);
+    assert.equal(currentBlankCount(feed).byYou, false);
     assert.deepEqual(count.rows.map(row => [row.color, rowTotal(row)]), [['Black', 44], ['Kiwi', 25]]);
     assert.deepEqual(blankTotals(count.rows), { sizes: { XS: 0, S: 8, M: 16, L: 15, XL: 12, '2XL': 18 }, total: 69 });
     assert.equal(currentBlankCount([]), null);
+});
+
+test('every count names who counted it; counts saved before names were read as Owner or Print staff', () => {
+    assert.equal(countedByName({ countedBy: 'Sam', userRole: 'print_operator' }), 'Sam');
+    assert.equal(countedByName({ userRole: 'owner' }), 'Owner');
+    assert.equal(countedByName({ countedBy: ' ', userRole: 'print_operator' }), 'Print staff');
+    assert.equal(countedByName(null), 'Owner');
+    assert.deepEqual([{ countedBy: 'Sam', byYou: true }, { countedBy: 'Owner' }, { countedBy: 'Print operator' }, { countedBy: 'constructor' }]
+        .map(whoCounted), ['you', 'the owner', 'the print operator', 'constructor']);
+});
+
+test('print staff accept only a whole saved board and well-formed colors from the server', () => {
+    const saved = { ...board({ note: 'After restock' }), id: 'count-1', countedAt: '2026-11-13T01:00:00.123Z', countedBy: 'Owner', byYou: false };
+    assert.deepEqual(readSavedBlankCount(saved), { ...readBlankCount(saved), id: 'count-1', countedAt: '2026-11-13T01:00:00.123Z', countedBy: 'Owner', byYou: false });
+    for (const patch of [{ id: '' }, { countedAt: 'yesterday' }, { countedBy: '' }, { byYou: 'no' }, { rows: [] }]) {
+        assert.equal(readSavedBlankCount({ ...saved, ...patch }), null, JSON.stringify(patch));
+    }
+    assert.deepEqual(readCountColors({
+        colors: [{ name: 'Black', hex: '#000000' }, { name: 'Peach', hex: 'peach' }, { name: '' }, null],
+        suggested: [{ color: 'Black', hex: '#000000' }, { color: ' Black' }, { color: 'x'.repeat(65) }]
+    }), { colors: [{ name: 'Black', hex: '#000000' }, { name: 'Peach', hex: null }], suggested: [{ color: 'Black', hex: '#000000' }] });
+    assert.deepEqual(readCountColors({}), { colors: [], suggested: [] });
 });
 
 test('when a count was saved reads in Philippine time', () => {

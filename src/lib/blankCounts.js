@@ -1,7 +1,8 @@
-// Blank shirts on the shelf (owner request, November 2026). The owner counts the blank shirts by color
-// and size and enters them under Stock › Blank shirts; print staff see the same board on /print. Each
-// save is a `blank_count` record holding the whole board, and the newest one is the board. Inventory is
-// separate: it works blanks out from what was bought and sold, while this is what the owner counted.
+// Blank shirts on the shelf (owner request, November 2026). The owner and the print staff count the blank
+// shirts by color and size and enter them, the owner under Stock › Blank shirts and the staff on /print
+// (owner request, November 13). Each save is a `blank_count` record holding the whole board and naming who
+// counted it; the newest one is the board. Inventory is separate: it works blanks out from what was bought
+// and sold, while this is what was counted.
 export const BLANK_COUNT = 'blank_count';
 export const BLANK_SIZES = ['XS', 'S', 'M', 'L', 'XL', '2XL'];
 export const MAX_BLANK_COLORS = 60;
@@ -40,11 +41,45 @@ export function readBlankCount(details) {
     return { rows: board, note: note.trim() };
 }
 
-/** The board in force: the newest count in a newest-first transaction feed, with when it was saved. */
-export function currentBlankCount(transactions = []) {
+/** Who counted: the name saved with the count, or the role for counts saved before names were. */
+export function countedByName(details) {
+    const name = typeof details?.countedBy === 'string' ? details.countedBy.trim() : '';
+    return name || (details?.userRole === 'print_operator' ? 'Print staff' : 'Owner');
+}
+
+const ROLE_NAMES = new Map([['Owner', 'the owner'], ['Print staff', 'the print staff'], ['Print operator', 'the print operator']]);
+/** Who saved a count as a sentence reads it: "you", "the owner" or the print operator's name. */
+export const whoCounted = count => (count.byYou ? 'you' : ROLE_NAMES.get(count.countedBy) ?? count.countedBy);
+
+/**
+ * The board in force: the newest count in a newest-first transaction feed, with its ID, when it was saved
+ * and who counted it (`byYou` when that was the viewer).
+ */
+export function currentBlankCount(transactions = [], viewerEmail = null) {
     const latest = transactions.find(transaction => transaction?.type === BLANK_COUNT);
     const count = latest ? readBlankCount(latest.details) : null;
-    return count ? { ...count, countedAt: latest.date } : null;
+    return count ? {
+        ...count, id: latest.id, countedAt: latest.date, countedBy: countedByName(latest.details),
+        byYou: Boolean(viewerEmail) && latest.details?.createdBy === viewerEmail
+    } : null;
+}
+
+/** A saved board as GET /api/production/blanks sends it, or null when anything in it is off. */
+export function readSavedBlankCount(value) {
+    const board = readBlankCount(value);
+    if (!board || typeof value.id !== 'string' || !value.id || typeof value.countedAt !== 'string' || Number.isNaN(Date.parse(value.countedAt))
+        || typeof value.countedBy !== 'string' || !value.countedBy.trim() || typeof value.byYou !== 'boolean') return null;
+    return { ...board, id: value.id, countedAt: value.countedAt, countedBy: value.countedBy, byYou: value.byYou };
+}
+
+/** The catalog colors and first-count suggestions GET /api/production/blanks sends, keeping only well-formed ones. */
+export function readCountColors(value) {
+    const colors = Array.isArray(value?.colors) ? value.colors.filter(color => plain(color) && typeof color.name === 'string'
+        && color.name.trim() && color.name.length <= BLANK_COLOR_MAX).map(color => ({ name: color.name, hex: blankHex(color.hex) })) : [];
+    const suggested = Array.isArray(value?.suggested) ? value.suggested.filter(row => plain(row) && typeof row.color === 'string'
+        && row.color.trim() === row.color && row.color && row.color.length <= BLANK_COLOR_MAX && !CONTROL.test(row.color))
+        .slice(0, MAX_BLANK_COLORS).map(row => ({ color: row.color, hex: blankHex(row.hex) })) : [];
+    return { colors, suggested };
 }
 
 export const rowTotal = row => BLANK_SIZES.reduce((sum, size) => sum + row.sizes[size], 0);

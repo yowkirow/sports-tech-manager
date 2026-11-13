@@ -1,6 +1,6 @@
 import { useId } from 'react';
 import clsx from 'clsx';
-import { BLANK_SIZES, blankTotals, countedWhen, rowTotal } from '../../lib/blankCounts';
+import { BLANK_SIZES, blankTotals, countedWhen, rowTotal, whoCounted } from '../../lib/blankCounts';
 
 /** The color's catalog swatch; a dashed ring when the catalog has none. */
 export function Swatch({ hex }) {
@@ -11,8 +11,8 @@ export function Swatch({ hex }) {
 }
 
 /**
- * Blank shirts by color and size, as the owner last counted them (src/lib/blankCounts.js). The owner and
- * the print staff see the same board; only the owner's has an action.
+ * Blank shirts by color and size, as last counted (src/lib/blankCounts.js). The owner and the print staff
+ * see the same board, each with an Update action.
  */
 export default function BlankBoard({ count, title, headingLevel = 2, action = null }) {
     const titleId = useId();
@@ -31,6 +31,7 @@ export default function BlankBoard({ count, title, headingLevel = 2, action = nu
                     <p className="mt-1 text-sm text-ink-2">
                         <span className="num font-semibold text-ink">{totals.total.toLocaleString('en-PH')}</span>
                         {` ${totals.total === 1 ? 'shirt' : 'shirts'} · updated ${countedWhen(count.countedAt)}`}
+                        {count.countedBy && ` by ${whoCounted(count)}`}
                     </p>
                 </div>
                 {action}
