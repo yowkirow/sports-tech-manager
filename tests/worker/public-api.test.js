@@ -6,6 +6,7 @@ import { authorizedGuestOrder, handlePublicRequest, normalizeContact } from '../
 import worker from '../../worker/index.ts';
 import { buildPublicCatalog } from '../../src/lib/publicCatalog.js';
 import { COD_BULK_BALLS_EDIT_NOTICE, COD_BULK_BALLS_NOTICE } from '../../src/lib/codPolicy.js';
+import { LBC_UNSERVICEABLE_NOTICE } from '../../src/lib/lbcServiceability.js';
 
 const migrationDirectory = new URL('../../worker/migrations/', import.meta.url);
 const migrations = readdirSync(migrationDirectory).filter(name => name.endsWith('.sql')).sort()
@@ -84,7 +85,7 @@ function intent(overrides = {}) {
         requestId: crypto.randomUUID(),
         items: [{ productId: uid(1), name: 'Team Shirt', size: 'M', quantity: 2 }],
         customerName: 'Synthetic Customer', contactNumber: '(0917) 123-4567',
-        shippingDetails: { address: 'Test street', city: 'Test city', province: 'Metro Manila', barangay: 'Test barangay' },
+        shippingDetails: { address: 'Test street', city: 'Makati', province: 'Metro Manila', barangay: 'Test barangay', lbcDestinationCode: '1380300000' },
         region: 'MM', rush: true, paymentMode: 'COD', ...overrides
     };
 }
@@ -275,6 +276,17 @@ test('checkout recomputes shipping/rush/discount; writes canonical unpaid flat r
     assert.equal(env.DB.sqlite.prepare('SELECT count(*) AS n FROM guest_checkout_receipts').get().n, 1);
     assert.equal(env.DB.sqlite.prepare('SELECT count(*) AS n FROM _guest_checkout_guards').get().n, 0);
     await assert.rejects(placed(env, { voucherCode: 'SAVE' }), code('invalid_input'));
+});
+
+test('checkout refuses an LBC destination code that does not match the delivery address', async t => {
+    const { env } = fixture(t);
+    await assert.rejects(call(env, '/api/public/checkout', intent({
+        shippingDetails: {
+            address: 'Test street', city: 'Bontoc', province: 'Mountain Province',
+            barangay: 'Test barangay', lbcDestinationCode: '1380300000'
+        }
+    })), rejection(LBC_UNSERVICEABLE_NOTICE));
+    assert.equal(saleRows(env).length, 0);
 });
 
 test('voucher check confirms only the typed code and returns only its discount', async t => {

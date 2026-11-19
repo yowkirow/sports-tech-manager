@@ -259,6 +259,25 @@ the shop, checkout and order editing all use it.
   not from today's rates. Name, address and status edits keep the stored amounts.
   Reseller and POS orders don't pay shipping, so this doesn't apply to them.
 
+## LBC COD/COP destination coverage
+
+On November 19, 2026, the LBC rate calculator at
+https://www.lbcexpress.com/rates/ was opened with service type **COD/COP** and origin
+**NATIONAL CAPITAL REGION NCR - CITY OF MAKATI**. Its Destination selector returned 1,600
+city/municipality options. That snapshot is in `src/data/lbcCodCopDestinations.js`; it records
+the LBC selector's destination IDs and labels.
+
+- **Storefront**: `src/lib/lbcServiceability.js` maps the selected PSGC city/municipality to an
+  LBC destination ID. Unsupported selections show an error and cannot be checked out.
+- **Worker**: `POST /api/public/checkout` validates the LBC ID against the same snapshot and checks
+  that its city and province match the submitted address. Client checks alone are not trusted.
+- **Coverage limit**: LBC's selector identifies destinations by city/municipality, not barangay.
+  Some barangays within a listed municipality may still require branch pickup or another courier.
+  This check therefore prevents orders to unlisted municipalities but is not a guarantee of
+  door-to-door service to every address.
+- **Refresh**: before updating the snapshot, repeat the same service type and origin selection on
+  LBC's rate calculator, replace the snapshot, and run `node --test tests/lbcServiceability.test.js`.
+
 ## Bulk ball orders and cash on delivery
 
 Owner request (November 19, 2026): when customers order bulk balls, tell them cash on delivery
