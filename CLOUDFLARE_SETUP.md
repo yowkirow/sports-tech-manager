@@ -259,6 +259,24 @@ the shop, checkout and order editing all use it.
   not from today's rates. Name, address and status edits keep the stored amounts.
   Reseller and POS orders don't pay shipping, so this doesn't apply to them.
 
+## Bulk ball orders and cash on delivery
+
+Owner request (November 19, 2026): when customers order bulk balls, tell them cash on delivery
+isn't available. "Bulk" is 21 or more balls counted across the whole order, the same point where
+the ball bulk price starts (`BULK_BALL_QUANTITY` in `src/lib/orderPricing.js`). The one rule lives
+in `src/lib/codPolicy.js`, and the shop, checkout and order editing all use it.
+
+- **Shop**: the ball sheet always says that orders of 21 or more balls are GCash or bank only.
+  The bag repeats it once the bag reaches 21 balls, and at checkout the Cash on delivery card
+  is disabled with the same notice and the payment falls back to GCash (the receipt upload then
+  applies). Shrinking the bag brings COD back.
+- **Checkout**: `POST /api/public/checkout` refuses a COD order of 21 or more balls with
+  `invalid_input` and the notice, so the shop can't be bypassed. Other payments are unaffected.
+- **Order edits**: a customer can't grow a COD order to 21 or more balls (`/save` refuses it, and
+  the edit screen shows the notice live). An order already that size, placed before this rule, can
+  still change its name or address or shrink.
+- **Unchanged**: owner tools (POS, Orders) keep every payment mode, and ball and shipping prices.
+
 ## Subscriptions (recurring expenses)
 
 Owner request (November 11, 2026): "add a recurring expense for subscriptions". Under

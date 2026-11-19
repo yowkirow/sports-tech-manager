@@ -47,11 +47,14 @@ export const isBallProduct = (product = {}) => {
     return category === 'balls' || getItemName(product).toLowerCase().includes('ball');
 };
 
+// Where the ball's bulk prices start. It is also the order size that stops cash on delivery (src/lib/codPolicy.js).
+export const BULK_BALL_QUANTITY = 21;
+
 export const getBallUnitPrice = (quantity) => {
     const qty = toPositiveQuantity(quantity, 'Ball quantity');
     if (qty >= 100) return 70;
     if (qty >= 50) return 80;
-    if (qty >= 21) return 90;
+    if (qty >= BULK_BALL_QUANTITY) return 90;
     return 100;
 };
 

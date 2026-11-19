@@ -6,6 +6,7 @@ import { parcelTrackingUrl } from '../../lib/lbcBooking';
 import { useToast } from '../ui/Toast';
 import Logo from '../ui/Logo';
 import { getEditableOrderItems, priceOrderChanges } from '../../lib/orderEditingPure';
+import { codEditProblem } from '../../lib/codPolicy';
 
 const STATUS_STEPS = [
     { key: 'pending', label: 'Order Placed', description: 'We have received your order.' },
@@ -59,6 +60,8 @@ export default function OrderTracking() {
     const [saveError, setSaveError] = useState('');
     const editPricing = useMemo(() => {
         if (!isEditing || !editingOrder) return null;
+        const codProblem = codEditProblem(editingOrder, editItems);
+        if (codProblem) return { error: codProblem };
         try {
             return priceOrderChanges(editingOrder, editItems);
         } catch (error) {

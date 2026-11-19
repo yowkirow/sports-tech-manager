@@ -55,7 +55,9 @@ prints, not an anonymous merch store.
   the flat fee for the rest of the order, and an order of only balls pays only ball shipping; with no
   tiers set, balls ride the flat fee. Rush: ₱100 per shirt. Vouchers (fixed or percent). Payment:
   Cash on Delivery, GCash, or bank transfer; GCash/bank need a payment-proof upload against the QR
-  in `public/payment-qr.jpeg` ("verify 'Sports Tech' name before paying").
+  in `public/payment-qr.jpeg` ("verify 'Sports Tech' name before paying"). Orders of 21 or more
+  balls (the bulk price tier, counted across the order) can't be Cash on Delivery (owner request
+  2026-11-19): the shop says so on the ball sheet, in the bag and at checkout, and checkout refuses it.
 - Shipping schedule: cutoff every Thursday, shipping every Sunday.
 - Parcels go out by LBC, booked as a pickup, and LBC gives two numbers. The booking number comes
   straight away, often before the shirts are printed: the owner copies the receiver's details from
