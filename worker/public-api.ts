@@ -9,6 +9,7 @@ import { getStockKey } from '../src/lib/inventory.js';
 import { createOrderId, groupOrders } from '../src/lib/orderItems.js';
 import { getCartUnitPrice, priceOrder } from '../src/lib/orderPricing.js';
 import { ballShippingTiers, shippingFor, shippingPlan } from '../src/lib/shippingRates.js';
+import { COD_BULK_BALLS_NOTICE, codAllowed, codEditProblem } from '../src/lib/codPolicy.js';
 import { buildOrderChanges, keepStoredPrintFields } from '../src/lib/orderEditingPure.js';
 import { normalizeCustomerEmail } from '../src/lib/customerEmail.js';
 import { background, sendOrderReceived, shippedTracking } from './notifications.ts';
@@ -413,6 +414,7 @@ async function checkout(request: Request, env: AppEnv, ctx?: Background): Promis
     }
     const { catalog, revision } = await loadCatalog(env);
     const items = checkedItems(catalog, intent.items);
+    if (intent.paymentMode === 'COD' && !codAllowed(items)) failure(COD_BULK_BALLS_NOTICE);
     const voucher = checkedVoucher(catalog, intent.voucherCode);
     const plan = shippingPlan(catalog.shippingRates.balls, intent.region);
     const shipping = shippingFor(items, plan);
@@ -629,6 +631,8 @@ async function saveOrder(request: Request, env: AppEnv, key: string) {
         const nextQuantity = quantity(draft.quantity);
         return { id: draft.id, size, color, quantity: nextQuantity };
     });
+    const codProblem = codEditProblem(order, validated);
+    if (codProblem) failure(codProblem);
     const stockChanges = new Map<string, number>();
     for (const original of order.items) {
         if (original.details.category === 'shirts') continue;

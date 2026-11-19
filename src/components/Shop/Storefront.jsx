@@ -19,7 +19,8 @@ import { normalizeCustomerEmail, suggestEmailFix } from '../../lib/customerEmail
 import { getMMCities, getAllProvinces, getCitiesByProvince, getBarangays } from '../../lib/phLocations';
 import { getSizeGuideForBrand } from '../../data/sizeGuides';
 import { getStockKey } from '../../lib/inventory';
-import { getBallUnitPrice, getCartUnitPrice, isBallProduct, priceOrder } from '../../lib/orderPricing';
+import { BULK_BALL_QUANTITY, getBallUnitPrice, getCartUnitPrice, isBallProduct, priceOrder } from '../../lib/orderPricing';
+import { COD_BULK_BALLS_NOTICE, codAllowed, isBulkBallCount } from '../../lib/codPolicy';
 import { FLAT_SHIPPING, SHIPPING_REGIONS, shippingFor, shippingPlan } from '../../lib/shippingRates';
 
 const SIZES = ['XS', 'S', 'M', 'L', 'XL', '2XL'];
@@ -102,7 +103,7 @@ function Hero({ onTrack }) {
 
 const FACTS = [
     { icon: Truck, title: 'Shipping from ₱100', detail: '₱100 Metro Manila, ₱200 provincial via LBC' },
-    { icon: Wallet, title: 'GCash, bank or COD', detail: 'GCash and bank transfers need a receipt upload' },
+    { icon: Wallet, title: 'GCash, bank or COD', detail: `GCash and bank transfers need a receipt upload. No COD for ${BULK_BALL_QUANTITY}+ balls` },
     { icon: PackageSearch, title: 'Track by phone', detail: 'Check your order status with your mobile number' },
 ];
 
@@ -340,6 +341,7 @@ function ProductSheet({ product, shareUrl, getStock, ballTiers = [], onClose, on
                         <div className="mt-6">
                             <h3 id="qty-label" className="font-semibold">Select quantity</h3>
                             <p className="mt-1 text-sm text-ink-2">₱90 each from 21 pieces, ₱80 from 50, ₱70 from 100.</p>
+                            <p className={clsx('mt-1 text-sm', isBulkBallCount(quantity) ? 'font-medium text-ink' : 'text-ink-2')}>{COD_BULK_BALLS_NOTICE}</p>
                             <div role="radiogroup" aria-labelledby="qty-label" className="mt-3 grid grid-cols-3 gap-2">
                                 {BALL_QUANTITIES.map(option => (
                                     <button key={option} type="button" role="radio" aria-checked={quantity === option} onClick={() => setQuantity(option)}
@@ -374,11 +376,12 @@ function Field({ id, label, children, hint }) {
     );
 }
 
-function ChoiceCard({ name, value, checked, onChange, icon: Icon, label, detail, aside }) {
+function ChoiceCard({ name, value, checked, onChange, icon: Icon, label, detail, aside, disabled }) {
     return (
-        <label className={clsx('relative flex cursor-pointer items-center gap-3 rounded-xl border p-3.5 transition-colors has-[:focus-visible]:outline-2 has-[:focus-visible]:outline-offset-2 has-[:focus-visible]:outline-ink',
-            checked ? 'border-ink bg-white/[0.04]' : 'border-line hover:border-slate-600')}>
-            <input type="radio" name={name} value={value} checked={checked} onChange={onChange} className="sr-only" />
+        <label className={clsx('relative flex items-center gap-3 rounded-xl border p-3.5 transition-colors has-[:focus-visible]:outline-2 has-[:focus-visible]:outline-offset-2 has-[:focus-visible]:outline-ink',
+            disabled ? 'cursor-not-allowed border-line opacity-60'
+                : clsx('cursor-pointer', checked ? 'border-ink bg-white/[0.04]' : 'border-line hover:border-slate-600'))}>
+            <input type="radio" name={name} value={value} checked={checked} onChange={onChange} disabled={disabled} className="sr-only" />
             <span className={clsx('grid size-5 shrink-0 place-items-center rounded-full border-2', checked ? 'border-ink' : 'border-slate-600')} aria-hidden="true">
                 {checked && <span className="size-2.5 rounded-full bg-ink" />}
             </span>
@@ -502,7 +505,10 @@ export default function Storefront({ catalog }) {
     const [citiesList, setCitiesList] = useState([]);
     const [barangaysList, setBarangaysList] = useState([]);
 
-    const [paymentMode, setPaymentMode] = useState('COD');
+    // Orders of 21+ balls can't be cash on delivery, so a COD pick stands as GCash until the bag shrinks again.
+    const [chosenPayment, setChosenPayment] = useState('COD');
+    const codBlocked = !codAllowed(cart);
+    const paymentMode = codBlocked && chosenPayment === 'COD' ? 'Gcash' : chosenPayment;
     const [proofUrl, setProofUrl] = useState('');
     const [proofReceipt, setProofReceipt] = useState(null);
     const [uploadingProof, setUploadingProof] = useState(false);
@@ -961,7 +967,7 @@ export default function Storefront({ catalog }) {
                         <ul className="mt-3 space-y-2 text-sm text-ink-2">
                             <li>GCash</li>
                             <li>Bank transfer</li>
-                            <li>Cash on delivery</li>
+                            <li>Cash on delivery (not for {BULK_BALL_QUANTITY}+ balls)</li>
                         </ul>
                         <p className="mt-5 text-sm text-ink-2">
                             Questions? Message us on{' '}
@@ -1009,6 +1015,7 @@ export default function Storefront({ catalog }) {
                                 <span className="num text-lg font-semibold">{peso(subtotal)}</span>
                             </div>
                             <p className="text-xs text-ink-2">Shipping, rush printing and vouchers are added at checkout.</p>
+                            {codBlocked && <p className="text-xs font-medium text-ink">{COD_BULK_BALLS_NOTICE}</p>}
                             <button type="button" onClick={startCheckout} className="btn-primary h-12 w-full text-base">Checkout</button>
                         </div>
                     )}>
@@ -1173,12 +1180,17 @@ export default function Storefront({ catalog }) {
                         <section className="space-y-3" aria-labelledby="ck-payment">
                             <h3 id="ck-payment" className="section-title">Payment</h3>
                             <div role="radiogroup" aria-labelledby="ck-payment" className="grid gap-2">
-                                {PAYMENT_OPTIONS.map(option => (
-                                    <ChoiceCard key={option.value} name="payment" value={option.value} checked={paymentMode === option.value}
-                                        onChange={() => setPaymentMode(option.value)} icon={option.value === 'COD' ? Wallet : CreditCard}
-                                        label={option.label} detail={option.detail} />
-                                ))}
+                                {PAYMENT_OPTIONS.map(option => {
+                                    const unavailable = codBlocked && option.value === 'COD';
+                                    return (
+                                        <ChoiceCard key={option.value} name="payment" value={option.value} checked={paymentMode === option.value}
+                                            onChange={() => setChosenPayment(option.value)} icon={option.value === 'COD' ? Wallet : CreditCard}
+                                            label={option.label} detail={unavailable ? `Not available for ${BULK_BALL_QUANTITY} or more balls` : option.detail}
+                                            disabled={unavailable} />
+                                    );
+                                })}
                             </div>
+                            {codBlocked && <p className="text-sm text-ink-2" role="status">{COD_BULK_BALLS_NOTICE}</p>}
                             {requiresProof && (
                                 <div className="grid gap-3 sm:grid-cols-2">
                                     <div className="flex flex-col items-center rounded-xl bg-white p-4 text-center text-neutral-900">

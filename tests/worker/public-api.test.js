@@ -5,6 +5,7 @@ import { test } from 'node:test';
 import { authorizedGuestOrder, handlePublicRequest, normalizeContact } from '../../worker/public-api.ts';
 import worker from '../../worker/index.ts';
 import { buildPublicCatalog } from '../../src/lib/publicCatalog.js';
+import { COD_BULK_BALLS_EDIT_NOTICE, COD_BULK_BALLS_NOTICE } from '../../src/lib/codPolicy.js';
 
 const migrationDirectory = new URL('../../worker/migrations/', import.meta.url);
 const migrations = readdirSync(migrationDirectory).filter(name => name.endsWith('.sql')).sort()
@@ -112,6 +113,12 @@ function saleRows(env) {
 }
 async function placed(env, overrides) {
     return (await call(env, '/api/public/checkout', intent(overrides))).body;
+}
+// A GCash order with its uploaded receipt, as the shop sends it. Orders of 21+ balls can't be cash on delivery.
+async function gcash(env) {
+    const png = new Uint8Array([137, 80, 78, 71, 13, 10, 26, 10, 0, 0]);
+    const receipt = await (await handlePublicRequest(new Request('https://shop.example.invalid/api/public/receipts', { method: 'POST', body: png }), env)).json();
+    return { paymentMode: 'Gcash', receipt };
 }
 function edit(order, overrides = {}) {
     return {
@@ -386,7 +393,7 @@ test('a SQL error in a later checkout line rolls back the entire batch including
 
 test('ball tiers use established shared prices; shirts are preorder and accessories cannot oversell', async t => {
     const { env } = fixture(t);
-    assert.equal((await placed(env, { rush: true, items: [{ productId: uid(2), size: 'N/A', quantity: 100 }] })).total, 7100);
+    assert.equal((await placed(env, { ...await gcash(env), rush: true, items: [{ productId: uid(2), size: 'N/A', quantity: 100 }] })).total, 7100);
     await assert.rejects(placed(env, { items: [{ productId: uid(2), size: 'N/A', quantity: 401 }] }), code('invalid_input'));
     assert.equal((await placed(env, { rush: false, items: [{ productId: uid(1), size: 'XS', quantity: 500 }] })).total, 175100);
 });
@@ -407,7 +414,7 @@ test('owner ball shipping rates are charged by count, on top of the flat fee for
     assert.deepEqual((await call(env, '/api/public/catalog')).body.shippingRates, { balls: BALL_RATES });
 
     assert.equal((await placed(env, { rush: false, items: [ballLine(10)] })).total, 1000 + 150, 'only balls: only ball shipping');
-    const mixed = await placed(env, { rush: false, region: 'Provincial', items: [shirtLine(1), ballLine(25)] });
+    const mixed = await placed(env, { ...await gcash(env), rush: false, region: 'Provincial', items: [shirtLine(1), ballLine(25)] });
     assert.equal(mixed.total, 350 + 25 * 90 + 200 + 340, 'shirt + balls + provincial flat fee + 25-ball provincial fee');
     const mixedRows = saleRows(env).filter(row => row.order_id === mixed.orderId);
     assert.equal(mixedRows[0].details.pricing.shippingFee, 540);
@@ -425,7 +432,7 @@ test('owner ball shipping rates are charged by count, on top of the flat fee for
 test('a quantity edit reprices ball shipping from the rates the order was placed with', async t => {
     const { env } = fixture(t);
     setBallRates(env, uid(40), BALL_RATES, '2026-09-02T00:00:00.000Z');
-    const initial = await placed(env, { rush: false, items: [shirtLine(1), ballLine(10)] });
+    const initial = await placed(env, { ...await gcash(env), rush: false, items: [shirtLine(1), ballLine(10)] });
     assert.equal(initial.total, 350 + 1000 + 100 + 150);
     // The owner changes the rates afterwards; this order keeps the ones it was placed with.
     setBallRates(env, uid(41), [{ from: 1, mm: 999, provincial: 999 }], '2026-09-03T00:00:00.000Z');
@@ -445,6 +452,45 @@ test('a quantity edit reprices ball shipping from the rates the order was placed
     const renamed = await call(env, `/api/public/orders/${initial.orderId}/save`, edit(onlyBalls.body.order, { customerName: 'Synthetic Renamed' }), onlyBalls.body.token);
     assert.equal(renamed.body.order.totalAmount, 30 * 90 + 220, 'a name-only edit keeps the stored shipping');
     assert.equal(saleRows(env).find(row => row.id === balls.id).details.pricing.ballShipping.flatFee, 100);
+});
+
+test('cash on delivery is refused for 21 or more balls, alone or with shirts, and GCash is still allowed', async t => {
+    const { env } = fixture(t);
+    assert.equal((await placed(env, { rush: false, items: [shirtLine(2), ballLine(20)] })).total, 700 + 2000 + 100, '20 balls can still be cash on delivery');
+    const before = saleRows(env).length;
+    await assert.rejects(call(env, '/api/public/checkout', intent({ rush: false, items: [ballLine(21)] })), rejection(COD_BULK_BALLS_NOTICE));
+    await assert.rejects(call(env, '/api/public/checkout', intent({ rush: false, items: [shirtLine(2), ballLine(21)] })), rejection(COD_BULK_BALLS_NOTICE));
+    assert.equal(saleRows(env).length, before, 'a refused order writes nothing');
+    const paid = await placed(env, { ...await gcash(env), rush: false, items: [ballLine(21)] });
+    assert.equal(paid.total, 21 * 90 + 100);
+    assert.equal(saleRows(env).find(row => row.order_id === paid.orderId).details.paymentMode, 'Gcash');
+});
+
+test('a cash on delivery order cannot be edited up to 21 balls, but an older one that size may be changed otherwise', async t => {
+    const { env } = fixture(t);
+    const save = async (placedOrder, order, overrides) => call(env, `/api/public/orders/${placedOrder.orderId}/save`, edit(order, overrides), placedOrder.token);
+    const line = (item, quantity) => ({ id: item.id, quantity, size: item.details.size, color: item.details.color });
+
+    const small = await placed(env, { rush: false, items: [shirtLine(1), ballLine(20)] });
+    const smallOrder = (await call(env, `/api/public/orders/${small.orderId}`, undefined, small.token)).body.order;
+    const [shirt, balls] = ['shirts', 'balls'].map(category => smallOrder.items.find(item => item.details.category === category));
+    await assert.rejects(save(small, smallOrder, { items: [line(shirt, 1), line(balls, 21)] }), rejection(COD_BULK_BALLS_EDIT_NOTICE));
+    const shirts = await save(small, smallOrder, { items: [line(shirt, 3), line(balls, 20)] });
+    assert.equal(shirts.status, 200, 'more shirts are fine');
+    const fewer = await save(small, shirts.body.order, { items: [line(shirt, 3), line(balls, 5)] });
+    assert.equal(fewer.status, 200, 'fewer balls are fine');
+
+    // An order placed before this rule: 30 balls on cash on delivery.
+    const old = await placed(env, { ...await gcash(env), rush: false, items: [ballLine(30)] });
+    env.DB.sqlite.prepare("UPDATE transactions SET details=json_set(details,'$.paymentMode','COD') WHERE order_id=?").run(old.orderId);
+    const oldOrder = (await call(env, `/api/public/orders/${old.orderId}`, undefined, old.token)).body.order;
+    assert.equal(oldOrder.paymentMode, 'COD');
+    const oldBalls = oldOrder.items[0];
+    await assert.rejects(save(old, oldOrder, { items: [line(oldBalls, 31)] }), rejection(COD_BULK_BALLS_EDIT_NOTICE));
+    const renamed = await save(old, oldOrder, { customerName: 'Synthetic Renamed' });
+    assert.equal(renamed.status, 200, 'a name-only edit still works');
+    const smaller = await save(old, renamed.body.order, { items: [line(oldBalls, 25)] });
+    assert.equal(smaller.status, 200, 'it can shrink but stay over 20');
 });
 
 test('tracking verifies full normalized contact before returning only the scoped order', async t => {
