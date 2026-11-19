@@ -10,6 +10,7 @@ import { createOrderId, groupOrders } from '../src/lib/orderItems.js';
 import { getCartUnitPrice, priceOrder } from '../src/lib/orderPricing.js';
 import { ballShippingTiers, shippingFor, shippingPlan } from '../src/lib/shippingRates.js';
 import { COD_BULK_BALLS_NOTICE, codAllowed, codEditProblem } from '../src/lib/codPolicy.js';
+import { isLbcDestinationSupported, LBC_UNSERVICEABLE_NOTICE } from '../src/lib/lbcServiceability.js';
 import { buildOrderChanges, keepStoredPrintFields } from '../src/lib/orderEditingPure.js';
 import { normalizeCustomerEmail } from '../src/lib/customerEmail.js';
 import { background, sendOrderReceived, shippedTracking } from './notifications.ts';
@@ -307,8 +308,17 @@ async function checkVoucher(request: Request, env: AppEnv): Promise<Response> {
     return json({ voucher: { code: voucher.code, discountType: voucher.discountType, value: Number(voucher.value) } });
 }
 function address(value: unknown, optional = false): RecordData {
-    fields(value, ['address', 'city', 'province', 'barangay']);
-    return Object.fromEntries(['address', 'city', 'province', 'barangay'].map(key => [key, text(value[key], key, key === 'address' ? 300 : 100, !optional)]));
+    const allowed = ['address', 'city', 'province', 'barangay'];
+    if (!optional) allowed.push('lbcDestinationCode');
+    fields(value, allowed);
+    const result = Object.fromEntries(['address', 'city', 'province', 'barangay']
+        .map(key => [key, text(value[key], key, key === 'address' ? 300 : 100, !optional)]));
+    if (!optional) {
+        const code = text(value.lbcDestinationCode, 'LBC destination code', 20);
+        if (!isLbcDestinationSupported(code, result.province, result.city)) failure(LBC_UNSERVICEABLE_NOTICE);
+        result.lbcDestinationCode = code;
+    }
+    return result;
 }
 function checkedVoucher(catalog: Catalog, code: unknown) {
     if (code == null || code === '') return null;

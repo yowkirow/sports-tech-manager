@@ -87,7 +87,7 @@ function cart(overrides = {}) {
     return {
         requestId: crypto.randomUUID(), items: [{ productId: uid(1), name: 'Team Shirt', size: 'M', quantity: 2 }],
         customerName: 'Juan <b>Dela</b> Cruz', contactNumber: '0917 123 4567',
-        shippingDetails: { address: '12 Rizal St.', city: 'Quezon City', province: 'Metro Manila', barangay: 'Barangay Uno' },
+        shippingDetails: { address: '12 Rizal St.', city: 'Quezon City', province: 'Metro Manila', barangay: 'Barangay Uno', lbcDestinationCode: '1381300000' },
         region: 'MM', rush: false, paymentMode: 'COD', ...overrides
     };
 }

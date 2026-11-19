@@ -21,6 +21,7 @@ import { getSizeGuideForBrand } from '../../data/sizeGuides';
 import { getStockKey } from '../../lib/inventory';
 import { BULK_BALL_QUANTITY, getBallUnitPrice, getCartUnitPrice, isBallProduct, priceOrder } from '../../lib/orderPricing';
 import { COD_BULK_BALLS_NOTICE, codAllowed, isBulkBallCount } from '../../lib/codPolicy';
+import { getLbcDestinationCode, LBC_UNSERVICEABLE_NOTICE } from '../../lib/lbcServiceability';
 import { FLAT_SHIPPING, SHIPPING_REGIONS, shippingFor, shippingPlan } from '../../lib/shippingRates';
 
 const SIZES = ['XS', 'S', 'M', 'L', 'XL', '2XL'];
@@ -669,6 +670,8 @@ export default function Storefront({ catalog }) {
     const shippingByRegion = useMemo(() => Object.fromEntries(SHIPPING_REGIONS.map(region => [region, shippingFor(cart, shippingPlan(ballTiers, region))])),
         [cart, ballTiers]);
     const shipping = shippingByRegion[shippingRegion];
+    const selectedCity = citiesList.find(item => item.code === cityCode);
+    const lbcDestinationCode = getLbcDestinationCode(selectedCity, province);
     const pricingOptions = useMemo(() => ({
         discount: appliedVoucher ? { type: appliedVoucher.discountType, value: Number(appliedVoucher.value) } : null,
         shippingFee: shipping.total,
@@ -753,6 +756,7 @@ export default function Storefront({ catalog }) {
         const email = normalizeCustomerEmail(customerEmail);
         if (email === null) return showToast('Check your email address, or leave it blank.', 'error');
         if (!shippingAddress || !city || (shippingRegion === 'Provincial' && !province) || !barangay) return showToast('Please complete shipping details', 'error');
+        if (!lbcDestinationCode) return showToast(LBC_UNSERVICEABLE_NOTICE, 'error');
 
         const customerName = `${firstName.trim()} ${lastName.trim()}`;
 
@@ -770,7 +774,7 @@ export default function Storefront({ catalog }) {
                     color: item.linkedColor || 'Varied', quantity: item.quantity
                 })),
                 customerName, contactNumber, ...(email ? { customerEmail: email } : {}),
-                shippingDetails: { address: shippingAddress, city, province, barangay },
+                shippingDetails: { address: shippingAddress, city, province, barangay, lbcDestinationCode },
                 region: shippingRegion, rush: isRushOrder, voucherCode: appliedVoucher?.code || null, paymentMode,
                 ...(requiresProof ? { receipt: proofReceipt } : {})
             };
@@ -1082,7 +1086,7 @@ export default function Storefront({ catalog }) {
                                 <span className="font-semibold">Total</span>
                                 <span className="num text-2xl font-bold">{peso(cartPricing.total)}</span>
                             </div>
-                            <button type="button" onClick={handleCheckout} disabled={cart.length === 0 || checkoutLoading || uploadingProof}
+                            <button type="button" onClick={handleCheckout} disabled={cart.length === 0 || checkoutLoading || uploadingProof || (!!cityCode && !lbcDestinationCode)}
                                 className="btn-primary h-12 w-full text-base">
                                 {checkoutLoading ? <><Loader2 size={18} className="animate-spin" aria-hidden="true" /> Placing order…</> : 'Place order'}
                             </button>
@@ -1151,6 +1155,11 @@ export default function Storefront({ catalog }) {
                                     </select>
                                 </Field>
                             </div>
+                            {cityCode && !lbcDestinationCode && (
+                                <p role="alert" className="rounded-xl border border-red-500/40 bg-red-500/10 p-3 text-sm text-red-200">
+                                    {LBC_UNSERVICEABLE_NOTICE}
+                                </p>
+                            )}
                             <Field id="ck-street" label="Street address">
                                 <input id="ck-street" className="field" autoComplete="street-address" placeholder="House no., street, building" required value={shippingAddress} onChange={e => setShippingAddress(e.target.value)} />
                             </Field>
@@ -1163,6 +1172,7 @@ export default function Storefront({ catalog }) {
                                 {shipping.ballCount > 0 && <p className="mt-1 text-ink-2">Balls ship at their own rate, set by how many you order.</p>}
                                 <p className="mt-1 text-ink-2">Cutoff every Thursday. Shipping day every Sunday.</p>
                                 <p className="mt-1 text-ink-2">For other couriers (J&amp;T, Lalamove), buyer shoulders the cost.</p>
+                                <p className="mt-1 text-ink-2">LBC lists destinations by city or municipality; some barangays may still require branch pickup or another courier.</p>
                             </div>
                         </section>
 

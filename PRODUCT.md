@@ -49,7 +49,7 @@ prints, not an anonymous merch store.
 
 ## Operating Context
 
-- Storefront checkout is server-priced. Shipping: ₱100 Metro Manila, ₱200 provincial (LBC standard;
+- Storefront checkout is server-priced. Shipping: ₱100 Metro Manila, ₱200 provincial (LBC;
   other couriers at buyer's cost). Balls can ship at their own rate (owner request 2026-11-10): the
   owner sets tiers by ball count for each area in Settings › Ball shipping. Ball shipping is added to
   the flat fee for the rest of the order, and an order of only balls pays only ball shipping; with no
@@ -58,6 +58,10 @@ prints, not an anonymous merch store.
   in `public/payment-qr.jpeg` ("verify 'Sports Tech' name before paying"). Orders of 21 or more
   balls (the bulk price tier, counted across the order) can't be Cash on Delivery (owner request
   2026-11-19): the shop says so on the ball sheet, in the bag and at checkout, and checkout refuses it.
+- The shop checks its city/municipality against the LBC COD/COP destination options from Makati
+  (snapshot in `src/data/lbcCodCopDestinations.js`, retrieved 2026-11-19). Checkout refuses
+  destinations absent from that list. LBC's selector is city/municipality-level; it does not confirm
+  every barangay is serviceable.
 - Shipping schedule: cutoff every Thursday, shipping every Sunday.
 - Parcels go out by LBC, booked as a pickup, and LBC gives two numbers. The booking number comes
   straight away, often before the shirts are printed: the owner copies the receiver's details from
