@@ -80,6 +80,10 @@ prints, not an anonymous merch store.
   receive it.
 - Order tracking is contact-verified: the customer's mobile number unlocks `/track/:id`; pending
   orders can be modified by the customer, and shipped orders show LBC's tracking number.
+- The public return policy tells customers how to photograph a shirt flat with a tape measure for
+  a sizing discrepancy and what to show for damage, a print defect or a wrong item. Customers send
+  their order number and evidence privately through the shop's Facebook or Instagram inbox, not
+  through checkout's payment-receipt upload. The FAQ covers sizing, returns, payment, shipping and tracking.
 - Product links (owner request 2026-11-05): every product has its own link,
   sportstechph.store/p/<design>, that opens it in the shop. Shared in Messenger or Facebook, the link
   shows the product's photo, name and price. The shop's own link shows a share card. The product
@@ -110,7 +114,8 @@ prints, not an anonymous merch store.
   must stay lazy.
 - Pricing, inventory, permissions and order-save payloads are owned by the Worker and must not
   change from UI work.
-- Routes: `/` storefront, `/privacy` privacy and cookies notice, `/track/:id` tracking, `/admin`
+- Routes: `/` storefront, `/returns` return policy, `/faq` frequently asked questions,
+  `/privacy` privacy and cookies notice, `/track/:id` tracking, `/admin`
   staff workspace, `/print` print queue.
 - Currency is Philippine peso (₱) throughout.
 - Undecided: product photography standards (catalog images are whatever the owner uploads).

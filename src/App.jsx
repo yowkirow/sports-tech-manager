@@ -32,6 +32,7 @@ const PinGate = lazy(() => import('./components/Auth/PinGate'));
 const ProfileSettings = lazy(() => import('./components/Settings/ProfileSettings'));
 const OrderTracking = lazy(() => import('./components/Shop/OrderTracking'));
 const PrivacyNotice = lazy(() => import('./components/Shop/PrivacyNotice'));
+const ShopHelp = lazy(() => import('./components/Shop/ShopHelp'));
 const PrintQueue = lazy(() => import('./components/Production/PrintQueue'));
 const ProductionManager = lazy(() => import('./components/Production/ProductionManager'));
 const printQueueEnabled = import.meta.env.VITE_PRINT_QUEUE_ENABLED === 'true';
@@ -600,6 +601,7 @@ export default function AppLoader() {
     const isPrintPath = /^\/print(?:\/|$)/.test(path);
     const isTrackPath = /^\/track(?:\/|$)/.test(path);
     const isPrivacyPath = /^\/privacy\/?$/.test(path);
+    const helpPage = /^\/(returns|faq)\/?$/.exec(path)?.[1];
     React.useEffect(() => {
         if (isInstalledApp() && path === '/') window.location.replace('/admin');
     }, [path]);
@@ -616,7 +618,7 @@ export default function AppLoader() {
         document.head.appendChild(referrer);
     }, [isTrackPath, isAdminPath, isPrintPath]);
     return <Suspense fallback={<LoadingState />}>
-        {isTrackPath ? <OrderTracking /> : isPrivacyPath ? <PrivacyNotice />
+        {isTrackPath ? <OrderTracking /> : isPrivacyPath ? <PrivacyNotice /> : helpPage ? <ShopHelp page={helpPage} />
             : isAdminPath || isPrintPath ? <ProtectedWorkspace printPath={isPrintPath} /> : <PublicStore />}
     </Suspense>;
 }
