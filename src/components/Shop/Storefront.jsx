@@ -15,6 +15,7 @@ import Dialog from '../ui/Dialog';
 import EmailFixHint from '../ui/EmailFixHint';
 import Logo from '../ui/Logo';
 import PixelNotice from './PixelNotice';
+import { ShopContactLinks, ShopInfoLinks } from './ShopLinks';
 import { normalizeCustomerEmail, suggestEmailFix } from '../../lib/customerEmail';
 import { getMMCities, getAllProvinces, getCitiesByProvince, getBarangays } from '../../lib/phLocations';
 import { getSizeGuideForBrand } from '../../data/sizeGuides';
@@ -897,9 +898,7 @@ export default function Storefront({ catalog }) {
                             Place another order
                         </button>
                     </div>
-                    <p className="mt-10 border-t border-line pt-2">
-                        <a href="/privacy" className="inline-flex min-h-11 items-center text-sm text-ink-2 underline hover:text-ink">Privacy &amp; cookies</a>
-                    </p>
+                    <div className="mt-10 border-t border-line pt-2"><ShopInfoLinks /></div>
                 </main>
             </div>
         );
@@ -974,16 +973,14 @@ export default function Storefront({ catalog }) {
                             <li>Cash on delivery (not for {BULK_BALL_QUANTITY}+ balls)</li>
                         </ul>
                         <p className="mt-5 text-sm text-ink-2">
-                            Questions? Message us on{' '}
-                            <a href="https://facebook.com/sportstech.fb" target="_blank" rel="noreferrer" className="font-semibold text-ink underline">Facebook</a> or{' '}
-                            <a href="https://instagram.com/sportstech.ig" target="_blank" rel="noreferrer" className="font-semibold text-ink underline">Instagram</a>.
+                            Questions? Message us on <ShopContactLinks />.
                         </p>
                     </div>
                 </div>
                 <div className="border-t border-line">
                     <div className="mx-auto flex max-w-7xl flex-wrap items-center justify-between gap-x-6 px-4 py-2 sm:px-6 lg:px-8">
                         <p className="py-3 text-xs text-ink-3">© {new Date().getFullYear()} SportsTech PH · www.sportstechph.store</p>
-                        <a href="/privacy" className="inline-flex min-h-11 items-center text-sm text-ink-2 underline hover:text-ink">Privacy &amp; cookies</a>
+                        <ShopInfoLinks />
                     </div>
                 </div>
             </footer>
@@ -1287,6 +1284,9 @@ export default function Storefront({ catalog }) {
                             {appliedVoucher && discountAmount > 0 && (
                                 <p className="mt-3 text-sm font-semibold text-emerald-300">You're saving {peso(discountAmount)}</p>
                             )}
+                            <a href="/returns" target="_blank" rel="noreferrer" className="mt-2 inline-flex min-h-11 items-center gap-1.5 text-sm text-ink-2 underline hover:text-ink">
+                                Return policy <ExternalLink size={14} aria-hidden="true" /><span className="sr-only"> (opens in a new tab)</span>
+                            </a>
                         </section>
                     </form>
                 </Dialog>

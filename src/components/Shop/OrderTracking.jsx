@@ -7,6 +7,7 @@ import { useToast } from '../ui/Toast';
 import Logo from '../ui/Logo';
 import { getEditableOrderItems, priceOrderChanges } from '../../lib/orderEditingPure';
 import { codEditProblem } from '../../lib/codPolicy';
+import { ShopContactLinks, ShopInfoLinks } from './ShopLinks';
 
 const STATUS_STEPS = [
     { key: 'pending', label: 'Order Placed', description: 'We have received your order.' },
@@ -30,11 +31,10 @@ function Thumb({ src }) {
 
 function ContactLine() {
     return (
-        <p className="py-10 text-center text-sm text-ink-2">
-            Questions about your order? Message us on{' '}
-            <a href="https://facebook.com/sportstech.fb" target="_blank" rel="noreferrer" className="font-semibold text-ink underline">Facebook</a> or{' '}
-            <a href="https://instagram.com/sportstech.ig" target="_blank" rel="noreferrer" className="font-semibold text-ink underline">Instagram</a>.
-        </p>
+        <footer className="flex flex-col items-center gap-2 py-10 text-center text-sm text-ink-2">
+            <p>Questions about your order? Message us on <ShopContactLinks />.</p>
+            <ShopInfoLinks />
+        </footer>
     );
 }
 
