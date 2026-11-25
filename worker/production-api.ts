@@ -281,8 +281,10 @@ async function getJobs(db: D1Database, member: Member, url: URL, secret = ''): P
     const values = owner ? (order ? [order] : []) : [member.id];
     // First in, first out: unfinished work by the date the order came in (oldest first), then
     // accepted or retired jobs. The order date is only a sort key; it is not returned to staff.
-    const result = await rows<{ payload: string; package_ref: string }>(db, `SELECT ${owner ? ownerPayload : 'p.payload'} AS payload,
-            j.order_id AS package_ref
+    const result = await rows<{ payload: string; package_ref: string; accepted_at: string | null }>(db, `SELECT ${owner ? ownerPayload : 'p.payload'} AS payload,
+            j.order_id AS package_ref, CASE WHEN j.status='completed' THEN
+                (SELECT e.created_at FROM production_events e WHERE e.job_id=j.id AND e.action='qa' AND e.accepted>0
+                 ORDER BY e.id DESC LIMIT 1) END AS accepted_at
         FROM production_jobs j JOIN production_job_public p ON p.id=j.id LEFT JOIN transactions src ON src.id=j.source_id
         WHERE ${filter} AND EXISTS(SELECT 1 FROM members WHERE id=? AND role=? AND active=1)
         ORDER BY CASE WHEN j.status IN ('completed','superseded') THEN 1 ELSE 0 END,
@@ -290,7 +292,8 @@ async function getJobs(db: D1Database, member: Member, url: URL, secret = ''): P
     [...values, member.id, member.role, offset]);
     const keyed = secret.length >= 32;
     const jobs = await Promise.all(result.slice(0, 25).map(async row => ({
-        ...JSON.parse(row.payload), ...(keyed ? { packageKey: await packageKey(secret, row.package_ref) } : {})
+        ...JSON.parse(row.payload), ...(row.accepted_at ? { acceptedAt: row.accepted_at } : {}),
+        ...(keyed ? { packageKey: await packageKey(secret, row.package_ref) } : {})
     })));
     return json({ jobs, nextOffset: result.length > 25 ? offset + 25 : null });
 }

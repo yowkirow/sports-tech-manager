@@ -222,10 +222,20 @@ export function printJobMatches(pkg, job, query) {
     return words.every(word => text.includes(word) || (squeeze(word) !== '' && squeezed.includes(squeeze(word))));
 }
 // Packages with at least one job that passes the status filter and the search, with those jobs.
-export function visiblePrintPackages(packages, filter, query) {
+export function visiblePrintPackages(packages, filter, query, acceptedSort = 'queue') {
     const shows = job => filter === 'all' || (filter === 'completed' ? job.status === 'completed' : job.status !== 'completed');
-    return packages.map(pkg => ({ ...pkg, visibleJobs: pkg.jobs.filter(job => shows(job) && printJobMatches(pkg, job, query)) }))
+    const shown = packages.map(pkg => ({ ...pkg, visibleJobs: pkg.jobs.filter(job => shows(job) && printJobMatches(pkg, job, query)) }))
         .filter(pkg => pkg.visibleJobs.length > 0);
+    if (filter !== 'completed') return shown;
+
+    // QA timestamps are UTC ISO strings. Undated jobs stay last in either direction; ties retain queue order.
+    const byDate = (a, b) => !a || !b ? Number(!a) - Number(!b)
+        : acceptedSort === 'oldest' ? a.localeCompare(b) : b.localeCompare(a);
+    for (const pkg of shown) {
+        pkg.lastAcceptedAt = pkg.visibleJobs.reduce((latest, job) => job.acceptedAt > latest ? job.acceptedAt : latest, '');
+        if (acceptedSort !== 'queue') pkg.visibleJobs.sort((a, b) => byDate(a.acceptedAt, b.acceptedAt));
+    }
+    return acceptedSort === 'queue' ? shown : shown.sort((a, b) => byDate(a.lastAcceptedAt, b.lastAcceptedAt));
 }
 // The batch payload: server-verified source references and tokens only.
 export const productionBatchLines = (candidates) => candidates.map(candidate => ({

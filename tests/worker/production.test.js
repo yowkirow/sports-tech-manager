@@ -985,8 +985,16 @@ test('jobs list first in, first out by order date for owner and staff, with acce
     assert.deepEqual((await call(f, '/jobs', undefined, printer)).jobs.map(job => job.customerName), ['ST-OLD', 'PRIVATE CUSTOMER', 'ST-MID', 'ST-NEW']);
     oldest = await progress(f, oldest, 'printed', { quantity: 1 });
     await qa(f, oldest, 1, 0);
+    const acceptedAt = f.db.sqlite.prepare("SELECT created_at FROM production_events WHERE job_id=? AND action='qa'").get(oldest.id).created_at;
+    // Later activity can push QA out of the 100 events returned with the job.
+    f.db.sqlite.prepare(`WITH RECURSIVE seq(n) AS (VALUES(1) UNION ALL SELECT n+1 FROM seq WHERE n<100)
+        INSERT INTO production_events(job_id,actor_name,action,version,created_at)
+        SELECT ?,'Owner','kept',n,'2030-01-01T00:00:00.000Z' FROM seq`).run(oldest.id);
     assert.deepEqual((await call(f)).jobs.map(job => job.orderId), ['ST-PRINT', 'ST-MID', 'ST-NEW', 'ST-OLD'], 'accepted jobs move below unfinished work');
     const staffJobs = (await call(f, '/jobs', undefined, printer)).jobs;
+    const completed = staffJobs.find(job => job.id === oldest.id);
+    assert.ok(completed.events.every(event => event.action !== 'qa'));
+    assert.equal(completed.acceptedAt, acceptedAt, 'date comes from acceptance rather than later activity');
     assert.ok(staffJobs.every(job => !('date' in job) && !('orderDate' in job)), 'the order date is a sort key only');
 });
 
