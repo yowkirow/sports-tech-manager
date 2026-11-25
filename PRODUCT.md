@@ -30,6 +30,9 @@ web
   Print staff pay) and their own history: what they
   printed, the owner's checks and each payout with the GCash or bank receipt the owner attached.
   The owner checks each customer's package once all its shirts are printed, never shirt by shirt.
+  In the print queue’s Accepted view, staff can keep queue order or sort newest or oldest first
+  by the owner’s QA acceptance time. Packages stay together and use the latest acceptance among
+  their matching jobs; dates are shown in Philippine time.
 
 ## Product Purpose
 

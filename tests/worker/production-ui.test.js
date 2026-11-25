@@ -211,6 +211,20 @@ test('print staff search matches name, booking number, design, size and job code
     assert.equal(printJobMatches(packages[0], packages[0].jobs[0], 'white'), false);
 });
 
+test('Accepted sorts matching packages by latest QA and their visible jobs by date, without changing queue order', () => {
+    const job = (id, packageKey, day, designName = 'Crest') => ({ id, packageKey, designName, status: 'completed',
+        acceptedAt: day ? `2026-11-${day}T01:00:00.000Z` : null });
+    const packages = printPackages([job('u', 'U', null), job('a1', 'A', '10'), job('b', 'B', '12'),
+        job('a2', 'A', '15', 'Stripe'), job('c', 'C', '12'), { ...job('p', 'P', null), status: 'printing' }]);
+    const order = (sort, query = '', filter = 'completed') => visiblePrintPackages(packages, filter, query, sort)
+        .map(pkg => pkg.visibleJobs.map(j => j.id).join(','));
+    assert.deepEqual(order('newest'), ['a2,a1', 'b', 'c', 'u']);
+    assert.deepEqual(order('oldest'), ['b', 'c', 'a1,a2', 'u']);
+    assert.deepEqual(order('newest', 'crest'), ['b', 'c', 'a1', 'u']);
+    assert.deepEqual(order('queue'), ['u', 'a1,a2', 'b', 'c']);
+    assert.deepEqual(order('newest', '', 'all'), ['u', 'a1,a2', 'b', 'c', 'p']);
+});
+
 test('a held job offers only what can work: keep the same shirt, replace a changed one, retire one that left the order', () => {
     const shirt = { designName: 'Club Crest Tee', brand: 'Sypik', color: 'Black', size: 'M', required: 2 };
     const job = patch => ({ id: 'job', sourceId: 'source', itemIndex: null, status: 'held', sourceChanged: true, ...shirt, ...patch });

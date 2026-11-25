@@ -717,6 +717,10 @@ selection prepares the oldest 100 and keeps the rest ticked), optionally release
 after the same artwork and blanks confirmations as a single release. Job lists for the
 owner and print staff are first in, first out: unfinished jobs by order date, oldest first,
 then accepted jobs. The order date is a sort key only; it is not returned to staff.
+In the staff queue's Accepted view, staff can instead sort by acceptance time. The jobs list
+returns `acceptedAt` on completed jobs with a positive QA event, even if that event is older
+than the job's activity preview. Packages use the latest acceptance among matching jobs;
+jobs without a recorded acceptance date sort last in either direction.
 
 Print staff see their jobs as packages, one per order (owner request, October 27, 2026):
 each package shows the package label (customer name and LBC booking number), its status
